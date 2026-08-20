@@ -9,10 +9,15 @@ Everything else comes later.
 
 ## Features (v0)
 
-- Add SMB servers (address / share / username / password).
-- Passwords are stored in the Keychain; only address, share and username are
-  persisted in `UserDefaults`.
-- Browse directories, navigate into folders and back up.
+- Add SMB servers with just an address, username and password — no share name
+  needed. Connecting lists the server's shares automatically as a card grid
+  (hidden/admin shares like `IPC$` are filtered out).
+- Passwords are stored in the Keychain; only address, username and display
+  name are persisted in `UserDefaults`.
+- Double-click a share card to browse it: directories, navigation into
+  folders and back up (the back button returns to the share grid from the
+  share root). The window title shows the current path while browsing.
+- `.DS_Store` and AppleDouble (`._*`) files are hidden.
 - Files are classified by type (video / image / pdf / text / other) and shown
   with type icons.
 - Double-click an image file to open it in a viewer window (read-pipeline
@@ -48,14 +53,25 @@ exercises the SMB stack outside the app:
 
 ```sh
 swift build --package-path Frameworks/SourceKit --product smb-spike
+
+# directory listing + first-64KB read probe
 swift run --package-path Frameworks/SourceKit smb-spike <host> <share> <user> <password> <path>
+
+# share enumeration (share argument ignored; `-` is a placeholder)
+swift run --package-path Frameworks/SourceKit smb-spike <host> - <user> <password> --shares
+
+# streaming read probe (1 MB chunks, optional cap in MB, default 256)
+swift run --package-path Frameworks/SourceKit smb-spike <host> <share> <user> <password> --read <file> [capMB]
 
 # example
 swift run --package-path Frameworks/SourceKit smb-spike 192.168.1.10 media alice secret /movies
 ```
 
-It connects, lists the given directory (name + size per entry), then reads the
-first 64 KB of the first file and prints elapsed time and throughput.
+Directory mode connects, lists the given directory (name + size per entry),
+then reads the first 64 KB of the first file and prints elapsed time and
+throughput. `--shares` enumerates the server's browsable shares (name +
+comment). `--read` streams the given file and reports per-chunk latency plus
+overall throughput.
 
 ## Bundle ID placeholder
 
@@ -73,9 +89,10 @@ identifier in `project.yml` (`PRODUCT_BUNDLE_IDENTIFIER`).
 - `Frameworks/` — local Swift packages:
   - `TraceKit` — thin `os_log` wrapper, zero dependencies.
   - `KeychainKit` — thin `SecItem` wrapper, zero dependencies.
-  - `SourceKit` — `ContentSource` protocol + `SMBSource` (the only place that
-    imports [AMSMB2](https://github.com/amosavian/AMSMB2)) + the `smb-spike`
-    executable.
+  - `SourceKit` — `ContentSource` protocol + `SMBSource` (share-level
+    sessions) + `SMBServer` (server-level share enumeration) + the
+    `smb-spike` executable. The only place that imports
+    [AMSMB2](https://github.com/amosavian/AMSMB2).
 
 See `AGENTS.md` for the layering rules.
 
