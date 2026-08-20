@@ -24,6 +24,10 @@ final class MainWindowController: NSWindowController {
     /// Navigation stack of share-relative paths; last element is current.
     private var pathStack: [String] = ["/"]
     private var imageWindows: [ImageViewerWindowController] = []
+    /// Retained for the lifetime of the sheet session. The sheet window is
+    /// held by AppKit, but the controller is not — letting it deallocate
+    /// leaves the buttons' weak targets dangling (clicks do nothing).
+    private var activeAddServerSheet: AddServerSheetController?
 
     init() {
         sidebarItem = NSSplitViewItem(sidebarWithViewController: serverListViewController)
@@ -83,8 +87,12 @@ final class MainWindowController: NSWindowController {
     private func presentAddServerSheet() {
         guard let window else { return }
         let sheet = AddServerSheetController()
+        activeAddServerSheet = sheet
         sheet.beginSheet(on: window) { [weak self] result in
-            guard let self, let result else { return }
+            guard let self, let result else {
+                self?.activeAddServerSheet = nil
+                return
+            }
             do {
                 try self.sessionService.addServer(
                     host: result.host,
@@ -95,6 +103,7 @@ final class MainWindowController: NSWindowController {
             } catch {
                 self.showError(error, title: "保存服务器失败")
             }
+            self.activeAddServerSheet = nil
         }
     }
 
