@@ -200,6 +200,7 @@ final class MainWindowController: NSWindowController {
                 guard generation == navigationGeneration else { return }
                 currentShare = share.name
                 pathStack = ["/"]
+                window?.title = "\(server.displayName) / \(share.name)"
                 showDetail(browserViewController)
                 try await loadDirectory(at: "/", generation: generation)
             } catch {
@@ -268,7 +269,6 @@ final class MainWindowController: NSWindowController {
     private func loadDirectory(at path: String, generation: Int) async throws {
         let items = try await sessionService.list(at: path)
         guard generation == navigationGeneration else { throw CancellationError() }
-        window?.title = path
         browserViewController.display(items: items, path: path, isAtShareRoot: path == "/")
     }
 

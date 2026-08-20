@@ -61,8 +61,14 @@ final class BrowserViewController: NSViewController {
         backButton.target = self
         backButton.action = #selector(handleGoUp)
         backButton.isEnabled = false
+        // The path label stretches to fill the row; without this the button
+        // (lower hugging priority than the label) absorbs the slack and
+        // renders as a full-width bar.
+        backButton.setContentHuggingPriority(.required, for: .horizontal)
+        backButton.setContentCompressionResistancePriority(.required, for: .horizontal)
 
-        pathLabel.lineBreakMode = .byTruncatingHead
+        pathLabel.font = .systemFont(ofSize: 13)
+        pathLabel.lineBreakMode = .byTruncatingMiddle
         pathLabel.textColor = .secondaryLabelColor
 
         root.addSubview(backButton)
