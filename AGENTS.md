@@ -35,6 +35,8 @@ Frameworks/              # 本地 SPM 包
    不许记密码。
 9. App target 开 `SWIFT_STRICT_CONCURRENCY: complete`：新增代码必须零警告，
    不许用 `nonisolated(unsafe)` 糊并发问题。
+10. 布局约束统一用 SnapKit DSL（`snp.makeConstraints`），仅限 App target 的
+    Interface 层；Frameworks 下的包不引入 SnapKit。
 
 ## 常用命令
 

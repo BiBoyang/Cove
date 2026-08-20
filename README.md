@@ -86,7 +86,9 @@ identifier in `project.yml` (`PRODUCT_BUNDLE_IDENTIFIER`).
 
 ## Architecture
 
-- `Cove/` — the app target. Pure AppKit (no SwiftUI), no storyboards.
+- `Cove/` — the app target. Pure AppKit (no SwiftUI), no storyboards; layout
+  constraints are written with [SnapKit](https://github.com/SnapKit/SnapKit)
+  (Interface layer only).
   - `Application/` — `main.swift` + `AppDelegate`, manual wiring.
   - `Services/` — server persistence + SMB session lifecycle.
   - `Interface/` — window & view controllers (never touches AMSMB2 directly).

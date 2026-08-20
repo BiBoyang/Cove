@@ -1,4 +1,5 @@
 import AppKit
+import SnapKit
 import SourceKit
 
 /// Right pane after a server connects: the server's shares as a card grid.
@@ -37,22 +38,17 @@ final class ShareGridViewController: NSViewController {
 
         scrollView.documentView = collectionView
         scrollView.hasVerticalScroller = true
-        scrollView.translatesAutoresizingMaskIntoConstraints = false
 
         placeholderLabel.textColor = .secondaryLabelColor
-        placeholderLabel.translatesAutoresizingMaskIntoConstraints = false
 
         root.addSubview(scrollView)
         root.addSubview(placeholderLabel)
-        NSLayoutConstraint.activate([
-            scrollView.topAnchor.constraint(equalTo: root.topAnchor),
-            scrollView.leadingAnchor.constraint(equalTo: root.leadingAnchor),
-            scrollView.trailingAnchor.constraint(equalTo: root.trailingAnchor),
-            scrollView.bottomAnchor.constraint(equalTo: root.bottomAnchor),
-
-            placeholderLabel.centerXAnchor.constraint(equalTo: root.centerXAnchor),
-            placeholderLabel.centerYAnchor.constraint(equalTo: root.centerYAnchor),
-        ])
+        scrollView.snp.makeConstraints { make in
+            make.edges.equalToSuperview()
+        }
+        placeholderLabel.snp.makeConstraints { make in
+            make.center.equalToSuperview()
+        }
 
         view = root
         showPlaceholder("双击左侧服务器以连接")
@@ -135,34 +131,31 @@ final class ShareCardItem: NSCollectionViewItem {
             )
         iconView.image = folderIcon
         iconView.contentTintColor = .controlAccentColor
-        iconView.translatesAutoresizingMaskIntoConstraints = false
 
         nameLabel.alignment = .center
         nameLabel.font = .systemFont(ofSize: 13, weight: .medium)
         nameLabel.lineBreakMode = .byTruncatingMiddle
-        nameLabel.translatesAutoresizingMaskIntoConstraints = false
 
         commentLabel.alignment = .center
         commentLabel.font = .systemFont(ofSize: 11)
         commentLabel.textColor = .secondaryLabelColor
         commentLabel.lineBreakMode = .byTruncatingTail
-        commentLabel.translatesAutoresizingMaskIntoConstraints = false
 
         cardView.addSubview(iconView)
         cardView.addSubview(nameLabel)
         cardView.addSubview(commentLabel)
-        NSLayoutConstraint.activate([
-            iconView.topAnchor.constraint(equalTo: cardView.topAnchor, constant: 14),
-            iconView.centerXAnchor.constraint(equalTo: cardView.centerXAnchor),
-
-            nameLabel.topAnchor.constraint(equalTo: iconView.bottomAnchor, constant: 8),
-            nameLabel.leadingAnchor.constraint(equalTo: cardView.leadingAnchor, constant: 8),
-            nameLabel.trailingAnchor.constraint(equalTo: cardView.trailingAnchor, constant: -8),
-
-            commentLabel.topAnchor.constraint(equalTo: nameLabel.bottomAnchor, constant: 2),
-            commentLabel.leadingAnchor.constraint(equalTo: nameLabel.leadingAnchor),
-            commentLabel.trailingAnchor.constraint(equalTo: nameLabel.trailingAnchor),
-        ])
+        iconView.snp.makeConstraints { make in
+            make.top.equalToSuperview().offset(14)
+            make.centerX.equalToSuperview()
+        }
+        nameLabel.snp.makeConstraints { make in
+            make.top.equalTo(iconView.snp.bottom).offset(8)
+            make.leading.trailing.equalToSuperview().inset(8)
+        }
+        commentLabel.snp.makeConstraints { make in
+            make.top.equalTo(nameLabel.snp.bottom).offset(2)
+            make.leading.trailing.equalTo(nameLabel)
+        }
 
         view = cardView
         updateHighlight()

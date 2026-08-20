@@ -4,6 +4,9 @@ options:
   createIntermediateGroups: true
 
 packages:
+  SnapKit:
+    url: https://github.com/SnapKit/SnapKit
+    from: 6.0.0
   TraceKit:
     path: Frameworks/TraceKit
   KeychainKit:
@@ -22,6 +25,8 @@ targets:
           - Resources/Info.plist
           - Resources/Cove.entitlements
     dependencies:
+      - package: SnapKit
+        product: SnapKit
       - package: TraceKit
         product: TraceKit
       - package: KeychainKit

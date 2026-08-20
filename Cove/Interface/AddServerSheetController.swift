@@ -1,4 +1,5 @@
 import AppKit
+import SnapKit
 
 /// Modal sheet collecting server address / username / password.
 @MainActor
@@ -48,8 +49,9 @@ final class AddServerSheetController: NSWindowController {
 
         for field in [hostField, usernameField, passwordField] as [NSTextField] {
             field.delegate = self
-            field.translatesAutoresizingMaskIntoConstraints = false
-            field.widthAnchor.constraint(equalToConstant: 260).isActive = true
+            field.snp.makeConstraints { make in
+                make.width.equalTo(260)
+            }
         }
 
         let grid = NSGridView(views: [
@@ -60,14 +62,12 @@ final class AddServerSheetController: NSWindowController {
         grid.column(at: 0).xPlacement = .trailing
         grid.rowSpacing = 10
         grid.columnSpacing = 8
-        grid.translatesAutoresizingMaskIntoConstraints = false
 
         // Validation feedback: specific, red, hidden until needed. Any edit
         // hides it again (see controlTextDidChange).
         hintLabel.textColor = .systemRed
         hintLabel.font = .systemFont(ofSize: 11)
         hintLabel.isHidden = true
-        hintLabel.translatesAutoresizingMaskIntoConstraints = false
 
         let cancelButton = NSButton(title: "取消", target: self, action: #selector(cancel))
         cancelButton.bezelStyle = .rounded
@@ -78,22 +78,23 @@ final class AddServerSheetController: NSWindowController {
         let buttonRow = NSStackView(views: [cancelButton, confirmButton])
         buttonRow.orientation = .horizontal
         buttonRow.spacing = 12
-        buttonRow.translatesAutoresizingMaskIntoConstraints = false
 
         contentView.addSubview(grid)
         contentView.addSubview(hintLabel)
         contentView.addSubview(buttonRow)
-        NSLayoutConstraint.activate([
-            grid.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 16),
-            grid.centerXAnchor.constraint(equalTo: contentView.centerXAnchor),
-
-            hintLabel.topAnchor.constraint(equalTo: grid.bottomAnchor, constant: 6),
-            hintLabel.leadingAnchor.constraint(equalTo: hostField.leadingAnchor),
-
-            buttonRow.topAnchor.constraint(equalTo: hintLabel.bottomAnchor, constant: 10),
-            buttonRow.trailingAnchor.constraint(equalTo: grid.trailingAnchor),
-            buttonRow.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -14),
-        ])
+        grid.snp.makeConstraints { make in
+            make.top.equalToSuperview().offset(16)
+            make.centerX.equalToSuperview()
+        }
+        hintLabel.snp.makeConstraints { make in
+            make.top.equalTo(grid.snp.bottom).offset(6)
+            make.leading.equalTo(hostField)
+        }
+        buttonRow.snp.makeConstraints { make in
+            make.top.equalTo(hintLabel.snp.bottom).offset(10)
+            make.trailing.equalTo(grid)
+            make.bottom.equalToSuperview().offset(-14)
+        }
     }
 
     private func makeLabel(_ text: String) -> NSTextField {

@@ -1,4 +1,5 @@
 import AppKit
+import SnapKit
 
 /// Left pane: the persisted server list plus an add button.
 /// Row 0 is a section header; servers start at row 1.
@@ -36,24 +37,21 @@ final class ServerListViewController: NSViewController {
 
         scrollView.documentView = tableView
         scrollView.hasVerticalScroller = true
-        scrollView.translatesAutoresizingMaskIntoConstraints = false
 
         addButton.bezelStyle = .rounded
         addButton.target = self
         addButton.action = #selector(handleAdd)
-        addButton.translatesAutoresizingMaskIntoConstraints = false
 
         root.addSubview(scrollView)
         root.addSubview(addButton)
-        NSLayoutConstraint.activate([
-            scrollView.topAnchor.constraint(equalTo: root.topAnchor),
-            scrollView.leadingAnchor.constraint(equalTo: root.leadingAnchor),
-            scrollView.trailingAnchor.constraint(equalTo: root.trailingAnchor),
-            scrollView.bottomAnchor.constraint(equalTo: addButton.topAnchor, constant: -8),
-
-            addButton.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 8),
-            addButton.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -8),
-        ])
+        scrollView.snp.makeConstraints { make in
+            make.top.leading.trailing.equalToSuperview()
+            make.bottom.equalTo(addButton.snp.top).offset(-8)
+        }
+        addButton.snp.makeConstraints { make in
+            make.leading.equalToSuperview().offset(8)
+            make.bottom.equalToSuperview().offset(-8)
+        }
 
         view = root
     }
@@ -121,14 +119,12 @@ extension ServerListViewController: NSTableViewDataSource, NSTableViewDelegate {
             let textField = NSTextField(labelWithString: "")
             textField.font = .systemFont(ofSize: 11, weight: .semibold)
             textField.textColor = .secondaryLabelColor
-            textField.translatesAutoresizingMaskIntoConstraints = false
             cell.addSubview(textField)
             cell.textField = textField
-            NSLayoutConstraint.activate([
-                textField.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 4),
-                textField.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -4),
-                textField.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
-            ])
+            textField.snp.makeConstraints { make in
+                make.leading.trailing.equalToSuperview().inset(4)
+                make.centerY.equalToSuperview()
+            }
         }
         cell.textField?.stringValue = "服务器"
         return cell
@@ -144,14 +140,12 @@ extension ServerListViewController: NSTableViewDataSource, NSTableViewDelegate {
             cell.identifier = identifier
             let textField = NSTextField(labelWithString: "")
             textField.lineBreakMode = .byTruncatingMiddle
-            textField.translatesAutoresizingMaskIntoConstraints = false
             cell.addSubview(textField)
             cell.textField = textField
-            NSLayoutConstraint.activate([
-                textField.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 4),
-                textField.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -4),
-                textField.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
-            ])
+            textField.snp.makeConstraints { make in
+                make.leading.trailing.equalToSuperview().inset(4)
+                make.centerY.equalToSuperview()
+            }
         }
         cell.textField?.stringValue = server.displayName
         return cell

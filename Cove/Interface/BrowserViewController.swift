@@ -1,4 +1,5 @@
 import AppKit
+import SnapKit
 import SourceKit
 
 /// Right pane: directory listing of the connected share.
@@ -53,7 +54,6 @@ final class BrowserViewController: NSViewController {
 
         scrollView.documentView = tableView
         scrollView.hasVerticalScroller = true
-        scrollView.translatesAutoresizingMaskIntoConstraints = false
 
         backButton.bezelStyle = .rounded
         backButton.image = NSImage(systemSymbolName: "chevron.left", accessibilityDescription: nil)
@@ -61,28 +61,26 @@ final class BrowserViewController: NSViewController {
         backButton.target = self
         backButton.action = #selector(handleGoUp)
         backButton.isEnabled = false
-        backButton.translatesAutoresizingMaskIntoConstraints = false
 
         pathLabel.lineBreakMode = .byTruncatingHead
         pathLabel.textColor = .secondaryLabelColor
-        pathLabel.translatesAutoresizingMaskIntoConstraints = false
 
         root.addSubview(backButton)
         root.addSubview(pathLabel)
         root.addSubview(scrollView)
-        NSLayoutConstraint.activate([
-            backButton.topAnchor.constraint(equalTo: root.topAnchor, constant: 8),
-            backButton.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 8),
-
-            pathLabel.centerYAnchor.constraint(equalTo: backButton.centerYAnchor),
-            pathLabel.leadingAnchor.constraint(equalTo: backButton.trailingAnchor, constant: 8),
-            pathLabel.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -8),
-
-            scrollView.topAnchor.constraint(equalTo: backButton.bottomAnchor, constant: 8),
-            scrollView.leadingAnchor.constraint(equalTo: root.leadingAnchor),
-            scrollView.trailingAnchor.constraint(equalTo: root.trailingAnchor),
-            scrollView.bottomAnchor.constraint(equalTo: root.bottomAnchor),
-        ])
+        backButton.snp.makeConstraints { make in
+            make.top.equalToSuperview().offset(8)
+            make.leading.equalToSuperview().offset(8)
+        }
+        pathLabel.snp.makeConstraints { make in
+            make.centerY.equalTo(backButton)
+            make.leading.equalTo(backButton.snp.trailing).offset(8)
+            make.trailing.equalToSuperview().offset(-8)
+        }
+        scrollView.snp.makeConstraints { make in
+            make.top.equalTo(backButton.snp.bottom).offset(8)
+            make.leading.trailing.bottom.equalToSuperview()
+        }
 
         view = root
     }
@@ -162,21 +160,20 @@ extension BrowserViewController: NSTableViewDataSource, NSTableViewDelegate {
                 let imageView = NSImageView()
                 let textField = NSTextField(labelWithString: "")
                 textField.lineBreakMode = .byTruncatingMiddle
-                imageView.translatesAutoresizingMaskIntoConstraints = false
-                textField.translatesAutoresizingMaskIntoConstraints = false
                 cell.addSubview(imageView)
                 cell.addSubview(textField)
                 cell.imageView = imageView
                 cell.textField = textField
-                NSLayoutConstraint.activate([
-                    imageView.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 4),
-                    imageView.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
-                    imageView.widthAnchor.constraint(equalToConstant: 16),
-                    imageView.heightAnchor.constraint(equalToConstant: 16),
-                    textField.leadingAnchor.constraint(equalTo: imageView.trailingAnchor, constant: 6),
-                    textField.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -4),
-                    textField.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
-                ])
+                imageView.snp.makeConstraints { make in
+                    make.leading.equalToSuperview().offset(4)
+                    make.centerY.equalToSuperview()
+                    make.width.height.equalTo(16)
+                }
+                textField.snp.makeConstraints { make in
+                    make.leading.equalTo(imageView.snp.trailing).offset(6)
+                    make.trailing.equalToSuperview().offset(-4)
+                    make.centerY.equalToSuperview()
+                }
             }
             cell.imageView?.image = icon(for: item)
             cell.textField?.stringValue = item.name
@@ -201,14 +198,12 @@ extension BrowserViewController: NSTableViewDataSource, NSTableViewDelegate {
             cell = NSTableCellView()
             cell.identifier = id
             let textField = NSTextField(labelWithString: "")
-            textField.translatesAutoresizingMaskIntoConstraints = false
             cell.addSubview(textField)
             cell.textField = textField
-            NSLayoutConstraint.activate([
-                textField.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 4),
-                textField.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -4),
-                textField.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
-            ])
+            textField.snp.makeConstraints { make in
+                make.leading.trailing.equalToSuperview().inset(4)
+                make.centerY.equalToSuperview()
+            }
         }
         cell.textField?.stringValue = text
         return cell
