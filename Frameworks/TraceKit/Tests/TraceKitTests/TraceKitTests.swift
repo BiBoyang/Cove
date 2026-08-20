@@ -17,6 +17,14 @@ final class TraceKitTests: XCTestCase {
         logger.fault("fault smoke")
     }
 
+    func testPrivacyLevelsSmoke() {
+        let logger = TraceLogger(category: "tests")
+        // Smoke: explicit privacy levels must be callable without crashing.
+        logger.info("public smoke", privacy: .public)
+        logger.info("private smoke", privacy: .private)
+        logger.error("sensitive smoke", privacy: .sensitive)
+    }
+
     func testCustomSubsystem() {
         let logger = TraceLogger(subsystem: "dev.test.custom", category: "c")
         XCTAssertEqual(logger.category, "c")

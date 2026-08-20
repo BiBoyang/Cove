@@ -15,12 +15,19 @@ public enum KeychainError: Error, Equatable {
 /// `(service, account)`; callers own the meaning of those keys.
 public enum KeychainKit {
     /// Saves a password, overwriting any existing item for the same key.
+    ///
+    /// Items are accessible after the first unlock and never migrate to a
+    /// new device via backup (`AfterFirstUnlockThisDeviceOnly`).
     public static func savePassword(_ password: String, service: String, account: String) throws {
-        let query = baseQuery(service: service, account: account)
-        // Simplest correct upsert: delete-then-add.
-        SecItemDelete(query as CFDictionary)
+        var attributes = baseQuery(service: service, account: account)
+        // Simplest correct upsert: delete-then-add. A delete failure other
+        // than "not found" must surface, not be silently added on top of.
+        let deleteStatus = SecItemDelete(attributes as CFDictionary)
+        guard deleteStatus == errSecSuccess || deleteStatus == errSecItemNotFound else {
+            throw KeychainError.unhandled(status: deleteStatus)
+        }
 
-        var attributes = query
+        attributes[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
         attributes[kSecValueData as String] = Data(password.utf8)
         let status = SecItemAdd(attributes as CFDictionary, nil)
         guard status == errSecSuccess else {
