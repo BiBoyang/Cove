@@ -14,7 +14,8 @@ final class ServerListViewController: NSViewController {
 
     private let tableView = NSTableView()
     private let scrollView = NSScrollView()
-    private let addButton = NSButton(title: "添加服务器", target: nil, action: nil)
+    private let bottomBar = NSView()
+    private let addButton = NSButton()
 
     override func loadView() {
         let root = NSView()
@@ -22,6 +23,8 @@ final class ServerListViewController: NSViewController {
         let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("server"))
         tableView.addTableColumn(column)
         tableView.headerView = nil
+        // Source-list style provides the rounded capsule selection.
+        tableView.style = .sourceList
         tableView.dataSource = self
         tableView.delegate = self
         tableView.target = self
@@ -38,19 +41,42 @@ final class ServerListViewController: NSViewController {
         scrollView.documentView = tableView
         scrollView.hasVerticalScroller = true
 
-        addButton.bezelStyle = .rounded
+        // Slim bottom bar with an add button, in the spirit of Finder's
+        // sidebar action row. Icon plus label: an icon-only 16pt plus was
+        // too small a target and read as a visual orphan.
+        addButton.bezelStyle = .accessoryBar
+        addButton.image = NSImage(
+            systemSymbolName: "plus",
+            accessibilityDescription: nil
+        )?.withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 12, weight: .medium))
+        addButton.imagePosition = .imageLeading
+        addButton.title = "添加服务器"
+        addButton.font = .systemFont(ofSize: 12)
         addButton.target = self
         addButton.action = #selector(handleAdd)
 
+        let separator = NSBox()
+        separator.boxType = .separator
+
+        bottomBar.addSubview(separator)
+        bottomBar.addSubview(addButton)
         root.addSubview(scrollView)
-        root.addSubview(addButton)
-        scrollView.snp.makeConstraints { make in
+        root.addSubview(bottomBar)
+        separator.snp.makeConstraints { make in
             make.top.leading.trailing.equalToSuperview()
-            make.bottom.equalTo(addButton.snp.top).offset(-8)
+            make.height.equalTo(1)
         }
         addButton.snp.makeConstraints { make in
             make.leading.equalToSuperview().offset(8)
-            make.bottom.equalToSuperview().offset(-8)
+            make.centerY.equalToSuperview()
+        }
+        bottomBar.snp.makeConstraints { make in
+            make.leading.trailing.bottom.equalToSuperview()
+            make.height.equalTo(28)
+        }
+        scrollView.snp.makeConstraints { make in
+            make.top.leading.trailing.equalToSuperview()
+            make.bottom.equalTo(bottomBar.snp.top)
         }
 
         view = root
@@ -100,11 +126,24 @@ extension ServerListViewController: NSTableViewDataSource, NSTableViewDelegate {
         row != 0
     }
 
+    func tableView(_ tableView: NSTableView, heightOfRow row: Int) -> CGFloat {
+        row == 0 ? 26 : 32
+    }
+
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
         if row == 0 {
             return makeHeaderCell(in: tableView)
         }
-        return makeServerCell(in: tableView, server: servers[row - 1])
+        let identifier = NSUserInterfaceItemIdentifier("ServerCell")
+        let cell: ServerRowCellView
+        if let reused = tableView.makeView(withIdentifier: identifier, owner: self) as? ServerRowCellView {
+            cell = reused
+        } else {
+            cell = ServerRowCellView()
+            cell.identifier = identifier
+        }
+        cell.configure(with: servers[row - 1])
+        return cell
     }
 
     /// Section header: small gray label, in the spirit of Finder's sidebar.
@@ -129,25 +168,52 @@ extension ServerListViewController: NSTableViewDataSource, NSTableViewDelegate {
         cell.textField?.stringValue = "服务器"
         return cell
     }
+}
 
-    private func makeServerCell(in tableView: NSTableView, server: ServerConfig) -> NSTableCellView {
-        let identifier = NSUserInterfaceItemIdentifier("ServerCell")
-        let cell: NSTableCellView
-        if let reused = tableView.makeView(withIdentifier: identifier, owner: self) as? NSTableCellView {
-            cell = reused
-        } else {
-            cell = NSTableCellView()
-            cell.identifier = identifier
-            let textField = NSTextField(labelWithString: "")
-            textField.lineBreakMode = .byTruncatingMiddle
-            cell.addSubview(textField)
-            cell.textField = textField
-            textField.snp.makeConstraints { make in
-                make.leading.trailing.equalToSuperview().inset(4)
-                make.centerY.equalToSuperview()
-            }
+/// One server row: a small rounded icon badge and the server name.
+@MainActor
+private final class ServerRowCellView: NSTableCellView {
+    private let badgeView = RoundedFillView()
+    private let badgeImageView = NSImageView()
+    private let nameLabel = NSTextField(labelWithString: "")
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+
+        badgeView.cornerRadius = 6
+        badgeView.fillColor = NSColor.systemBlue.withAlphaComponent(0.2)
+        badgeImageView.image = NSImage(systemSymbolName: "externaldrive.fill", accessibilityDescription: nil)?
+            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 12, weight: .regular))
+        badgeImageView.contentTintColor = .systemBlue
+
+        nameLabel.font = .systemFont(ofSize: 13)
+        nameLabel.textColor = .labelColor
+        nameLabel.lineBreakMode = .byTruncatingMiddle
+
+        addSubview(badgeView)
+        badgeView.addSubview(badgeImageView)
+        addSubview(nameLabel)
+        badgeView.snp.makeConstraints { make in
+            make.leading.equalToSuperview().offset(4)
+            make.centerY.equalToSuperview()
+            make.width.height.equalTo(24)
         }
-        cell.textField?.stringValue = server.displayName
-        return cell
+        badgeImageView.snp.makeConstraints { make in
+            make.center.equalToSuperview()
+        }
+        nameLabel.snp.makeConstraints { make in
+            make.leading.equalTo(badgeView.snp.trailing).offset(8)
+            make.trailing.equalToSuperview().offset(-4)
+            make.centerY.equalToSuperview()
+        }
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) is not supported")
+    }
+
+    func configure(with server: ServerConfig) {
+        nameLabel.stringValue = server.displayName
     }
 }

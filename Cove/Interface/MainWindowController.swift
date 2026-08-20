@@ -48,6 +48,10 @@ final class MainWindowController: NSWindowController {
 
         let window = NSWindow(contentViewController: splitViewController)
         window.title = "Cove"
+        // Fuse the title bar with the content: transparent bar, no title
+        // text. Each detail pane carries its own toolbar instead.
+        window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = true
         window.setContentSize(NSSize(width: 960, height: 600))
         window.center()
         super.init(window: window)
@@ -269,7 +273,10 @@ final class MainWindowController: NSWindowController {
     private func loadDirectory(at path: String, generation: Int) async throws {
         let items = try await sessionService.list(at: path)
         guard generation == navigationGeneration else { throw CancellationError() }
-        browserViewController.display(items: items, path: path, isAtShareRoot: path == "/")
+        // Toolbar title: the share name at the share root, the last path
+        // component elsewhere. The full path stays as secondary text.
+        let title = path == "/" ? (currentShare ?? "/") : (path as NSString).lastPathComponent
+        browserViewController.display(items: items, path: path, title: title)
     }
 
     // MARK: - Image probe

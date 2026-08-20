@@ -2,7 +2,8 @@ import AppKit
 import SnapKit
 import SourceKit
 
-/// Right pane: directory listing of the connected share.
+/// Right pane: directory listing of the connected share, rendered as
+/// card-style rows under a toolbar.
 /// Pure UI — navigation and file-open intents are forwarded via closures.
 /// The back button means "up one directory", or "back to the share grid"
 /// at the share root; the coordinator decides.
@@ -16,8 +17,11 @@ final class BrowserViewController: NSViewController {
 
     private let tableView = NSTableView()
     private let scrollView = NSScrollView()
-    private let backButton = NSButton(title: "返回", target: nil, action: nil)
+    private let toolbarView = NSView()
+    private let backButton = NSButton()
+    private let titleLabel = NSTextField(labelWithString: "")
     private let pathLabel = NSTextField(labelWithString: "")
+    private let searchField = NSSearchField()
 
     private let byteFormatter: ByteCountFormatter = {
         let formatter = ByteCountFormatter()
@@ -25,66 +29,83 @@ final class BrowserViewController: NSViewController {
         return formatter
     }()
 
-    private let dateFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateStyle = .medium
-        formatter.timeStyle = .short
-        return formatter
-    }()
-
     override func loadView() {
         let root = NSView()
 
-        let nameColumn = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("name"))
-        nameColumn.title = "名称"
-        nameColumn.width = 300
-        let sizeColumn = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("size"))
-        sizeColumn.title = "大小"
-        sizeColumn.width = 100
-        let modifiedColumn = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("modified"))
-        modifiedColumn.title = "修改时间"
-        modifiedColumn.width = 180
-        tableView.addTableColumn(nameColumn)
-        tableView.addTableColumn(sizeColumn)
-        tableView.addTableColumn(modifiedColumn)
+        // Toolbar: circular back button, the full path in small gray text,
+        // the current directory name centered, and a disabled search field
+        // reserving the slot for future filtering.
+        backButton.bezelStyle = .circular
+        backButton.image = NSImage(
+            systemSymbolName: "chevron.left",
+            accessibilityDescription: "返回"
+        )?.withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 15, weight: .semibold))
+        backButton.imagePosition = .imageOnly
+        backButton.title = ""
+        backButton.target = self
+        backButton.action = #selector(handleGoUp)
+        backButton.isEnabled = false
+        backButton.setContentHuggingPriority(.required, for: .horizontal)
+
+        pathLabel.font = .systemFont(ofSize: 11)
+        pathLabel.textColor = .secondaryLabelColor
+        pathLabel.lineBreakMode = .byTruncatingMiddle
+        pathLabel.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        pathLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+
+        titleLabel.font = .systemFont(ofSize: 13, weight: .semibold)
+        titleLabel.alignment = .center
+        titleLabel.lineBreakMode = .byTruncatingTail
+
+        searchField.placeholderString = "搜索"
+        searchField.isEnabled = false
+
+        toolbarView.addSubview(backButton)
+        toolbarView.addSubview(pathLabel)
+        toolbarView.addSubview(titleLabel)
+        toolbarView.addSubview(searchField)
+        backButton.snp.makeConstraints { make in
+            make.leading.equalToSuperview().offset(20)
+            make.centerY.equalToSuperview()
+            make.size.equalTo(28)
+        }
+        pathLabel.snp.makeConstraints { make in
+            make.leading.equalTo(backButton.snp.trailing).offset(8)
+            make.centerY.equalToSuperview()
+        }
+        titleLabel.snp.makeConstraints { make in
+            make.center.equalToSuperview()
+            make.leading.greaterThanOrEqualTo(pathLabel.snp.trailing).offset(8)
+            make.trailing.lessThanOrEqualTo(searchField.snp.leading).offset(-8)
+        }
+        searchField.snp.makeConstraints { make in
+            make.trailing.equalToSuperview().offset(-20)
+            make.centerY.equalToSuperview()
+            make.width.equalTo(160)
+        }
+
+        let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("item"))
+        column.width = 600
+        tableView.addTableColumn(column)
+        tableView.headerView = nil
         tableView.dataSource = self
         tableView.delegate = self
         tableView.target = self
         tableView.doubleAction = #selector(handleDoubleClick)
+        tableView.intercellSpacing = .zero
+        tableView.focusRingType = .none
 
         scrollView.documentView = tableView
         scrollView.hasVerticalScroller = true
 
-        backButton.bezelStyle = .rounded
-        backButton.image = NSImage(systemSymbolName: "chevron.left", accessibilityDescription: nil)
-        backButton.imagePosition = .imageLeading
-        backButton.target = self
-        backButton.action = #selector(handleGoUp)
-        backButton.isEnabled = false
-        // The path label stretches to fill the row; without this the button
-        // (lower hugging priority than the label) absorbs the slack and
-        // renders as a full-width bar.
-        backButton.setContentHuggingPriority(.required, for: .horizontal)
-        backButton.setContentCompressionResistancePriority(.required, for: .horizontal)
-
-        pathLabel.font = .systemFont(ofSize: 13)
-        pathLabel.lineBreakMode = .byTruncatingMiddle
-        pathLabel.textColor = .secondaryLabelColor
-
-        root.addSubview(backButton)
-        root.addSubview(pathLabel)
+        root.addSubview(toolbarView)
         root.addSubview(scrollView)
-        backButton.snp.makeConstraints { make in
-            make.top.equalToSuperview().offset(8)
-            make.leading.equalToSuperview().offset(8)
-        }
-        pathLabel.snp.makeConstraints { make in
-            make.centerY.equalTo(backButton)
-            make.leading.equalTo(backButton.snp.trailing).offset(8)
-            make.trailing.equalToSuperview().offset(-8)
+        toolbarView.snp.makeConstraints { make in
+            make.top.leading.trailing.equalToSuperview()
+            make.height.equalTo(44)
         }
         scrollView.snp.makeConstraints { make in
-            make.top.equalTo(backButton.snp.bottom).offset(8)
+            make.top.equalTo(toolbarView.snp.bottom)
             make.leading.trailing.bottom.equalToSuperview()
         }
 
@@ -93,17 +114,18 @@ final class BrowserViewController: NSViewController {
 
     /// Replaces the listing. Items are shown directories-first, then by name.
     /// `.DS_Store` and AppleDouble (`._`-prefixed) files are hidden.
-    /// At the share root the back button leads to the share grid, so it is
-    /// labelled accordingly.
-    func display(items: [ContentItem], path: String, isAtShareRoot: Bool) {
+    /// `title` is the short name centered in the toolbar (the share name at
+    /// the share root); `path` is shown in full as secondary text.
+    func display(items: [ContentItem], path: String, title: String) {
         self.items = items
             .filter { Self.isVisible($0) }
             .sorted { lhs, rhs in
                 if lhs.isDirectory != rhs.isDirectory { return lhs.isDirectory }
                 return lhs.name.localizedStandardCompare(rhs.name) == .orderedAscending
             }
+        titleLabel.stringValue = title
         pathLabel.stringValue = path
-        backButton.title = isAtShareRoot ? "共享列表" : "返回"
+        pathLabel.toolTip = path
         backButton.isEnabled = true
         tableView.reloadData()
     }
@@ -127,22 +149,6 @@ final class BrowserViewController: NSViewController {
             onOpenImage?(item.path, item.name)
         }
     }
-
-    private func icon(for item: ContentItem) -> NSImage? {
-        let symbolName: String
-        if item.isDirectory {
-            symbolName = "folder"
-        } else {
-            switch item.fileType ?? .other {
-            case .video: symbolName = "film"
-            case .image: symbolName = "photo"
-            case .pdf: symbolName = "doc.richtext"
-            case .text: symbolName = "doc.text"
-            case .other: symbolName = "doc"
-            }
-        }
-        return NSImage(systemSymbolName: symbolName, accessibilityDescription: nil)
-    }
 }
 
 extension BrowserViewController: NSTableViewDataSource, NSTableViewDelegate {
@@ -150,68 +156,115 @@ extension BrowserViewController: NSTableViewDataSource, NSTableViewDelegate {
         items.count
     }
 
+    func tableView(_ tableView: NSTableView, heightOfRow row: Int) -> CGFloat {
+        52
+    }
+
+    func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? {
+        RoundedSelectionRowView()
+    }
+
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
-        guard let column = tableColumn else { return nil }
+        let identifier = NSUserInterfaceItemIdentifier("BrowserRowCell")
+        let cell: BrowserRowCellView
+        if let reused = tableView.makeView(withIdentifier: identifier, owner: self) as? BrowserRowCellView {
+            cell = reused
+        } else {
+            cell = BrowserRowCellView()
+            cell.identifier = identifier
+        }
         let item = items[row]
+        cell.configure(
+            with: item,
+            sizeText: item.isDirectory ? "--" : byteFormatter.string(fromByteCount: item.size)
+        )
+        return cell
+    }
+}
 
-        switch column.identifier.rawValue {
-        case "name":
-            let identifier = NSUserInterfaceItemIdentifier("NameCell")
-            let cell: NSTableCellView
-            if let reused = tableView.makeView(withIdentifier: identifier, owner: self) as? NSTableCellView {
-                cell = reused
-            } else {
-                cell = NSTableCellView()
-                cell.identifier = identifier
-                let imageView = NSImageView()
-                let textField = NSTextField(labelWithString: "")
-                textField.lineBreakMode = .byTruncatingMiddle
-                cell.addSubview(imageView)
-                cell.addSubview(textField)
-                cell.imageView = imageView
-                cell.textField = textField
-                imageView.snp.makeConstraints { make in
-                    make.leading.equalToSuperview().offset(4)
-                    make.centerY.equalToSuperview()
-                    make.width.height.equalTo(16)
-                }
-                textField.snp.makeConstraints { make in
-                    make.leading.equalTo(imageView.snp.trailing).offset(6)
-                    make.trailing.equalToSuperview().offset(-4)
-                    make.centerY.equalToSuperview()
-                }
-            }
-            cell.imageView?.image = icon(for: item)
-            cell.textField?.stringValue = item.name
-            return cell
+/// One directory-entry row: a rounded icon badge, the file name (tail-
+/// truncated), and the file size pinned to the trailing edge.
+@MainActor
+private final class BrowserRowCellView: NSTableCellView {
+    private let badgeView = RoundedFillView()
+    private let badgeImageView = NSImageView()
+    private let nameLabel = NSTextField(labelWithString: "")
+    private let sizeLabel = NSTextField(labelWithString: "")
 
-        case "size":
-            let text = item.isDirectory ? "--" : byteFormatter.string(fromByteCount: item.size)
-            return makeTextCell(in: tableView, identifier: "SizeCell", text: text)
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
 
-        default: // "modified"
-            let text = item.modifiedDate.map { dateFormatter.string(from: $0) } ?? ""
-            return makeTextCell(in: tableView, identifier: "ModifiedCell", text: text)
+        badgeView.cornerRadius = 8
+
+        nameLabel.font = .systemFont(ofSize: 13)
+        nameLabel.textColor = .labelColor
+        nameLabel.lineBreakMode = .byTruncatingTail
+
+        sizeLabel.font = .systemFont(ofSize: 11)
+        sizeLabel.textColor = .secondaryLabelColor
+        sizeLabel.alignment = .right
+        sizeLabel.setContentHuggingPriority(.required, for: .horizontal)
+        sizeLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
+
+        addSubview(badgeView)
+        badgeView.addSubview(badgeImageView)
+        addSubview(nameLabel)
+        addSubview(sizeLabel)
+        badgeView.snp.makeConstraints { make in
+            make.leading.equalToSuperview().offset(20)
+            make.centerY.equalToSuperview()
+            make.width.height.equalTo(40)
+        }
+        badgeImageView.snp.makeConstraints { make in
+            make.center.equalToSuperview()
+        }
+        sizeLabel.snp.makeConstraints { make in
+            make.trailing.equalToSuperview().offset(-20)
+            make.centerY.equalToSuperview()
+        }
+        nameLabel.snp.makeConstraints { make in
+            make.leading.equalTo(badgeView.snp.trailing).offset(12)
+            make.trailing.lessThanOrEqualTo(sizeLabel.snp.leading).offset(-8)
+            make.centerY.equalToSuperview()
         }
     }
 
-    private func makeTextCell(in tableView: NSTableView, identifier: String, text: String) -> NSTableCellView {
-        let id = NSUserInterfaceItemIdentifier(identifier)
-        let cell: NSTableCellView
-        if let reused = tableView.makeView(withIdentifier: id, owner: self) as? NSTableCellView {
-            cell = reused
-        } else {
-            cell = NSTableCellView()
-            cell.identifier = id
-            let textField = NSTextField(labelWithString: "")
-            cell.addSubview(textField)
-            cell.textField = textField
-            textField.snp.makeConstraints { make in
-                make.leading.trailing.equalToSuperview().inset(4)
-                make.centerY.equalToSuperview()
-            }
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) is not supported")
+    }
+
+    func configure(with item: ContentItem, sizeText: String) {
+        let style = Self.iconStyle(for: item)
+        badgeImageView.image = NSImage(systemSymbolName: style.symbolName, accessibilityDescription: nil)?
+            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 22, weight: .regular))
+        badgeImageView.contentTintColor = style.tint
+        nameLabel.stringValue = item.name
+        sizeLabel.stringValue = sizeText
+    }
+
+    /// Symbol and tint per file kind, following the app's badge palette.
+    private static func iconStyle(for item: ContentItem) -> (symbolName: String, tint: NSColor) {
+        if item.isDirectory { return ("folder.fill", .systemBlue) }
+        switch item.fileType ?? .other {
+        case .video: return ("film.fill", .systemPurple)
+        case .image: return ("photo.fill", .systemGreen)
+        case .pdf: return ("doc.richtext.fill", .systemRed)
+        case .text: return ("doc.text.fill", .systemGray)
+        case .other: return ("doc.fill", .systemGray)
         }
-        cell.textField?.stringValue = text
-        return cell
+    }
+}
+
+/// Row view that draws the selection as an inset rounded rect instead of
+/// the default edge-to-edge highlight.
+@MainActor
+private final class RoundedSelectionRowView: NSTableRowView {
+    override func drawSelection(in dirtyRect: NSRect) {
+        let color = isEmphasized
+            ? NSColor.selectedContentBackgroundColor
+            : NSColor.unemphasizedSelectedContentBackgroundColor
+        color.setFill()
+        NSBezierPath(roundedRect: bounds.insetBy(dx: 12, dy: 2), xRadius: 8, yRadius: 8).fill()
     }
 }

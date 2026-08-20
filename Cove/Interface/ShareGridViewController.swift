@@ -18,7 +18,7 @@ final class ShareGridViewController: NSViewController {
         let root = NSView()
 
         let layout = NSCollectionViewFlowLayout()
-        layout.itemSize = NSSize(width: 150, height: 120)
+        layout.itemSize = NSSize(width: 160, height: 130)
         layout.minimumInteritemSpacing = 14
         layout.minimumLineSpacing = 16
         layout.sectionInset = NSEdgeInsets(top: 20, left: 20, bottom: 20, right: 20)
@@ -112,7 +112,7 @@ extension ShareGridViewController: NSCollectionViewDataSource {
 final class ShareCardItem: NSCollectionViewItem {
     static let identifier = NSUserInterfaceItemIdentifier("ShareCardItem")
 
-    private let cardView = NSView()
+    private let cardView = RoundedFillView()
     private let iconView = NSImageView()
     private let nameLabel = NSTextField(labelWithString: "")
     private let commentLabel = NSTextField(labelWithString: "")
@@ -122,15 +122,14 @@ final class ShareCardItem: NSCollectionViewItem {
     }
 
     override func loadView() {
-        cardView.wantsLayer = true
-        cardView.layer?.cornerRadius = 10
+        cardView.cornerRadius = 10
 
         let folderIcon = NSImage(systemSymbolName: "folder.fill", accessibilityDescription: nil)?
             .withSymbolConfiguration(
-                NSImage.SymbolConfiguration(pointSize: 44, weight: .regular)
+                NSImage.SymbolConfiguration(pointSize: 48, weight: .regular)
             )
         iconView.image = folderIcon
-        iconView.contentTintColor = .controlAccentColor
+        iconView.contentTintColor = .systemBlue
 
         nameLabel.alignment = .center
         nameLabel.font = .systemFont(ofSize: 13, weight: .medium)
@@ -145,7 +144,7 @@ final class ShareCardItem: NSCollectionViewItem {
         cardView.addSubview(nameLabel)
         cardView.addSubview(commentLabel)
         iconView.snp.makeConstraints { make in
-            make.top.equalToSuperview().offset(14)
+            make.top.equalToSuperview().offset(16)
             make.centerX.equalToSuperview()
         }
         nameLabel.snp.makeConstraints { make in
@@ -167,9 +166,11 @@ final class ShareCardItem: NSCollectionViewItem {
         commentLabel.isHidden = share.comment.isEmpty
     }
 
+    // `RoundedFillView` re-resolves the fill on appearance changes, so the
+    // highlight never goes stale across light/dark flips.
     private func updateHighlight() {
-        cardView.layer?.backgroundColor = isSelected
-            ? NSColor.selectedContentBackgroundColor.cgColor
-            : NSColor.quaternarySystemFill.cgColor
+        cardView.fillColor = isSelected
+            ? .selectedContentBackgroundColor
+            : .secondarySystemFill
     }
 }
