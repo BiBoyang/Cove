@@ -1,0 +1,45 @@
+name: Cove
+options:
+  bundleIdPrefix: com.biboyang
+  createIntermediateGroups: true
+
+packages:
+  TraceKit:
+    path: Frameworks/TraceKit
+  KeychainKit:
+    path: Frameworks/KeychainKit
+  SourceKit:
+    path: Frameworks/SourceKit
+
+targets:
+  Cove:
+    type: application
+    platform: macOS
+    deploymentTarget: "15.0"
+    sources:
+      - path: Cove
+        excludes:
+          - Resources/Info.plist
+          - Resources/Cove.entitlements
+    dependencies:
+      - package: TraceKit
+        product: TraceKit
+      - package: KeychainKit
+        product: KeychainKit
+      - package: SourceKit
+        product: SourceKit
+    settings:
+      base:
+        SWIFT_VERSION: "5.0"
+        PRODUCT_BUNDLE_IDENTIFIER: com.biboyang.cove
+        PRODUCT_NAME: Cove
+        GENERATE_INFOPLIST_FILE: "NO"
+        INFOPLIST_FILE: Cove/Resources/Info.plist
+        CODE_SIGN_ENTITLEMENTS: Cove/Resources/Cove.entitlements
+        CODE_SIGN_STYLE: Automatic
+        # TODO: set your own Apple Developer Team ID here before App Store
+        # distribution / notarization. Empty team + Automatic signing means
+        # "Sign to Run Locally" (ad hoc), which is fine for development only.
+        DEVELOPMENT_TEAM: ""
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: "1"
