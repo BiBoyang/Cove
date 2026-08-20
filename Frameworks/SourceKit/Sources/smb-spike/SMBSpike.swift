@@ -69,7 +69,7 @@ struct SMBSpike {
             let probeLength = 64 * 1024
             let clock = ContinuousClock()
             let start = clock.now
-            let data = try await source.readRange(at: first.path, maxLength: probeLength)
+            let data = try await source.read(at: first.path, range: 0..<Int64(probeLength))
             let elapsed = start.duration(to: clock.now)
             let seconds = Double(elapsed.components.seconds)
                 + Double(elapsed.components.attoseconds) / 1e18
@@ -124,9 +124,9 @@ struct SMBSpike {
 
             while totalRead < capBytes {
                 let remaining = capBytes - totalRead
-                let length = Int(min(Int64(chunkSize), remaining))
+                let length = min(Int64(chunkSize), remaining)
                 let chunkStart = ContinuousClock.now
-                let data = try await source.readRange(at: file, offset: offset, maxLength: length)
+                let data = try await source.read(at: file, range: offset..<(offset + length))
                 let chunkElapsed = ContinuousClock.now - chunkStart
                 guard !data.isEmpty else { break }
                 totalRead += Int64(data.count)
@@ -135,7 +135,7 @@ struct SMBSpike {
                              offset - Int64(data.count), data.count,
                              Self.seconds(chunkElapsed),
                              Double(data.count) / Self.seconds(chunkElapsed) / 1024 / 1024))
-                if data.count < length { break }  // EOF
+                if Int64(data.count) < length { break }  // EOF
             }
 
             let totalSeconds = Self.seconds(ContinuousClock.now - totalStart)

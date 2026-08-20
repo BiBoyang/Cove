@@ -40,16 +40,30 @@ extension SourceError: LocalizedError {
 
 /// A browsable, readable content source (SMB share now; more later).
 public protocol ContentSource: Sendable {
+    /// Stable identifier, suitable as a cache key.
+    /// The SMB implementation uses `"smb://host/share"`.
+    var sourceID: String { get }
+
     /// Establishes the session. Must be called before `list`/`read`.
     func connect() async throws
 
     /// Lists the entries of the directory at `path` (share-relative, `/`-rooted).
     func list(at path: String) async throws -> [ContentItem]
 
-    /// Reads the whole file at `path`. Ranged reads are intentionally not
-    /// part of v0.
-    func read(at path: String) async throws -> Data
+    /// Attributes of the single item at `path` (share-relative, `/`-rooted).
+    func metadata(at path: String) async throws -> ContentItem
+
+    /// Reads the bytes of the file at `path` in `range`. Ranges extending
+    /// past EOF are truncated to the actual file content.
+    func read(at path: String, range: Range<Int64>) async throws -> Data
 
     /// Tears down the session. Idempotent, never throws.
     func disconnect() async
+}
+
+public extension ContentSource {
+    /// Whole-file read, expressed as one open-ended ranged read.
+    func read(at path: String) async throws -> Data {
+        try await read(at: path, range: 0..<Int64.max)
+    }
 }

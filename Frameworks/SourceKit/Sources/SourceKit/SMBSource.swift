@@ -3,18 +3,17 @@ import Foundation
 
 /// `ContentSource` implementation backed by AMSMB2 (SMB2/SMB3).
 ///
-/// `SMB2Manager` is not `Sendable`, so all access to the client is funneled
-/// through `lock`; hence `@unchecked Sendable`. Note that AMSMB2 4.x already
-/// ships async/await variants of its (callback-first) API, which is what the
-/// methods below call.
-public final class SMBSource: ContentSource, @unchecked Sendable {
+/// An actor: `SMB2Manager` is not `Sendable`, so every call that touches the
+/// client is serialized on the actor instead of behind a manual lock. Note
+/// that AMSMB2 4.x already ships async/await variants of its (callback-first)
+/// API, which is what the methods below call.
+public actor SMBSource: ContentSource {
     public let host: String
     public let share: String
 
     private let username: String
     private let password: String
 
-    private let lock = NSLock()
     private var client: SMB2Manager?
 
     public init(host: String, share: String, username: String, password: String) {
@@ -22,6 +21,12 @@ public final class SMBSource: ContentSource, @unchecked Sendable {
         self.share = share
         self.username = username
         self.password = password
+    }
+
+    /// Stable cache-key identifier, e.g. `"smb://nas.local/media"`.
+    /// Computed from immutable `let`s, so it stays nonisolated.
+    public nonisolated var sourceID: String {
+        "smb://\(host)/\(share)"
     }
 
     public func connect() async throws {
@@ -37,18 +42,16 @@ public final class SMBSource: ContentSource, @unchecked Sendable {
         } catch {
             throw SMBErrorMapper.connectError(error, host: host, resource: share)
         }
-        lock.withLock { self.client = client }
+        self.client = client
     }
 
     public func disconnect() async {
-        let client = lock.withLock { () -> SMB2Manager? in
-            let client = self.client
-            self.client = nil
-            return client
-        }
-
         guard let client else { return }
-        try? await client.disconnectShare()
+        self.client = nil
+        // Graceful: AMSMB2 waits for its queued operations to finish before
+        // tearing down. Being actor-isolated, this also runs after any
+        // already-enqueued calls on this source.
+        try? await client.disconnectShare(gracefully: true)
     }
 
     public func list(at path: String) async throws -> [ContentItem] {
@@ -75,24 +78,24 @@ public final class SMBSource: ContentSource, @unchecked Sendable {
         }
     }
 
-    public func read(at path: String) async throws -> Data {
+    public func metadata(at path: String) async throws -> ContentItem {
         let client = try requireClient()
+        let attributes: [URLResourceKey: Any]
         do {
-            return try await client.contents(atPath: path)
+            attributes = try await client.attributesOfItem(atPath: path)
         } catch {
-            throw SMBErrorMapper.pathError(error, path: path, operation: "read")
+            throw SMBErrorMapper.pathError(error, path: path, operation: "metadata")
         }
+        return Self.contentItem(from: attributes, path: path)
     }
 
-    /// Reads at most `maxLength` bytes starting at `offset`.
-    ///
-    /// Not part of `ContentSource` (the v0 protocol is whole-file only);
-    /// exists for the `smb-spike` connectivity probe and future ranged reads.
-    public func readRange(at path: String, offset: Int64 = 0, maxLength: Int) async throws -> Data {
+    public func read(at path: String, range: Range<Int64>) async throws -> Data {
         let client = try requireClient()
-        guard maxLength > 0 else { return Data() }
         do {
-            return try await client.contents(atPath: path, range: offset..<(offset + Int64(maxLength)))
+            // AMSMB2 stats the file first and clamps the range to its size,
+            // so an open-ended upper bound (the whole-file default
+            // `0..<Int64.max`) is safe here.
+            return try await client.contents(atPath: path, range: range)
         } catch {
             throw SMBErrorMapper.pathError(error, path: path, operation: "read")
         }
@@ -101,10 +104,21 @@ public final class SMBSource: ContentSource, @unchecked Sendable {
     // MARK: - Internals
 
     private func requireClient() throws -> SMB2Manager {
-        try lock.withLock {
-            guard let client else { throw SourceError.notConnected }
-            return client
-        }
+        guard let client else { throw SourceError.notConnected }
+        return client
+    }
+
+    /// Maps URL resource attributes onto a `ContentItem`. Internal and pure
+    /// so the field mapping is unit-testable without a server.
+    static func contentItem(from attributes: [URLResourceKey: Any], path: String) -> ContentItem {
+        let name = (attributes[.nameKey] as? String) ?? (path as NSString).lastPathComponent
+        return ContentItem(
+            name: name,
+            path: path,
+            isDirectory: (attributes[.isDirectoryKey] as? Bool) ?? false,
+            size: (attributes[.fileSizeKey] as? NSNumber)?.int64Value ?? 0,
+            modifiedDate: attributes[.contentModificationDateKey] as? Date
+        )
     }
 
     private static func joinPath(base: String, name: String) -> String {

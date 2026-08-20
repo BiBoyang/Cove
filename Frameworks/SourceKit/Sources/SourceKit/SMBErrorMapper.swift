@@ -17,7 +17,11 @@ enum SMBErrorMapper {
             return .authenticationFailed
         case .ENOENT, .ENODEV:
             return .pathNotFound(resource)
-        case .ETIMEDOUT, .ECONNREFUSED, .EHOSTUNREACH, .ENETUNREACH:
+        // Transport-level failures: the credentials and paths were never
+        // evaluated, so reporting anything but a connection problem would
+        // mislead the user.
+        case .ETIMEDOUT, .ECONNREFUSED, .EHOSTUNREACH, .ENETUNREACH,
+             .ENOTCONN, .ECONNRESET, .EPIPE, .EHOSTDOWN:
             return .connectionFailed("\(host): \(String(describing: posix.code))")
         default:
             return .connectionFailed("\(host): \(String(describing: posix.code))")
@@ -34,6 +38,11 @@ enum SMBErrorMapper {
             return .pathNotFound(path)
         case .EACCES, .EPERM:
             return .permissionDenied(path)
+        // Transport-level failures mid-operation mean the session is gone,
+        // not that the path is bad — surface them as connection problems.
+        case .ENOTCONN, .ETIMEDOUT, .ECONNRESET, .ECONNABORTED,
+             .ENETDOWN, .ENETRESET, .EPIPE, .EHOSTUNREACH, .EHOSTDOWN, .ENETUNREACH:
+            return .connectionFailed("\(operation) \(path): \(String(describing: posix.code))")
         default:
             return .operationFailed("\(operation) \(path): \(String(describing: posix.code))")
         }
