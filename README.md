@@ -13,7 +13,8 @@ Everything else comes later.
   needed. Connecting lists the server's shares automatically as a card grid
   (hidden/admin shares like `IPC$` are filtered out).
 - Passwords are stored in the Keychain; only address, username and display
-  name are persisted in `UserDefaults`.
+  name are persisted in `UserDefaults`. Right-click a server to delete it
+  (drops both the config and the Keychain password, after confirmation).
 - Double-click a share card to browse it: directories, navigation into
   folders and back up (the back button returns to the share grid from the
   share root). The window title shows the current path while browsing.
@@ -23,6 +24,10 @@ Everything else comes later.
 - Double-click an image file to open it in a viewer window (read-pipeline
   probe, no optimization).
 - Connection failures surface as an alert with the concrete error.
+
+Logging: interpolated log content defaults to os_log `.auto` privacy
+(redacted in persisted logs); hosts, share names and paths are logged with
+explicit `.private`. Passwords are never logged.
 
 ## Requirements
 
@@ -89,8 +94,9 @@ identifier in `project.yml` (`PRODUCT_BUNDLE_IDENTIFIER`).
 - `Frameworks/` — local Swift packages:
   - `TraceKit` — thin `os_log` wrapper, zero dependencies.
   - `KeychainKit` — thin `SecItem` wrapper, zero dependencies.
-  - `SourceKit` — `ContentSource` protocol + `SMBSource` (share-level
-    sessions) + `SMBServer` (server-level share enumeration) + the
+  - `SourceKit` — `ContentSource` protocol (list / metadata / ranged reads,
+    with a default whole-file read) + `SMBSource` (share-level sessions, an
+    actor) + `SMBServer` (server-level share enumeration) + the
     `smb-spike` executable. The only place that imports
     [AMSMB2](https://github.com/amosavian/AMSMB2).
 

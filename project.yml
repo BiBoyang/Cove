@@ -31,6 +31,7 @@ targets:
     settings:
       base:
         SWIFT_VERSION: "5.0"
+        SWIFT_STRICT_CONCURRENCY: complete
         PRODUCT_BUNDLE_IDENTIFIER: com.biboyang.cove
         PRODUCT_NAME: Cove
         GENERATE_INFOPLIST_FILE: "NO"

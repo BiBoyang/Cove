@@ -11,7 +11,7 @@ Cove/                    # App target（纯 AppKit，禁止 import SwiftUI，不
 Frameworks/              # 本地 SPM 包
 ├── TraceKit/            # os_log 薄封装（零依赖）
 ├── KeychainKit/         # SecItem 薄封装（零依赖）
-└── SourceKit/           # ContentSource 协议 + SMBSource（share 级会话）+ SMBServer（共享枚举）+ smb-spike 命令行工具
+└── SourceKit/           # ContentSource 协议（list/metadata/ranged read）+ SMBSource（share 级会话，actor）+ SMBServer（共享枚举）+ smb-spike 命令行工具
 ```
 
 ## 依赖方向
@@ -30,6 +30,11 @@ Frameworks/              # 本地 SPM 包
    `*.xcodeproj` 不入库（已在 .gitignore）。
 7. Frameworks 下的包保持小而专一；新增依赖（尤其是三方库）先在 AGENTS.md
    登记用途再引入。
+8. 日志隐私：TraceKit 插值默认 `.auto`（持久化日志里打码）；host/share/path
+   等用户数据显式传 `.private`；`.public` 只给确定安全的内容。任何 API 都
+   不许记密码。
+9. App target 开 `SWIFT_STRICT_CONCURRENCY: complete`：新增代码必须零警告，
+   不许用 `nonisolated(unsafe)` 糊并发问题。
 
 ## 常用命令
 
