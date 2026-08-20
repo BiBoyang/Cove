@@ -41,9 +41,35 @@ final class SMBSessionService {
         let config = ServerConfig(id: UUID(), host: host, username: username)
         try KeychainKit.savePassword(password, service: Self.keychainService, account: config.id.uuidString)
         servers.append(config)
-        store.save(servers)
-        logger.info("Added server \(host)")
+        do {
+            try store.save(servers)
+        } catch {
+            // Roll back both halves so a failed persist never leaves a
+            // phantom server or an orphaned password behind.
+            servers.removeAll { $0.id == config.id }
+            try? KeychainKit.deletePassword(service: Self.keychainService, account: config.id.uuidString)
+            throw error
+        }
+        logger.info("Added server \(host)", privacy: .private)
         return config
+    }
+
+    /// Removes a server: drops the persisted entry and its Keychain password.
+    func removeServer(id: UUID) throws {
+        guard let index = servers.firstIndex(where: { $0.id == id }) else {
+            throw SessionError.unknownServer
+        }
+        let removed = servers.remove(at: index)
+        do {
+            try store.save(servers)
+        } catch {
+            servers.insert(removed, at: index)
+            throw error
+        }
+        // Best effort: an orphaned Keychain item is harmless (keyed by a
+        // UUID nothing references anymore).
+        try? KeychainKit.deletePassword(service: Self.keychainService, account: id.uuidString)
+        logger.info("Removed server \(removed.host)", privacy: .private)
     }
 
     /// Enumerates the browsable shares of a stored server. Does not touch
@@ -54,7 +80,7 @@ final class SMBSessionService {
             throw SessionError.unknownServer
         }
         let password = try passwordFor(server)
-        logger.info("Enumerating shares on \(server.host)")
+        logger.info("Enumerating shares on \(server.host)", privacy: .private)
         do {
             return try await SMBServer(
                 host: server.host,
@@ -62,7 +88,7 @@ final class SMBSessionService {
                 password: password
             ).listShares()
         } catch {
-            logger.error("Share enumeration failed for \(server.host): \(error.localizedDescription)")
+            logger.error("Share enumeration failed for \(server.host): \(error.localizedDescription)", privacy: .private)
             throw error
         }
     }
@@ -70,7 +96,7 @@ final class SMBSessionService {
     /// Connects to one share of a server, replacing any active session.
     func connect(to server: ServerConfig, share: String) async throws {
         let password = try passwordFor(server)
-        logger.info("Connecting to \(server.host)/\(share)")
+        logger.info("Connecting to \(server.host)/\(share)", privacy: .private)
         let newSource = SMBSource(
             host: server.host,
             share: share,
@@ -80,14 +106,16 @@ final class SMBSessionService {
         do {
             try await newSource.connect()
         } catch {
-            logger.error("Connect failed for \(server.host)/\(share): \(error.localizedDescription)")
+            logger.error("Connect failed for \(server.host)/\(share): \(error.localizedDescription)", privacy: .private)
             throw error
         }
-        if let old = source {
-            source = nil
-            await old.disconnect()
-        }
+        // Swap first so the new session is usable immediately; the old one
+        // is torn down off the critical path and must not block us.
+        let old = source
         source = newSource
+        if let old {
+            Task { await old.disconnect() }
+        }
     }
 
     func list(at path: String) async throws -> [ContentItem] {

@@ -89,7 +89,9 @@ final class BrowserViewController: NSViewController {
 
     /// Replaces the listing. Items are shown directories-first, then by name.
     /// `.DS_Store` and AppleDouble (`._`-prefixed) files are hidden.
-    func display(items: [ContentItem], path: String) {
+    /// At the share root the back button leads to the share grid, so it is
+    /// labelled accordingly.
+    func display(items: [ContentItem], path: String, isAtShareRoot: Bool) {
         self.items = items
             .filter { Self.isVisible($0) }
             .sorted { lhs, rhs in
@@ -97,6 +99,7 @@ final class BrowserViewController: NSViewController {
                 return lhs.name.localizedStandardCompare(rhs.name) == .orderedAscending
             }
         pathLabel.stringValue = path
+        backButton.title = isAtShareRoot ? "共享列表" : "返回"
         backButton.isEnabled = true
         tableView.reloadData()
     }

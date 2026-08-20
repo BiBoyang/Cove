@@ -43,7 +43,11 @@ final class ServerStore {
         return (try? JSONDecoder().decode([ServerConfig].self, from: data)) ?? []
     }
 
-    func save(_ servers: [ServerConfig]) {
-        defaults.set(try? JSONEncoder().encode(servers), forKey: key)
+    /// Persists the list. Encoding failures are thrown — the old `try?`
+    /// variant could pass `nil` to `set(_:forKey:)`, which *removes* the
+    /// key and silently wipes the store.
+    func save(_ servers: [ServerConfig]) throws {
+        let data = try JSONEncoder().encode(servers)
+        defaults.set(data, forKey: key)
     }
 }

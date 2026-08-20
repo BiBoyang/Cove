@@ -7,6 +7,7 @@ import AppKit
 final class ServerListViewController: NSViewController {
     var onAddServer: (() -> Void)?
     var onConnect: ((ServerConfig) -> Void)?
+    var onRemove: ((ServerConfig) -> Void)?
 
     private var servers: [ServerConfig] = []
 
@@ -24,6 +25,14 @@ final class ServerListViewController: NSViewController {
         tableView.delegate = self
         tableView.target = self
         tableView.doubleAction = #selector(handleDoubleClick)
+
+        // Right-click menu on server rows; validated against clickedRow in
+        // validateMenuItem so the header row and empty space offer nothing.
+        let menu = NSMenu()
+        let removeItem = NSMenuItem(title: "删除", action: #selector(handleRemove), keyEquivalent: "")
+        removeItem.target = self
+        menu.addItem(removeItem)
+        tableView.menu = menu
 
         scrollView.documentView = tableView
         scrollView.hasVerticalScroller = true
@@ -62,6 +71,21 @@ final class ServerListViewController: NSViewController {
         let row = tableView.clickedRow
         guard row >= 1, row - 1 < servers.count else { return }
         onConnect?(servers[row - 1])
+    }
+
+    @objc private func handleRemove() {
+        let row = tableView.clickedRow
+        guard row >= 1, row - 1 < servers.count else { return }
+        onRemove?(servers[row - 1])
+    }
+}
+
+extension ServerListViewController: NSMenuItemValidation {
+    /// "删除" only applies to actual server rows — not the section header
+    /// (row 0) and not empty space below the list.
+    func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        let row = tableView.clickedRow
+        return row >= 1 && row - 1 < servers.count
     }
 }
 
