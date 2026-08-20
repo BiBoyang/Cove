@@ -11,7 +11,7 @@ Cove/                    # App target（纯 AppKit，禁止 import SwiftUI，不
 Frameworks/              # 本地 SPM 包
 ├── TraceKit/            # os_log 薄封装（零依赖）
 ├── KeychainKit/         # SecItem 薄封装（零依赖）
-└── SourceKit/           # ContentSource 协议 + SMBSource + smb-spike 命令行工具
+└── SourceKit/           # ContentSource 协议 + SMBSource（share 级会话）+ SMBServer（共享枚举）+ smb-spike 命令行工具
 ```
 
 ## 依赖方向
@@ -24,7 +24,7 @@ Frameworks/              # 本地 SPM 包
    target）。App target 和其他 Framework 一律不许碰。
 2. View Controller 不许直接碰网络层，一律走 `SMBSessionService`。
 3. 禁止 `import SwiftUI`，界面全部用 AppKit 手写。
-4. 密码只进 Keychain；`UserDefaults` 只存地址 / 共享名 / 用户名。
+4. 密码只进 Keychain；`UserDefaults` 只存地址 / 用户名 / 显示名。
 5. 代码注释与标识符用英文；UI 文案用中文。
 6. `project.yml` 是工程的唯一事实来源：改完后跑 `make generate` 重新生成，
    `*.xcodeproj` 不入库（已在 .gitignore）。

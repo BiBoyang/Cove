@@ -3,15 +3,29 @@ import Foundation
 /// Persisted NAS server configuration.
 ///
 /// The password is deliberately NOT part of this model; it lives in the
-/// Keychain, keyed by `id` (see `SMBSessionService`).
+/// Keychain, keyed by `id` (see `SMBSessionService`). The share is not
+/// stored either: shares are enumerated on connect and picked by the user.
 struct ServerConfig: Codable, Equatable, Sendable {
     let id: UUID
     var host: String
-    var share: String
     var username: String
+    /// Sidebar label. Defaults to `host` when adding a server.
+    var displayName: String
 
-    var displayName: String {
-        "\(username)@\(host) / \(share)"
+    init(id: UUID, host: String, username: String, displayName: String? = nil) {
+        self.id = id
+        self.host = host
+        self.username = username
+        self.displayName = displayName ?? host
+    }
+
+    /// Tolerates payloads written before `displayName` existed.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        host = try container.decode(String.self, forKey: .host)
+        username = try container.decode(String.self, forKey: .username)
+        displayName = try container.decodeIfPresent(String.self, forKey: .displayName) ?? host
     }
 }
 

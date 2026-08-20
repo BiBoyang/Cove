@@ -35,7 +35,7 @@ public final class SMBSource: ContentSource, @unchecked Sendable {
         do {
             try await client.connectShare(name: share)
         } catch {
-            throw Self.mapConnectError(error, host: host, share: share)
+            throw SMBErrorMapper.connectError(error, host: host, resource: share)
         }
         lock.withLock { self.client = client }
     }
@@ -57,7 +57,7 @@ public final class SMBSource: ContentSource, @unchecked Sendable {
         do {
             entries = try await client.contentsOfDirectory(atPath: path)
         } catch {
-            throw Self.mapPathError(error, path: path, operation: "list")
+            throw SMBErrorMapper.pathError(error, path: path, operation: "list")
         }
         return entries.compactMap { entry in
             guard let name = entry[.nameKey] as? String else { return nil }
@@ -80,7 +80,7 @@ public final class SMBSource: ContentSource, @unchecked Sendable {
         do {
             return try await client.contents(atPath: path)
         } catch {
-            throw Self.mapPathError(error, path: path, operation: "read")
+            throw SMBErrorMapper.pathError(error, path: path, operation: "read")
         }
     }
 
@@ -94,7 +94,7 @@ public final class SMBSource: ContentSource, @unchecked Sendable {
         do {
             return try await client.contents(atPath: path, range: offset..<(offset + Int64(maxLength)))
         } catch {
-            throw Self.mapPathError(error, path: path, operation: "read")
+            throw SMBErrorMapper.pathError(error, path: path, operation: "read")
         }
     }
 
@@ -111,37 +111,5 @@ public final class SMBSource: ContentSource, @unchecked Sendable {
         if base.isEmpty || base == "/" { return "/" + name }
         if base.hasSuffix("/") { return base + name }
         return base + "/" + name
-    }
-
-    /// AMSMB2 surfaces server errors as `POSIXError`; libsmb2 maps the SMB
-    /// status codes onto errno values.
-    private static func mapConnectError(_ error: Error, host: String, share: String) -> SourceError {
-        guard let posix = error as? POSIXError else {
-            return .connectionFailed("\(host): \(error.localizedDescription)")
-        }
-        switch posix.code {
-        case .EACCES, .EPERM, .EAUTH:
-            return .authenticationFailed
-        case .ENOENT, .ENODEV:
-            return .pathNotFound(share)
-        case .ETIMEDOUT, .ECONNREFUSED, .EHOSTUNREACH, .ENETUNREACH:
-            return .connectionFailed("\(host): \(String(describing: posix.code))")
-        default:
-            return .connectionFailed("\(host): \(String(describing: posix.code))")
-        }
-    }
-
-    private static func mapPathError(_ error: Error, path: String, operation: String) -> SourceError {
-        guard let posix = error as? POSIXError else {
-            return .operationFailed("\(operation) \(path): \(error.localizedDescription)")
-        }
-        switch posix.code {
-        case .ENOENT:
-            return .pathNotFound(path)
-        case .EACCES, .EPERM:
-            return .permissionDenied(path)
-        default:
-            return .operationFailed("\(operation) \(path): \(String(describing: posix.code))")
-        }
     }
 }

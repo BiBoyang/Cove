@@ -3,6 +3,8 @@ import SourceKit
 
 /// Right pane: directory listing of the connected share.
 /// Pure UI — navigation and file-open intents are forwarded via closures.
+/// The back button means "up one directory", or "back to the share grid"
+/// at the share root; the coordinator decides.
 @MainActor
 final class BrowserViewController: NSViewController {
     var onOpenDirectory: ((_ path: String) -> Void)?
@@ -13,9 +15,8 @@ final class BrowserViewController: NSViewController {
 
     private let tableView = NSTableView()
     private let scrollView = NSScrollView()
-    private let backButton = NSButton(title: "返回上一级", target: nil, action: nil)
+    private let backButton = NSButton(title: "返回", target: nil, action: nil)
     private let pathLabel = NSTextField(labelWithString: "")
-    private let placeholderLabel = NSTextField(labelWithString: "双击左侧服务器以连接")
 
     private let byteFormatter: ByteCountFormatter = {
         let formatter = ByteCountFormatter()
@@ -66,13 +67,9 @@ final class BrowserViewController: NSViewController {
         pathLabel.textColor = .secondaryLabelColor
         pathLabel.translatesAutoresizingMaskIntoConstraints = false
 
-        placeholderLabel.textColor = .secondaryLabelColor
-        placeholderLabel.translatesAutoresizingMaskIntoConstraints = false
-
         root.addSubview(backButton)
         root.addSubview(pathLabel)
         root.addSubview(scrollView)
-        root.addSubview(placeholderLabel)
         NSLayoutConstraint.activate([
             backButton.topAnchor.constraint(equalTo: root.topAnchor, constant: 8),
             backButton.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 8),
@@ -85,24 +82,28 @@ final class BrowserViewController: NSViewController {
             scrollView.leadingAnchor.constraint(equalTo: root.leadingAnchor),
             scrollView.trailingAnchor.constraint(equalTo: root.trailingAnchor),
             scrollView.bottomAnchor.constraint(equalTo: root.bottomAnchor),
-
-            placeholderLabel.centerXAnchor.constraint(equalTo: scrollView.centerXAnchor),
-            placeholderLabel.centerYAnchor.constraint(equalTo: scrollView.centerYAnchor),
         ])
 
         view = root
     }
 
     /// Replaces the listing. Items are shown directories-first, then by name.
-    func display(items: [ContentItem], path: String, canGoUp: Bool) {
-        self.items = items.sorted { lhs, rhs in
-            if lhs.isDirectory != rhs.isDirectory { return lhs.isDirectory }
-            return lhs.name.localizedStandardCompare(rhs.name) == .orderedAscending
-        }
+    /// `.DS_Store` and AppleDouble (`._`-prefixed) files are hidden.
+    func display(items: [ContentItem], path: String) {
+        self.items = items
+            .filter { Self.isVisible($0) }
+            .sorted { lhs, rhs in
+                if lhs.isDirectory != rhs.isDirectory { return lhs.isDirectory }
+                return lhs.name.localizedStandardCompare(rhs.name) == .orderedAscending
+            }
         pathLabel.stringValue = path
-        backButton.isEnabled = canGoUp
-        placeholderLabel.isHidden = true
+        backButton.isEnabled = true
         tableView.reloadData()
+    }
+
+    /// macOS metadata noise that never makes sense in a NAS browser.
+    private static func isVisible(_ item: ContentItem) -> Bool {
+        item.name != ".DS_Store" && !item.name.hasPrefix("._")
     }
 
     @objc private func handleGoUp() {

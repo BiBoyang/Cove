@@ -1,25 +1,24 @@
 import AppKit
 
-/// Modal sheet collecting server address / share / username / password.
+/// Modal sheet collecting server address / username / password.
 @MainActor
 final class AddServerSheetController: NSWindowController {
     struct FormResult {
         let host: String
-        let share: String
         let username: String
         let password: String
     }
 
     private let hostField = NSTextField()
-    private let shareField = NSTextField()
     private let usernameField = NSTextField()
     private let passwordField = NSSecureTextField()
+    private let hintLabel = NSTextField(labelWithString: "")
 
     private var completion: ((FormResult?) -> Void)?
 
     init() {
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 400, height: 190),
+            contentRect: NSRect(x: 0, y: 0, width: 400, height: 176),
             styleMask: [.titled],
             backing: .buffered,
             defer: false
@@ -44,13 +43,17 @@ final class AddServerSheetController: NSWindowController {
         guard let contentView = window?.contentView else { return }
 
         hostField.placeholderString = "例如 192.168.1.10 或 nas.local"
-        shareField.placeholderString = "例如 media"
         usernameField.placeholderString = ""
         passwordField.placeholderString = ""
 
+        for field in [hostField, usernameField, passwordField] as [NSTextField] {
+            field.delegate = self
+            field.translatesAutoresizingMaskIntoConstraints = false
+            field.widthAnchor.constraint(equalToConstant: 260).isActive = true
+        }
+
         let grid = NSGridView(views: [
             [makeLabel("服务器地址"), hostField],
-            [makeLabel("共享名"), shareField],
             [makeLabel("用户名"), usernameField],
             [makeLabel("密码"), passwordField],
         ])
@@ -59,12 +62,12 @@ final class AddServerSheetController: NSWindowController {
         grid.columnSpacing = 8
         grid.translatesAutoresizingMaskIntoConstraints = false
 
-        for field in [hostField, shareField, usernameField] {
-            field.translatesAutoresizingMaskIntoConstraints = false
-            field.widthAnchor.constraint(equalToConstant: 260).isActive = true
-        }
-        passwordField.translatesAutoresizingMaskIntoConstraints = false
-        passwordField.widthAnchor.constraint(equalToConstant: 260).isActive = true
+        // Validation feedback: specific, red, hidden until needed. Any edit
+        // hides it again (see controlTextDidChange).
+        hintLabel.textColor = .systemRed
+        hintLabel.font = .systemFont(ofSize: 11)
+        hintLabel.isHidden = true
+        hintLabel.translatesAutoresizingMaskIntoConstraints = false
 
         let cancelButton = NSButton(title: "取消", target: self, action: #selector(cancel))
         cancelButton.bezelStyle = .rounded
@@ -78,14 +81,18 @@ final class AddServerSheetController: NSWindowController {
         buttonRow.translatesAutoresizingMaskIntoConstraints = false
 
         contentView.addSubview(grid)
+        contentView.addSubview(hintLabel)
         contentView.addSubview(buttonRow)
         NSLayoutConstraint.activate([
             grid.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 16),
             grid.centerXAnchor.constraint(equalTo: contentView.centerXAnchor),
 
-            buttonRow.topAnchor.constraint(equalTo: grid.bottomAnchor, constant: 16),
+            hintLabel.topAnchor.constraint(equalTo: grid.bottomAnchor, constant: 6),
+            hintLabel.leadingAnchor.constraint(equalTo: hostField.leadingAnchor),
+
+            buttonRow.topAnchor.constraint(equalTo: hintLabel.bottomAnchor, constant: 10),
             buttonRow.trailingAnchor.constraint(equalTo: grid.trailingAnchor),
-            buttonRow.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -16),
+            buttonRow.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -14),
         ])
     }
 
@@ -94,21 +101,27 @@ final class AddServerSheetController: NSWindowController {
     }
 
     @objc private func confirm() {
-        let result = FormResult(
-            host: hostField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines),
-            share: shareField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines),
-            username: usernameField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines),
-            password: passwordField.stringValue
-        )
-        guard !result.host.isEmpty, !result.share.isEmpty, !result.username.isEmpty else {
-            NSSound.beep()
+        let host = hostField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        let username = usernameField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !host.isEmpty else {
+            showHint("请填写服务器地址")
             return
         }
-        close(with: result)
+        guard !username.isEmpty else {
+            showHint("请填写用户名")
+            return
+        }
+        close(with: FormResult(host: host, username: username, password: passwordField.stringValue))
     }
 
     @objc private func cancel() {
         close(with: nil)
+    }
+
+    private func showHint(_ text: String) {
+        NSSound.beep()
+        hintLabel.stringValue = text
+        hintLabel.isHidden = false
     }
 
     private func close(with result: FormResult?) {
@@ -116,5 +129,11 @@ final class AddServerSheetController: NSWindowController {
         parent.endSheet(window)
         completion?(result)
         completion = nil
+    }
+}
+
+extension AddServerSheetController: NSTextFieldDelegate {
+    func controlTextDidChange(_ notification: Notification) {
+        hintLabel.isHidden = true
     }
 }
