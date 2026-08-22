@@ -98,6 +98,40 @@ final class FolderEnumeratorTests: XCTestCase {
         XCTAssertEqual(partial.map(\.path), ["/root/a.jpg", "/root/sub1/b.png"])
     }
 
+    func testCancellationStopsBreadthFirstTraversal() async throws {
+        // A deep chain: 20 nested directories, one image each. Listings are
+        // slowed so cancellation lands mid-traversal.
+        var listings: [String: [ContentItem]] = [:]
+        for depth in 0..<20 {
+            let path = depth == 0 ? "/root" : "/root/" + (1...depth).map { "d\($0)" }.joined(separator: "/")
+            let childName = "d\(depth + 1)"
+            listings[path] = [
+                ContentItem(name: "img\(depth).jpg", path: "\(path)/img\(depth).jpg", isDirectory: false, size: 10, modifiedDate: nil),
+                ContentItem(name: childName, path: "\(path)/\(childName)", isDirectory: true, size: 0, modifiedDate: nil),
+            ]
+        }
+        let source = MockSource(listings: listings, listDelayNanoseconds: 30_000_000)
+
+        let task = Task { try await FolderEnumerator.collectImages(source: source, root: "/root") }
+
+        // Wait until traversal is underway, then cancel.
+        while await source.listedPaths.count < 2 {
+            try await Task.sleep(nanoseconds: 5_000_000)
+        }
+        task.cancel()
+
+        // Enumeration stops at the next loop boundary and produces nothing.
+        guard case .failure(let error) = await task.result else {
+            XCTFail("a cancelled traversal must throw instead of returning images")
+            return
+        }
+        XCTAssertTrue(error is CancellationError, "expected CancellationError, got \(error)")
+        // At most the in-flight listing completes after cancellation, so
+        // traversal stopped far short of the 20-directory chain.
+        let visited = await source.listedPaths.count
+        XCTAssertLessThan(visited, 10, "traversal should have stopped early, visited \(visited)")
+    }
+
     // MARK: - listImages (single level)
 
     func testListImagesReturnsOnlyTheTopLevelImages() async throws {

@@ -13,16 +13,22 @@ actor MockSource: ContentSource {
     private var files: [String: Data]
     private var listings: [String: [ContentItem]]
     private let readDelayNanoseconds: UInt64
+    private let listDelayNanoseconds: UInt64
     private(set) var readPaths: [String] = []
+    /// Directories whose listing was served, in order — lets cancellation
+    /// tests observe how far a traversal got.
+    private(set) var listedPaths: [String] = []
 
     init(
         files: [String: Data] = [:],
         listings: [String: [ContentItem]] = [:],
-        readDelayNanoseconds: UInt64 = 0
+        readDelayNanoseconds: UInt64 = 0,
+        listDelayNanoseconds: UInt64 = 0
     ) {
         self.files = files
         self.listings = listings
         self.readDelayNanoseconds = readDelayNanoseconds
+        self.listDelayNanoseconds = listDelayNanoseconds
     }
 
     var readCount: Int { readPaths.count }
@@ -32,6 +38,10 @@ actor MockSource: ContentSource {
 
     func list(at path: String) async throws -> [ContentItem] {
         guard let entries = listings[path] else { throw SourceError.pathNotFound(path) }
+        listedPaths.append(path)
+        if listDelayNanoseconds > 0 {
+            try await Task.sleep(nanoseconds: listDelayNanoseconds)
+        }
         return entries
     }
 

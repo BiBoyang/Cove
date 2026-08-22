@@ -47,7 +47,8 @@ struct BrowserPreheatTests {
         total: Int, remaining: Int, failed: Int = 0, rate: Double = 1024
     ) -> PreheatService.DirectoryPreheatProgress {
         PreheatService.DirectoryPreheatProgress(
-            total: total, remaining: remaining, failed: failed, throughputBytesPerSecond: rate
+            total: total, remaining: remaining, failed: failed,
+            truncated: false, throughputBytesPerSecond: rate
         )
     }
 

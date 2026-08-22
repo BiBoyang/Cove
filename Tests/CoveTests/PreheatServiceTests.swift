@@ -1,6 +1,7 @@
 import AppKit
 import CacheKit
 import Foundation
+import PreheatKit
 import SourceKit
 import Testing
 @testable import Cove
@@ -120,6 +121,69 @@ struct PreheatServiceTests {
 
         #expect(!service.isDirectoryPreheatActive)
         #expect(await service.directoryPreheatProgress() == nil)
+    }
+
+    @Test("directory preheat recurses into subdirectories", .timeLimit(.minutes(1)))
+    func preheatRecursesSubdirectories() async throws {
+        let cacheRoot = makeCacheRoot()
+        defer { try? FileManager.default.removeItem(at: cacheRoot) }
+        let service = makeService(cacheRoot: cacheRoot)
+        let png = makeTestPNG()
+        let size = Int64(png.count)
+        let subdirectory = ContentItem(
+            name: "sub", path: "/dirB/sub",
+            isDirectory: true, size: 0, modifiedDate: nil
+        )
+        let source = FakeSource(
+            files: ["/dirB/b1.jpg": png, "/dirB/sub/s1.jpg": png],
+            listings: [
+                "/dirB": [image("b1.jpg", at: "/dirB", size: size), subdirectory],
+                "/dirB/sub": [image("s1.jpg", at: "/dirB/sub", size: size)],
+            ]
+        )
+        service.connectionReady(source: source, share: "media")
+
+        service.preheatDirectory(path: "/dirB")
+
+        // The subdirectory image is enumerated and submitted too.
+        try await waitUntil("subdirectory images were not enumerated") {
+            await service.directoryPreheatProgress()?.total == 2
+        }
+        try await waitUntil("directory preheat did not complete") {
+            await service.directoryPreheatProgress()?.isComplete == true
+        }
+        let reads = await source.readPaths
+        #expect(reads.contains("/dirB/b1.jpg"))
+        #expect(reads.contains("/dirB/sub/s1.jpg"))
+        let progress = await service.directoryPreheatProgress()
+        #expect(progress?.truncated == false)
+    }
+
+    @Test("hitting the file cap marks the progress as truncated", .timeLimit(.minutes(1)))
+    func hittingFileCapMarksTruncated() async throws {
+        let cacheRoot = makeCacheRoot()
+        defer { try? FileManager.default.removeItem(at: cacheRoot) }
+        let service = makeService(cacheRoot: cacheRoot)
+        // Exactly the cap's worth of images; no payloads needed — the
+        // preheat is cancelled as soon as the truncated flag is observed.
+        let cap = FolderEnumerator.defaultMaxFiles
+        let source = FakeSource(
+            files: [:],
+            listings: [
+                "/big": (1...cap).map { image("img\($0).jpg", at: "/big", size: 10) },
+            ]
+        )
+        service.connectionReady(source: source, share: "media")
+
+        service.preheatDirectory(path: "/big")
+
+        try await waitUntil("enumeration did not hit the cap") {
+            await service.directoryPreheatProgress()?.total == cap
+        }
+        #expect(await service.directoryPreheatProgress()?.truncated == true)
+
+        service.cancelDirectoryPreheat()
+        #expect(!service.isDirectoryPreheatActive)
     }
 
     @Test("progress tracks the directory batch through completion", .timeLimit(.minutes(1)))

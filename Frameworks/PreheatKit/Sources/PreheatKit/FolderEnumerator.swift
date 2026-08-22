@@ -2,7 +2,9 @@ import Foundation
 import SourceKit
 import TraceKit
 
-/// Breadth-first recursive collector for the "preheat folder" setting.
+/// Breadth-first recursive collector for preheating — backs both the
+/// "preheat folder" setting and the browser's "preheat this folder"
+/// button.
 ///
 /// Lives in PreheatKit (not the app target) so the traversal policy —
 /// image-only, hidden-file filtering, explosion caps — is unit-testable
@@ -16,8 +18,9 @@ public enum FolderEnumerator {
 
     /// Lists only `directory` itself — no recursion — returning image items
     /// in listing order. Noise entries (SourceKit's `isNoise`) are skipped.
-    /// Backs the browser's "preheat this folder" button, where recursing
-    /// into subdirectories would be a surprise.
+    /// The browser's "preheat this folder" button uses `collectImages`
+    /// instead; this single-level variant stays for callers that must not
+    /// recurse.
     ///
     /// An unreadable `directory` throws, since the user explicitly asked
     /// for that folder.
@@ -59,6 +62,13 @@ public enum FolderEnumerator {
                 entries = try await source.list(at: path)
             } catch {
                 if path == rootPath { throw error }
+                // Cancellation (e.g. a cancelled `source.list`) must not be
+                // swallowed as an unreadable directory — otherwise a cancel
+                // landing on the last pending directory would end the
+                // traversal with silently truncated partial results.
+                if error is CancellationError || Task.isCancelled {
+                    throw CancellationError()
+                }
                 logger.error(
                     "Skipping unreadable directory \(path): \(error.localizedDescription)",
                     privacy: .private

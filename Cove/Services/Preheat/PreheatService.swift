@@ -11,8 +11,9 @@ import TraceKit
 /// A1 scope: user-configured `preheatFolders` are preheated, and
 /// preheating only ever targets the currently connected share — folder
 /// entries naming another share are skipped, and nothing auto-connects at
-/// launch. A2 adds single-directory preheating on demand (the browser's
-/// "preheat this folder" button) at `.currentDirectory` priority.
+/// launch. A2 adds on-demand directory preheating (the browser's
+/// "preheat this folder" button) at `.currentDirectory` priority,
+/// recursing into subdirectories.
 @MainActor
 final class PreheatService {
     /// Snapshot of the active on-demand directory preheat, for the browser
@@ -27,6 +28,10 @@ final class PreheatService {
         /// Jobs failed since this preheat started (global counter delta;
         /// concurrent userFolder failures bleed in slightly).
         let failed: Int
+        /// True when recursive enumeration hit `FolderEnumerator`'s file
+        /// cap and the tree was truncated, so "complete" does not imply
+        /// every image in the subtree was preheated.
+        let truncated: Bool
         let throughputBytesPerSecond: Double
 
         var isComplete: Bool { total > 0 && remaining == 0 }
@@ -48,10 +53,11 @@ final class PreheatService {
     /// not re-enumerate the NAS.
     private var submittedFolders: [String] = []
     /// The active on-demand directory preheat: path, submitted image count
-    /// (0 while enumerating), and the scheduler's failed count at submit
-    /// time, so the progress snapshot reports only this batch's failures.
-    private var directoryPreheat: (path: String, total: Int, failedBaseline: Int)?
-    /// In-flight single-level enumeration for the directory preheat.
+    /// (0 while enumerating), the scheduler's failed count at submit time
+    /// (so the progress snapshot reports only this batch's failures), and
+    /// whether enumeration hit the file cap and truncated the tree.
+    private var directoryPreheat: (path: String, total: Int, failedBaseline: Int, truncated: Bool)?
+    /// In-flight breadth-first enumeration for the directory preheat.
     private var directoryTask: Task<Void, Never>?
 
     init(settings: SettingsService, cacheStore: CacheStore) {
@@ -84,9 +90,10 @@ final class PreheatService {
     /// queued, or finished but not yet dismissed by navigation/cancel).
     var isDirectoryPreheatActive: Bool { directoryPreheat != nil }
 
-    /// Preheats the images directly inside `path` — one level, no
-    /// recursion — at `.currentDirectory` priority, so they jump ahead of
-    /// queued userFolder work but behind the reader's `.immediate` jobs.
+    /// Preheats the images inside `path` and every subdirectory —
+    /// breadth-first, capped by `FolderEnumerator`'s explosion guards — at
+    /// `.currentDirectory` priority, so they jump ahead of queued
+    /// userFolder work but behind the reader's `.immediate` jobs.
     /// Replaces any in-progress directory preheat. Safe no-op without a
     /// live scheduler/connection or when preheating is disabled.
     func preheatDirectory(path: String) {
@@ -94,21 +101,24 @@ final class PreheatService {
         guard let scheduler, let connection, settings.preheatEnabled else { return }
         // Mark active synchronously so the first progress poll sees a
         // (still enumerating, total 0) snapshot instead of "inactive".
-        directoryPreheat = (path, 0, 0)
+        directoryPreheat = (path, 0, 0, false)
         let source = connection.source
         directoryTask = Task {
             do {
-                let images = try await FolderEnumerator.listImages(source: source, directory: path)
+                let images = try await FolderEnumerator.collectImages(source: source, root: path)
                 guard !Task.isCancelled else { return }
                 guard !images.isEmpty else {
                     directoryPreheat = nil
                     return
                 }
+                // `collectImages` never exceeds the cap, so reaching it
+                // means the tree was truncated mid-collection.
+                let truncated = images.count >= FolderEnumerator.defaultMaxFiles
                 let failedBaseline = await scheduler.failedCount
-                directoryPreheat = (path, images.count, failedBaseline)
+                directoryPreheat = (path, images.count, failedBaseline, truncated)
                 await scheduler.submit(images, priority: .currentDirectory)
                 logger.info(
-                    "Preheat directory \(path): queued \(images.count) images",
+                    "Preheat directory \(path): queued \(images.count) images (truncated: \(truncated))",
                     privacy: .private
                 )
             } catch {
@@ -145,6 +155,7 @@ final class PreheatService {
             total: state.total,
             remaining: remaining,
             failed: max(0, failed),
+            truncated: state.truncated,
             throughputBytesPerSecond: throughput
         )
     }
