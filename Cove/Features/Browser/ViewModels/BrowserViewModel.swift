@@ -40,7 +40,7 @@ final class BrowserViewModel {
             .filter { !$0.isNoise }
             .sorted { lhs, rhs in
                 if lhs.isDirectory != rhs.isDirectory { return lhs.isDirectory }
-                return lhs.name.localizedStandardCompare(rhs.name) == .orderedAscending
+                return NaturalSort.areInIncreasingOrder(lhs.name, rhs.name)
             }
     }
 }

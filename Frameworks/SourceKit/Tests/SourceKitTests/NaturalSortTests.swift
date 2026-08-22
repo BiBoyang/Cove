@@ -1,5 +1,5 @@
 import XCTest
-@testable import ComicKit
+@testable import SourceKit
 
 final class NaturalSortTests: XCTestCase {
     func testNumericRunsOrderByValue() {
