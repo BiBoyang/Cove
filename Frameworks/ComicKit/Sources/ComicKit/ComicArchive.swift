@@ -37,7 +37,7 @@ extension ComicArchiveError: LocalizedError {
 ///
 /// Only regular-file entries whose names classify as images (SourceKit's
 /// extension table) are exposed, in natural page order; directory entries
-/// and macOS metadata noise (`__MACOSX`, `._*` AppleDouble files) are hidden.
+/// and noise entries (dot-prefixed files, `__MACOSX` folders) are hidden.
 public final class ComicArchive: Sendable {
     /// Guarded non-Sendable state: the archive and its entries by path.
     private struct State {
@@ -95,7 +95,7 @@ public final class ComicArchive: Sendable {
     /// Image classification by extension (SourceKit's table), minus macOS
     /// metadata noise that Mac-created archives carry along.
     static func isImageEntry(_ path: String) -> Bool {
-        if ContentItem.isMacOSNoise(path: path) { return false }
+        if ContentItem.isNoise(path: path) { return false }
         return ContentItem.FileType(classifying: path) == .image
     }
 }

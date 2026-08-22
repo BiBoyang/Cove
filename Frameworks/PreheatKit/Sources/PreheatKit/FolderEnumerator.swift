@@ -15,8 +15,8 @@ public enum FolderEnumerator {
     public static let defaultMaxDirectories = 1000
 
     /// Lists `root` and every subdirectory breadth-first, returning image
-    /// items in discovery order. macOS noise entries (SourceKit's
-    /// `isMacOSNoise`, the same rule the browser uses) are skipped.
+    /// items in discovery order. Noise entries (SourceKit's `isNoise`, the
+    /// same rule the browser uses) are skipped.
     ///
     /// An unreadable subdirectory is skipped (logged); an unreadable `root`
     /// throws, since the user explicitly asked for that folder.
@@ -49,7 +49,7 @@ public enum FolderEnumerator {
                 )
                 continue
             }
-            for entry in entries where !entry.isMacOSNoise {
+            for entry in entries where !entry.isNoise {
                 if entry.isDirectory {
                     pendingDirectories.append(entry.path)
                 } else if entry.fileType == .image {

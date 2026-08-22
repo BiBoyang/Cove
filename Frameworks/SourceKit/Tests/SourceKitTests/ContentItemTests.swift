@@ -36,17 +36,19 @@ final class ContentItemTests: XCTestCase {
         XCTAssertNil(item("Movies", isDirectory: true).fileType)
     }
 
-    func testMacOSNoiseDetection() {
+    func testNoiseDetection() {
         // SMB-side paths are share-relative and `/`-rooted.
-        XCTAssertTrue(ContentItem.isMacOSNoise(path: "/.DS_Store"))
-        XCTAssertTrue(ContentItem.isMacOSNoise(path: "/a/._x.jpg"))
-        XCTAssertTrue(ContentItem.isMacOSNoise(path: "/__MACOSX"))
-        XCTAssertTrue(ContentItem.isMacOSNoise(path: "/a/__MACOSX"))
+        XCTAssertTrue(ContentItem.isNoise(path: "/.DS_Store"))
+        XCTAssertTrue(ContentItem.isNoise(path: "/a/._x.jpg"))
+        XCTAssertTrue(ContentItem.isNoise(path: "/__MACOSX"))
+        XCTAssertTrue(ContentItem.isNoise(path: "/a/__MACOSX"))
         // CBZ entry paths are archive-relative.
-        XCTAssertTrue(ContentItem.isMacOSNoise(path: "__MACOSX/._x.jpg"))
-        XCTAssertTrue(ContentItem.isMacOSNoise(path: "__MACOSX/"))
-        XCTAssertFalse(ContentItem.isMacOSNoise(path: "/a/page1.jpg"))
-        XCTAssertFalse(ContentItem.isMacOSNoise(path: "/a/macosx.jpg"))
+        XCTAssertTrue(ContentItem.isNoise(path: "__MACOSX/._x.jpg"))
+        XCTAssertTrue(ContentItem.isNoise(path: "__MACOSX/"))
+        // Any dot-prefixed tool metadata is hidden too.
+        XCTAssertTrue(ContentItem.isNoise(path: "/comics/.packing_date"))
+        XCTAssertFalse(ContentItem.isNoise(path: "/a/page1.jpg"))
+        XCTAssertFalse(ContentItem.isNoise(path: "/a/macosx.jpg"))
     }
 
     func testStoredFields() {
