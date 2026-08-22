@@ -12,7 +12,6 @@ Cove/                    # App target（纯 AppKit，禁止 import SwiftUI，不
 │   ├── Preheat/         # 用户配置的后台预热生命周期
 │   └── Settings/        # UserDefaults 设置
 ├── SharedUI/            # 跨 Feature 复用的 AppKit 组件
-├── Interface/           # 尚未迁移到 Features 的窗口与视图控制器
 └── Resources/           # Info.plist、sandbox entitlements
 Frameworks/              # 本地 SPM 包
 ├── TraceKit/            # os_log 薄封装（零依赖）
@@ -27,7 +26,7 @@ Frameworks/              # 本地 SPM 包
 
 ## 依赖方向
 
-`Application → Interface → Services → Frameworks/*`，禁止反向依赖。
+`Application → Features → Services → Frameworks/*`，禁止反向依赖。
 
 ReaderKit 是 Frameworks 下的领域核心包，不依赖 AppKit、SnapKit、SMB、ZIP 或缓存实现；目录/CBZ/缓存适配器由 App target 的 Services 层提供。
 
@@ -52,11 +51,13 @@ ReaderKit 是 Frameworks 下的领域核心包，不依赖 AppKit、SnapKit、SM
 10. App target 开 `SWIFT_STRICT_CONCURRENCY: complete`：新增代码必须零警告，
     不许用 `nonisolated(unsafe)` 糊并发问题。
 11. 布局约束统一用 SnapKit DSL（`snp.makeConstraints`），仅限 App target 的
-    Interface / Features View / SharedUI 层；ViewModel、Services 和 Frameworks
+    Features View / SharedUI 层；ViewModel、Services 和 Frameworks
     不引入 SnapKit。
 12. MVVM 边界：View / WindowController 只负责 AppKit 渲染、SnapKit 布局和输入转发；
     `@MainActor` ViewModel 负责 UI 会话状态与任务生命周期；缓存、解码、SMB、ZIP
     等具体能力由 Services/Frameworks 注入，不得重新塞回 View。
+    例外：cell 复用驱动的加载/取消（如缩略图 task 随行复用创建与取消）属于
+    View 生命周期职责，可留在 View。
 13. Feature Coordinator 负责跨层组装与窗口生命周期。`MainWindowController` 只调用
     Feature Coordinator 的意图接口，不直接构造该 Feature 的 Content/Loader/ViewModel/View。
 14. `SharedUI` 只收纳至少被两个 Feature 使用的 AppKit 组件；Feature 私有 View 留在
