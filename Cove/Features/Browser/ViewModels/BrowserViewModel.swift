@@ -37,7 +37,7 @@ final class BrowserViewModel {
 
     static func visibleItems(from items: [ContentItem]) -> [ContentItem] {
         items
-            .filter { $0.name != ".DS_Store" && !$0.name.hasPrefix("._") }
+            .filter { !$0.isMacOSNoise }
             .sorted { lhs, rhs in
                 if lhs.isDirectory != rhs.isDirectory { return lhs.isDirectory }
                 return lhs.name.localizedStandardCompare(rhs.name) == .orderedAscending

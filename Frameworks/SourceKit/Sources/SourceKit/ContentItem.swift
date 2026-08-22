@@ -36,6 +36,23 @@ public struct ContentItem: Sendable, Hashable {
     }
 }
 
+extension ContentItem {
+    /// Whether `path` is macOS metadata noise: `.DS_Store`, AppleDouble
+    /// (`._*`) files, or `__MACOSX` archive folders. Shared by the browser,
+    /// the preheat folder enumerator, and the CBZ entry filter so every
+    /// listing hides the same files.
+    public static func isMacOSNoise(path: String) -> Bool {
+        if path == "__MACOSX" || path.hasPrefix("__MACOSX/") { return true }
+        let name = (path as NSString).lastPathComponent
+        return name == ".DS_Store" || name.hasPrefix("._")
+    }
+
+    /// Whether this item is macOS metadata noise (see `isMacOSNoise(path:)`).
+    public var isMacOSNoise: Bool {
+        Self.isMacOSNoise(path: path)
+    }
+}
+
 extension ContentItem.FileType {
     /// Derives the type from a file name's extension (case-insensitive).
     /// Public so other packages (e.g. ComicKit entry filtering) share one

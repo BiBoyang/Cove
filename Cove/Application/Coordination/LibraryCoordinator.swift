@@ -72,8 +72,7 @@ final class LibraryCoordinator {
             }
         }
         PreheatService.shared.displayWidthProvider = {
-            let screen = NSScreen.main
-            return max(1, Int(((screen?.frame.width ?? 1440) * (screen?.backingScaleFactor ?? 2)).rounded()))
+            ScreenGeometry.mainScreenPixelWidth
         }
     }
 
@@ -267,5 +266,16 @@ final class LibraryCoordinator {
 
     private func makeFileReader() -> @Sendable (String) async throws -> Data {
         sessionService.makeFileReader()
+    }
+}
+
+/// Screen geometry shared by the coordinators.
+enum ScreenGeometry {
+    /// Pixel width of the main screen's backing store, used as the display
+    /// variant width for cache keys and decode budgets. Falls back to a
+    /// 1440pt @2x screen when no main screen is attached.
+    static var mainScreenPixelWidth: Int {
+        let screen = NSScreen.main
+        return max(1, Int(((screen?.frame.width ?? 1440) * (screen?.backingScaleFactor ?? 2)).rounded()))
     }
 }

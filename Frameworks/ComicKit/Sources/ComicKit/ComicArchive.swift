@@ -95,8 +95,7 @@ public final class ComicArchive: Sendable {
     /// Image classification by extension (SourceKit's table), minus macOS
     /// metadata noise that Mac-created archives carry along.
     static func isImageEntry(_ path: String) -> Bool {
-        if path.hasPrefix("__MACOSX/") { return false }
-        if (path as NSString).lastPathComponent.hasPrefix("._") { return false }
+        if ContentItem.isMacOSNoise(path: path) { return false }
         return ContentItem.FileType(classifying: path) == .image
     }
 }

@@ -84,11 +84,7 @@ final class ReaderCoordinator: NSObject {
 
     private func present(content: ReaderContent, startIndex: Int, sourceID: String) {
         readerController?.close()
-        let screen = NSScreen.main
-        let targetWidth = max(
-            1,
-            Int(((screen?.frame.width ?? 1440) * (screen?.backingScaleFactor ?? 2)).rounded())
-        )
+        let targetWidth = ScreenGeometry.mainScreenPixelWidth
         let loader = ReaderImageLoader(
             cache: cache,
             sourceID: sourceID,

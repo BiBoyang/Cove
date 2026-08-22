@@ -15,8 +15,8 @@ public enum FolderEnumerator {
     public static let defaultMaxDirectories = 1000
 
     /// Lists `root` and every subdirectory breadth-first, returning image
-    /// items in discovery order. `.DS_Store` and AppleDouble (`._*`) entries
-    /// are skipped, matching the browser's visibility rules.
+    /// items in discovery order. macOS noise entries (SourceKit's
+    /// `isMacOSNoise`, the same rule the browser uses) are skipped.
     ///
     /// An unreadable subdirectory is skipped (logged); an unreadable `root`
     /// throws, since the user explicitly asked for that folder.
@@ -49,7 +49,7 @@ public enum FolderEnumerator {
                 )
                 continue
             }
-            for entry in entries where isVisible(entry.name) {
+            for entry in entries where !entry.isMacOSNoise {
                 if entry.isDirectory {
                     pendingDirectories.append(entry.path)
                 } else if entry.fileType == .image {
@@ -59,10 +59,5 @@ public enum FolderEnumerator {
             }
         }
         return images
-    }
-
-    /// macOS metadata noise that never makes sense to preheat.
-    private static func isVisible(_ name: String) -> Bool {
-        name != ".DS_Store" && !name.hasPrefix("._")
     }
 }
