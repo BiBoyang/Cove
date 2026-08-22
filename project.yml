@@ -13,6 +13,16 @@ packages:
     path: Frameworks/KeychainKit
   SourceKit:
     path: Frameworks/SourceKit
+  ImagePipeline:
+    path: Frameworks/ImagePipeline
+  CacheKit:
+    path: Frameworks/CacheKit
+  PreheatKit:
+    path: Frameworks/PreheatKit
+  ComicKit:
+    path: Frameworks/ComicKit
+  ReaderKit:
+    path: Frameworks/ReaderKit
 
 targets:
   Cove:
@@ -33,6 +43,16 @@ targets:
         product: KeychainKit
       - package: SourceKit
         product: SourceKit
+      - package: ImagePipeline
+        product: ImagePipeline
+      - package: CacheKit
+        product: CacheKit
+      - package: PreheatKit
+        product: PreheatKit
+      - package: ComicKit
+        product: ComicKit
+      - package: ReaderKit
+        product: ReaderKit
     settings:
       base:
         SWIFT_VERSION: "5.0"
@@ -47,5 +67,29 @@ targets:
         # distribution / notarization. Empty team + Automatic signing means
         # "Sign to Run Locally" (ad hoc), which is fine for development only.
         DEVELOPMENT_TEAM: ""
-        MARKETING_VERSION: "0.1.0"
-        CURRENT_PROJECT_VERSION: "1"
+        MARKETING_VERSION: "0.2.0"
+        CURRENT_PROJECT_VERSION: "2"
+  CoveTests:
+    type: bundle.unit-test
+    platform: macOS
+    deploymentTarget: "15.0"
+    sources:
+      - path: Tests/CoveTests
+    dependencies:
+      - target: Cove
+    settings:
+      base:
+        SWIFT_VERSION: "5.0"
+        SWIFT_STRICT_CONCURRENCY: complete
+        PRODUCT_BUNDLE_IDENTIFIER: com.biboyang.cove.tests
+        GENERATE_INFOPLIST_FILE: "YES"
+
+schemes:
+  Cove:
+    build:
+      targets:
+        Cove: all
+        CoveTests: [test]
+    test:
+      targets:
+        - CoveTests

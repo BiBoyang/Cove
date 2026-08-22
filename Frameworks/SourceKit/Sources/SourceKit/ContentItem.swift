@@ -8,6 +8,8 @@ public struct ContentItem: Sendable, Hashable {
         case image
         case pdf
         case text
+        /// CBZ comic archives (ZIP with image entries).
+        case comic
         case other
     }
 
@@ -36,16 +38,21 @@ public struct ContentItem: Sendable, Hashable {
 
 extension ContentItem.FileType {
     /// Derives the type from a file name's extension (case-insensitive).
-    init(classifying name: String) {
+    /// Public so other packages (e.g. ComicKit entry filtering) share one
+    /// classification table.
+    public init(classifying name: String) {
         switch (name as NSString).pathExtension.lowercased() {
         case "mp4", "mkv", "avi", "mov", "wmv", "flv", "webm", "m4v",
              "ts", "m2ts", "mpg", "mpeg", "3gp", "rmvb":
             self = .video
         case "jpg", "jpeg", "png", "gif", "bmp", "webp", "heic", "heif",
-             "tiff", "tif", "avif":
+             "tiff", "tif", "avif", "cr2", "cr3", "nef", "arw", "dng",
+             "raf", "orf", "rw2", "jfif", "jpe":
             self = .image
         case "pdf":
             self = .pdf
+        case "cbz":
+            self = .comic
         case "txt", "md", "log", "nfo", "srt", "ass":
             self = .text
         default:

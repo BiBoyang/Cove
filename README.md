@@ -19,10 +19,31 @@ Everything else comes later.
   folders and back up (the back button returns to the share grid from the
   share root). The window title shows the current path while browsing.
 - `.DS_Store` and AppleDouble (`._*`) files are hidden.
-- Files are classified by type (video / image / pdf / text / other) and shown
-  with type icons.
-- Double-click an image file to open it in a viewer window (read-pipeline
-  probe, no optimization).
+- Files are classified by type (video / image / pdf / comic / text / other)
+  and shown with type icons. Image files get real thumbnails (square
+  center-crop at 160 px) loaded through the same two-pool disk cache as the
+  reader: symbols show first, thumbnails fade in, off-screen rows never load,
+  and duplicate requests coalesce.
+- Double-click an image file to open a full-screen single-page reader:
+  exactly one image is shown at a time on a black background, centered and
+  fit proportionally. Previous/next buttons, `←`/`→` (plus PageUp/PageDown),
+  `Esc`, and a page counter support manual navigation. Originals and
+  downsampled display variants use the disk cache; A1 does not prefetch
+  adjacent pages or start automatic directory warming.
+- Double-click a `.cbz` comic archive to read it in the same single-page
+  reader: the archive is cached whole in the original pool, its image entries
+  are sorted naturally (`1, 2, …, 10`), and pages decode into the display
+  pool one at a time. (`.cbr`/`.cbt` are not supported yet.)
+- Optional preheating is limited to user-configured folders. Those folders
+  are enumerated breadth-first (image files only, capped at 5000 files) and
+  warmed over a dedicated SMB connection, so bulk reads never stall
+  browsing; the pipeline can be rate-limited. Current-directory and
+  reader-page preheating remain deferred until the adjacent-page design.
+- Settings (app menu → 设置…, Cmd+,): cache budget (GB) and TTL (days) with
+  live per-pool usage and a clear-now button; preheat on/off, rate limit
+  (MB/s, 0 = unlimited), and the preheat folder list. Folder entries include
+  the share name (e.g. `公共空间/动漫/xxx`) and only take effect while that
+  share is connected.
 - Connection failures surface as an alert with the concrete error.
 
 Logging: interpolated log content defaults to os_log `.auto` privacy
@@ -40,7 +61,7 @@ explicit `.private`. Passwords are never logged.
 ```sh
 make generate   # generate Cove.xcodeproj from project.yml via XcodeGen
 make build      # Debug build via xcodebuild
-make test       # unit tests for the Frameworks/* Swift packages (+ smb-spike compile check)
+make test       # Framework package tests + Cove Swift Testing + smb-spike compile check
 make clean
 ```
 
@@ -90,7 +111,19 @@ identifier in `project.yml` (`PRODUCT_BUNDLE_IDENTIFIER`).
   constraints are written with [SnapKit](https://github.com/SnapKit/SnapKit)
   (Interface layer only).
   - `Application/` — `main.swift` + `AppDelegate`, manual wiring.
-  - `Services/` — server persistence + SMB session lifecycle.
+  - `Features/` — feature-scoped AppKit views and `@MainActor` view models.
+    The Reader feature now keeps its paging/loading state in a view model;
+    its window controller only renders state and forwards user input, while
+    `ReaderCoordinator` owns directory/CBZ content creation, loader/view-model
+    assembly, pending archive-open cancellation, and Reader-window lifetime.
+  - `Services/` — app adapters grouped by responsibility:
+    `Infrastructure/` (SMB sessions and persisted servers), `Media/`
+    (cache policy, thumbnails, and Reader content/loading adapters),
+    `Preheat/` (background warming lifecycle), and `Settings/`
+    (UserDefaults-backed configuration).
+  - `SharedUI/` — reusable AppKit components shared by multiple features.
+  - `Tests/CoveTests/` — app-target Swift Testing coverage for ViewModels and
+    concurrency-sensitive presentation behavior.
   - `Interface/` — window & view controllers (never touches AMSMB2 directly).
   - `Resources/` — `Info.plist`, sandbox entitlements.
 - `Frameworks/` — local Swift packages:
@@ -101,6 +134,23 @@ identifier in `project.yml` (`PRODUCT_BUNDLE_IDENTIFIER`).
     actor) + `SMBServer` (server-level share enumeration) + the
     `smb-spike` executable. The only place that imports
     [AMSMB2](https://github.com/amosavian/AMSMB2).
+  - `ImagePipeline` — image decoding with on-demand downsampling (thin
+    ImageIO wrapper, zero dependencies).
+  - `CacheKit` — two-pool on-disk cache (original / display) with LRU
+    eviction, TTL expiry and a runtime-adjustable capacity/TTL policy
+    (depends only on the local TraceKit).
+  - `PreheatKit` — preheat scheduler: a three-priority FIFO queue with
+    dedup against the cache, token-bucket rate limiting, and breadth-first
+    preheat-folder enumeration (depends on SourceKit, CacheKit,
+    ImagePipeline and TraceKit).
+  - `ComicKit` — CBZ comic archives: in-memory ZIP parsing, image-entry
+    filtering + natural page ordering, and thread-safe entry extraction
+    (depends on SourceKit). The only place that imports
+    [ZIPFoundation](https://github.com/weichsel/ZIPFoundation).
+  - `ReaderKit` — Reader domain core: ordered page/document models and the
+    original-page source protocol. It has no AppKit, SnapKit, SMB, ZIP, or
+    cache implementation dependencies; concrete directory/CBZ/cache adapters
+    stay in the app's Services layer.
 
 See `AGENTS.md` for the layering rules.
 

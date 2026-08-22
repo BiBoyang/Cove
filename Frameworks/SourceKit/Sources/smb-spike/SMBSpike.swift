@@ -1,3 +1,4 @@
+import AMSMB2
 import Foundation
 import SourceKit
 
@@ -14,6 +15,9 @@ import SourceKit
 ///   smb-spike <host> - <user> <password> --shares
 ///     Enumerates the server's browsable shares (name + comment). The share
 ///     argument is ignored in this mode; pass a placeholder such as `-`.
+///   smb-spike <host> <share> <user> <password> --upload <localFile> <remotePath>
+///     Uploads a local file (write probe; uses AMSMB2 directly since
+///     ContentSource is read-only by design).
 @main
 struct SMBSpike {
     static func main() async {
@@ -23,6 +27,7 @@ struct SMBSpike {
             Usage: smb-spike <host> <share> <user> <password> <path>
                    smb-spike <host> <share> <user> <password> --read <file> [capMB]
                    smb-spike <host> - <user> <password> --shares
+                   smb-spike <host> <share> <user> <password> --upload <localFile> <remotePath>
 
             """.utf8))
             exit(2)
@@ -31,6 +36,16 @@ struct SMBSpike {
 
         if args[5] == "--shares" {
             await sharesProbe(host: host, user: user, password: password)
+            return
+        }
+
+        if args[5] == "--upload" {
+            guard args.count >= 8 else {
+                FileHandle.standardError.write(Data("Usage: smb-spike <host> <share> <user> <password> --upload <localFile> <remotePath>\n".utf8))
+                exit(2)
+            }
+            await uploadProbe(host: host, share: share, user: user, password: password,
+                              localFile: args[6], remotePath: args[7])
             return
         }
 
@@ -143,6 +158,34 @@ struct SMBSpike {
                          totalRead, totalSeconds,
                          totalSeconds > 0 ? Double(totalRead) / totalSeconds / 1024 / 1024 : 0))
             await source.disconnect()
+        } catch {
+            FileHandle.standardError.write(Data("ERROR: \(error.localizedDescription)\n".utf8))
+            exit(1)
+        }
+    }
+
+    /// Uploads a local file to the share (write probe). ContentSource is
+    /// read-only by design, so this uses AMSMB2 directly.
+    private static func uploadProbe(host: String, share: String, user: String, password: String,
+                                    localFile: String, remotePath: String) async {
+        do {
+            let data = try Data(contentsOf: URL(fileURLWithPath: localFile))
+            guard let url = URL(string: "smb://\(host)") else {
+                throw NSError(domain: "smb-spike", code: 2, userInfo: [NSLocalizedDescriptionKey: "invalid host"])
+            }
+            let credential = URLCredential(user: user, password: password, persistence: .none)
+            guard let client = SMB2Manager(url: url, credential: credential) else {
+                throw NSError(domain: "smb-spike", code: 3, userInfo: [NSLocalizedDescriptionKey: "could not create client"])
+            }
+            print("Connecting to smb://\(host)/\(share) as \(user)...")
+            try await client.connectShare(name: share)
+            let start = ContinuousClock.now
+            try await client.write(data: data, toPath: remotePath, progress: { _ in true })
+            let seconds = Self.seconds(ContinuousClock.now - start)
+            print(String(format: "Uploaded %d bytes to %@ in %.3fs (%.2f MB/s)",
+                         data.count, remotePath, seconds,
+                         seconds > 0 ? Double(data.count) / seconds / 1024 / 1024 : 0))
+            try await client.disconnectShare()
         } catch {
             FileHandle.standardError.write(Data("ERROR: \(error.localizedDescription)\n".utf8))
             exit(1)
