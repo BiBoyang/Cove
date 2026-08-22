@@ -18,7 +18,7 @@ public struct CacheKey: Hashable, Sendable {
     public let fileSize: Int64
     /// Modification time of the remote file, as reported by the source.
     public let modifiedTimestamp: Date
-    /// Display variant of the payload, e.g. `"raw"` or `"2048px"`.
+    /// Display variant of the payload, e.g. `"raw"` or `"w<width>"`.
     public let variant: String
 
     public init(sourceID: String, path: String, fileSize: Int64, modifiedTimestamp: Date, variant: String) {
@@ -27,6 +27,28 @@ public struct CacheKey: Hashable, Sendable {
         self.fileSize = fileSize
         self.modifiedTimestamp = modifiedTimestamp
         self.variant = variant
+    }
+
+    /// Variant name of the untouched original payload.
+    public static let rawVariant = "raw"
+
+    /// Variant name of a display payload downsampled to `width` pixels wide.
+    public static func displayWidthVariant(_ width: Int) -> String {
+        "w\(width)"
+    }
+
+    /// Key for a file on a content source. A nil `modified` degrades to the
+    /// epoch, so sources that cannot report an mtime still pin a stable key
+    /// that every consumer (reader, thumbnails, preheat) computes alike.
+    public static func sourceFile(
+        sourceID: String, path: String, fileSize: Int64,
+        modified: Date?, variant: String
+    ) -> CacheKey {
+        CacheKey(
+            sourceID: sourceID, path: path, fileSize: fileSize,
+            modifiedTimestamp: modified ?? Date(timeIntervalSince1970: 0),
+            variant: variant
+        )
     }
 
     /// Stable on-disk file name: lowercase hex SHA-256 over the canonical

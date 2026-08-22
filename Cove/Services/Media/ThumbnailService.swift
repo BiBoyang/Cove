@@ -114,12 +114,9 @@ actor ThumbnailService: ThumbnailProviding {
     /// Returns the thumbnail for `item`, or `nil` when it is undecodable or
     /// already failed this session. Callers are expected to be image rows.
     func thumbnail(for item: ContentItem) async -> CGImage? {
-        // A nil mtime degrades to a fixed timestamp — the same convention
-        // the reader and preheat scheduler use, so keys stay consistent.
-        let modified = item.modifiedDate ?? Date(timeIntervalSince1970: 0)
-        let displayKey = CacheKey(
+        let displayKey = CacheKey.sourceFile(
             sourceID: sourceID, path: item.path, fileSize: item.size,
-            modifiedTimestamp: modified, variant: Self.displayVariant
+            modified: item.modifiedDate, variant: Self.displayVariant
         )
         if failed.contains(displayKey) { return nil }
         if let task = inFlight[displayKey] {
@@ -168,9 +165,9 @@ actor ThumbnailService: ThumbnailProviding {
             // Corrupt payload: fall through to the original layer.
         }
 
-        let originalKey = CacheKey(
+        let originalKey = CacheKey.sourceFile(
             sourceID: displayKey.sourceID, path: item.path, fileSize: item.size,
-            modifiedTimestamp: displayKey.modifiedTimestamp, variant: "raw"
+            modified: displayKey.modifiedTimestamp, variant: CacheKey.rawVariant
         )
         let original: Data
         if let cached = try? cache.data(forKey: originalKey, pool: .original) {

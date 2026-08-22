@@ -51,8 +51,6 @@ public actor PreheatScheduler {
 
     /// JPEG quality for display-pool payloads; matches the reader.
     private static let displayJPEGQuality = 0.85
-    /// Hard cap on the decoded largest side; matches the reader's budget.
-    private static let maxDecodedPixelSize = 12288
     /// Sliding window for the throughput estimate, in seconds.
     private static let throughputWindow: TimeInterval = 5
 
@@ -199,18 +197,17 @@ public actor PreheatScheduler {
     // MARK: - Queue machinery
 
     private func makeJob(item: ContentItem, width: Int) -> Job {
-        // A nil mtime degrades to a fixed timestamp — the same convention
-        // the reader uses, so both sides compute identical cache keys.
-        let modified = item.modifiedDate ?? Date(timeIntervalSince1970: 0)
+        // Keys go through the CacheKey factory so the reader computes the
+        // identical keys and a preheated page opens straight from the cache.
         return Job(
             item: item,
-            originalKey: CacheKey(
+            originalKey: CacheKey.sourceFile(
                 sourceID: source.sourceID, path: item.path, fileSize: item.size,
-                modifiedTimestamp: modified, variant: "raw"
+                modified: item.modifiedDate, variant: CacheKey.rawVariant
             ),
-            displayKey: CacheKey(
+            displayKey: CacheKey.sourceFile(
                 sourceID: source.sourceID, path: item.path, fileSize: item.size,
-                modifiedTimestamp: modified, variant: "w\(width)"
+                modified: item.modifiedDate, variant: CacheKey.displayWidthVariant(width)
             ),
             displayWidth: width
         )
@@ -272,7 +269,7 @@ public actor PreheatScheduler {
                 guard let displaySize = ImagePipeline.displayDimensions(of: original),
                       let image = ImagePipeline.decode(
                         original,
-                        maxPixelSize: Self.maxPixelSize(
+                        maxPixelSize: ImagePipeline.maxPixelSize(
                             forDisplaySize: displaySize,
                             targetWidth: job.displayWidth
                         )
@@ -326,15 +323,5 @@ public actor PreheatScheduler {
         // longer than an hour; normal delays are sub-second.
         let nanos = Int64(min(seconds, 3600) * 1_000_000_000)
         try await Task.sleep(for: .nanoseconds(nanos))
-    }
-
-    /// Largest-side decode budget that lands the decoded image
-    /// `targetWidth` pixels wide for any aspect ratio. Mirrors the reader's
-    /// formula, so preheated payloads have exactly the dimensions the
-    /// reader would have produced itself.
-    static func maxPixelSize(forDisplaySize size: CGSize, targetWidth: Int) -> Int {
-        guard size.width > 0, size.height > 0 else { return targetWidth }
-        let budget = (Double(targetWidth) * Double(size.height) / Double(size.width)).rounded(.up)
-        return min(max(Int(budget), targetWidth), maxDecodedPixelSize)
     }
 }

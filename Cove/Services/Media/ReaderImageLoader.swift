@@ -19,7 +19,6 @@ protocol ReaderPageLoading: Sendable {
 /// The ReaderKit page/source contract stays independent of cache policy;
 /// this App media layer combines it with CacheKit and ImagePipeline.
 struct ReaderImageLoader: ReaderPageLoading {
-    static let maxDecodedPixelSize = 12288
     private static let displayPayloadDecodeCap = 16384
     private static let displayJPEGQuality = 0.85
 
@@ -29,12 +28,6 @@ struct ReaderImageLoader: ReaderPageLoading {
     let logger: TraceLogger
     let content: ReaderContent
 
-    static func maxPixelSize(forDisplaySize size: CGSize, targetWidth: Int) -> Int {
-        guard size.width > 0, size.height > 0 else { return targetWidth }
-        let budget = (Double(targetWidth) * Double(size.height) / Double(size.width)).rounded(.up)
-        return min(max(Int(budget), targetWidth), maxDecodedPixelSize)
-    }
-
     func load(pageAt index: Int) async throws -> ReaderLoadedImage {
         let startedAt = CFAbsoluteTimeGetCurrent()
         defer {
@@ -43,10 +36,9 @@ struct ReaderImageLoader: ReaderPageLoading {
             )
         }
         let page = content.cachePages[index]
-        let modified = page.cacheModified ?? Date(timeIntervalSince1970: 0)
-        let displayKey = CacheKey(
+        let displayKey = CacheKey.sourceFile(
             sourceID: sourceID, path: page.cachePath, fileSize: page.cacheFileSize,
-            modifiedTimestamp: modified, variant: "w\(targetWidth)"
+            modified: page.cacheModified, variant: CacheKey.displayWidthVariant(targetWidth)
         )
         if let payload = try? cache.data(forKey: displayKey, pool: .display) {
             try Task.checkCancellation()
@@ -65,7 +57,7 @@ struct ReaderImageLoader: ReaderPageLoading {
         guard let displaySize = ImagePipeline.displayDimensions(of: original) else {
             throw ReaderLoadError.undecodable
         }
-        let budget = Self.maxPixelSize(forDisplaySize: displaySize, targetWidth: targetWidth)
+        let budget = ImagePipeline.maxPixelSize(forDisplaySize: displaySize, targetWidth: targetWidth)
         guard let image = ImagePipeline.decode(original, maxPixelSize: budget) else {
             throw ReaderLoadError.undecodable
         }

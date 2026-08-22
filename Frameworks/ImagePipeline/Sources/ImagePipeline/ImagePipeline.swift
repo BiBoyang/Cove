@@ -8,6 +8,20 @@ import UniformTypeIdentifiers
 /// All entry points are synchronous and CPU-bound — callers are expected to
 /// dispatch them off the main thread (the reader layer above does this).
 public enum ImagePipeline {
+    /// Hard cap on the decoded largest side, applied by
+    /// `maxPixelSize(forDisplaySize:targetWidth:)`.
+    public static let maxDecodedPixelSize = 12288
+
+    /// Largest-side decode budget that lands the decoded image
+    /// `targetWidth` pixels wide for any aspect ratio. Shared by the reader
+    /// and the preheat scheduler, so preheated payloads have exactly the
+    /// dimensions the reader would have produced itself.
+    public static func maxPixelSize(forDisplaySize size: CGSize, targetWidth: Int) -> Int {
+        guard size.width > 0, size.height > 0 else { return targetWidth }
+        let budget = (Double(targetWidth) * Double(size.height) / Double(size.width)).rounded(.up)
+        return min(max(Int(budget), targetWidth), maxDecodedPixelSize)
+    }
+
     /// Decodes `data` into a `CGImage` whose largest side is at most
     /// `maxPixelSize` pixels.
     ///

@@ -41,10 +41,9 @@ extension ReaderContent {
         cache: CacheStore,
         sourceID: String
     ) async throws -> Data {
-        let modified = item.modifiedDate ?? Date(timeIntervalSince1970: 0)
-        let key = CacheKey(
+        let key = CacheKey.sourceFile(
             sourceID: sourceID, path: item.path, fileSize: item.size,
-            modifiedTimestamp: modified, variant: "raw"
+            modified: item.modifiedDate, variant: CacheKey.rawVariant
         )
         if let cached = try? cache.data(forKey: key, pool: .original) {
             return cached
