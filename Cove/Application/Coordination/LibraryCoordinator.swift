@@ -66,6 +66,7 @@ final class LibraryCoordinator {
         browserViewController.onOpenComic = { [weak self] in self?.openComicReader(at: $0) }
         browserViewController.onUnsupportedFile = { [weak self] in self?.onUnsupportedFile?($0) }
         browserViewController.onGoUp = { [weak self] in self?.goBack() }
+        browserViewController.onPreheatTapped = { [weak self] in self?.toggleDirectoryPreheat() }
         readerCoordinator.onError = { [weak self] in self?.onError?($0, $1) }
         readerCoordinator.onMessageError = { [weak self] in self?.onMessageError?($0, $1) }
     }
@@ -81,6 +82,23 @@ final class LibraryCoordinator {
         preheatService.displayWidthProvider = {
             ScreenGeometry.mainScreenPixelWidth
         }
+        browserViewModel.preheatProgressProvider = { [preheatService] in
+            await preheatService.directoryPreheatProgress()
+        }
+    }
+
+    /// Toolbar preheat button: toggles the on-demand preheat of the
+    /// directory currently on screen (single level, .currentDirectory
+    /// priority). Only meaningful with a share connected.
+    private func toggleDirectoryPreheat() {
+        if preheatService.isDirectoryPreheatActive {
+            preheatService.cancelDirectoryPreheat()
+            browserViewModel.stopPreheatMonitoring()
+        } else {
+            guard currentShare != nil else { return }
+            preheatService.preheatDirectory(path: navigationPath.currentPath)
+            browserViewModel.startPreheatMonitoring()
+        }
     }
 
     private func beginNavigation() -> Int {
@@ -88,6 +106,10 @@ final class LibraryCoordinator {
         activeTask?.cancel()
         activeTask = nil
         readerCoordinator.cancelPendingOpen()
+        // Directory preheats are tied to the directory on screen: any
+        // navigation (switch folder, leave the share, open the reader)
+        // cancels the queue without touching userFolder work.
+        preheatService.cancelDirectoryPreheat()
         return navigationGeneration
     }
 

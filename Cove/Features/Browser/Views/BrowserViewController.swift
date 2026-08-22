@@ -16,6 +16,7 @@ final class BrowserViewController: NSViewController {
     var onOpenComic: ((_ path: String) -> Void)?
     var onUnsupportedFile: ((_ name: String) -> Void)?
     var onGoUp: (() -> Void)?
+    var onPreheatTapped: (() -> Void)?
 
     /// Real-thumbnail loader for image rows, injected by the coordinator
     /// once a share is connected; nil means "keep the symbol badges".
@@ -25,6 +26,8 @@ final class BrowserViewController: NSViewController {
     private let scrollView = NSScrollView()
     private let toolbarView = NSView()
     private let backButton = NSButton()
+    private let preheatButton = NSButton()
+    private let preheatProgressLabel = NSTextField(labelWithString: "")
     private let titleLabel = NSTextField(labelWithString: "")
     private let pathLabel = NSTextField(labelWithString: "")
     private let searchField = NSSearchField()
@@ -64,6 +67,22 @@ final class BrowserViewController: NSViewController {
         backButton.isEnabled = false
         backButton.setContentHuggingPriority(.required, for: .horizontal)
 
+        // "Preheat this folder" button: downloads the current directory's
+        // images (one level) into the cache in the background. Its state
+        // (idle / running with N/M progress / finished) is VM-driven.
+        preheatButton.bezelStyle = .circular
+        preheatButton.imagePosition = .imageOnly
+        preheatButton.title = ""
+        preheatButton.target = self
+        preheatButton.action = #selector(handlePreheatTapped)
+        preheatButton.isEnabled = false
+        preheatButton.setContentHuggingPriority(.required, for: .horizontal)
+
+        preheatProgressLabel.font = .systemFont(ofSize: 11)
+        preheatProgressLabel.textColor = .secondaryLabelColor
+        preheatProgressLabel.isHidden = true
+        preheatProgressLabel.setContentHuggingPriority(.required, for: .horizontal)
+
         pathLabel.font = .systemFont(ofSize: 11)
         pathLabel.textColor = .secondaryLabelColor
         pathLabel.lineBreakMode = .byTruncatingMiddle
@@ -78,6 +97,8 @@ final class BrowserViewController: NSViewController {
         searchField.isEnabled = false
 
         toolbarView.addSubview(backButton)
+        toolbarView.addSubview(preheatButton)
+        toolbarView.addSubview(preheatProgressLabel)
         toolbarView.addSubview(pathLabel)
         toolbarView.addSubview(titleLabel)
         toolbarView.addSubview(searchField)
@@ -86,8 +107,17 @@ final class BrowserViewController: NSViewController {
             make.centerY.equalToSuperview()
             make.size.equalTo(28)
         }
-        pathLabel.snp.makeConstraints { make in
+        preheatButton.snp.makeConstraints { make in
             make.leading.equalTo(backButton.snp.trailing).offset(8)
+            make.centerY.equalToSuperview()
+            make.size.equalTo(28)
+        }
+        preheatProgressLabel.snp.makeConstraints { make in
+            make.leading.equalTo(preheatButton.snp.trailing).offset(8)
+            make.centerY.equalToSuperview()
+        }
+        pathLabel.snp.makeConstraints { make in
+            make.leading.equalTo(preheatProgressLabel.snp.trailing).offset(8)
             make.centerY.equalToSuperview()
         }
         titleLabel.snp.makeConstraints { make in
@@ -141,11 +171,57 @@ final class BrowserViewController: NSViewController {
         pathLabel.stringValue = state.path
         pathLabel.toolTip = state.path
         backButton.isEnabled = state.canGoUp
+        renderPreheat(state.preheat)
         tableView.reloadData()
+    }
+
+    private func renderPreheat(_ preheat: BrowserViewModel.PreheatButtonState) {
+        switch preheat {
+        case .unavailable:
+            preheatButton.isEnabled = false
+            preheatButton.image = preheatSymbol("arrow.down.circle", description: "预热此文件夹")
+            preheatButton.toolTip = "预热此文件夹"
+            preheatProgressLabel.stringValue = ""
+            preheatProgressLabel.isHidden = true
+        case .ready:
+            preheatButton.isEnabled = true
+            preheatButton.image = preheatSymbol("arrow.down.circle", description: "预热此文件夹")
+            preheatButton.toolTip = "预热此文件夹"
+            preheatProgressLabel.stringValue = ""
+            preheatProgressLabel.isHidden = true
+        case .preheating(let completed, let total, let bytesPerSecond):
+            preheatButton.isEnabled = true
+            preheatButton.image = preheatSymbol("stop.circle", description: "取消预热")
+            preheatButton.toolTip = "取消预热"
+            preheatProgressLabel.isHidden = false
+            if total > 0 {
+                let rate = byteFormatter.string(fromByteCount: Int64(bytesPerSecond))
+                preheatProgressLabel.stringValue = "预热中 \(completed)/\(total) · \(rate)/s"
+            } else {
+                // Still enumerating the directory.
+                preheatProgressLabel.stringValue = "预热中…"
+            }
+        case .finished(let failed):
+            preheatButton.isEnabled = true
+            preheatButton.image = preheatSymbol("checkmark.circle", description: "预热完成")
+            preheatProgressLabel.isHidden = false
+            let text = failed > 0 ? "预热完成（\(failed) 个失败）" : "预热完成"
+            preheatButton.toolTip = text
+            preheatProgressLabel.stringValue = text
+        }
+    }
+
+    private func preheatSymbol(_ name: String, description: String) -> NSImage? {
+        NSImage(systemSymbolName: name, accessibilityDescription: description)?
+            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 15, weight: .semibold))
     }
 
     @objc private func handleGoUp() {
         onGoUp?()
+    }
+
+    @objc private func handlePreheatTapped() {
+        onPreheatTapped?()
     }
 
     @objc private func handleDoubleClick() {

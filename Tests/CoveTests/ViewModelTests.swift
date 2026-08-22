@@ -40,6 +40,121 @@ struct BrowserViewModelTests {
     }
 }
 
+@Suite("Browser preheat button")
+@MainActor
+struct BrowserPreheatTests {
+    private func progress(
+        total: Int, remaining: Int, failed: Int = 0, rate: Double = 1024
+    ) -> PreheatService.DirectoryPreheatProgress {
+        PreheatService.DirectoryPreheatProgress(
+            total: total, remaining: remaining, failed: failed, throughputBytesPerSecond: rate
+        )
+    }
+
+    @Test("the button is unavailable until a directory is displayed")
+    func initialState() {
+        let viewModel = BrowserViewModel()
+        #expect(viewModel.state.preheat == .unavailable)
+
+        viewModel.display(items: [], path: "/", title: "share")
+        #expect(viewModel.state.preheat == .ready)
+    }
+
+    @Test("monitoring reflects progress and stops once complete", .timeLimit(.minutes(1)))
+    func progressToFinished() async throws {
+        let viewModel = BrowserViewModel()
+        viewModel.display(items: [], path: "/", title: "share")
+        let script = ScriptedPreheatProgress([
+            progress(total: 4, remaining: 3),
+            progress(total: 4, remaining: 0),
+        ])
+        viewModel.preheatProgressProvider = { script.next() }
+
+        viewModel.startPreheatMonitoring()
+
+        try await waitUntil {
+            viewModel.state.preheat == .preheating(completed: 1, total: 4, bytesPerSecond: 1024)
+        }
+        try await waitUntil { viewModel.state.preheat == .finished(failed: 0) }
+
+        // Completion stops the polling loop.
+        let callsAtCompletion = script.callCount
+        try await Task.sleep(for: .milliseconds(700))
+        #expect(script.callCount == callsAtCompletion)
+    }
+
+    @Test("cancelling via the button returns to ready")
+    func cancelReturnsToReady() async throws {
+        let viewModel = BrowserViewModel()
+        viewModel.display(items: [], path: "/", title: "share")
+        let script = ScriptedPreheatProgress([progress(total: 4, remaining: 2)])
+        viewModel.preheatProgressProvider = { script.next() }
+        viewModel.startPreheatMonitoring()
+        try await waitUntil {
+            viewModel.state.preheat == .preheating(completed: 2, total: 4, bytesPerSecond: 1024)
+        }
+
+        viewModel.stopPreheatMonitoring()
+
+        #expect(viewModel.state.preheat == .ready)
+    }
+
+    @Test("a nil progress (service-side cancel) returns to ready and stops polling", .timeLimit(.minutes(1)))
+    func nilProgressStopsMonitoring() async throws {
+        let viewModel = BrowserViewModel()
+        viewModel.display(items: [], path: "/", title: "share")
+        let script = ScriptedPreheatProgress([progress(total: 4, remaining: 2), nil])
+        viewModel.preheatProgressProvider = { script.next() }
+        viewModel.startPreheatMonitoring()
+        try await waitUntil {
+            viewModel.state.preheat == .preheating(completed: 2, total: 4, bytesPerSecond: 1024)
+        }
+
+        try await waitUntil { viewModel.state.preheat == .ready }
+        let callsAtStop = script.callCount
+        try await Task.sleep(for: .milliseconds(700))
+        #expect(script.callCount == callsAtStop)
+    }
+
+    @Test("displaying a directory resets an active preheat and stops polling", .timeLimit(.minutes(1)))
+    func displayResetsPreheat() async throws {
+        let viewModel = BrowserViewModel()
+        viewModel.display(items: [], path: "/", title: "share")
+        let script = ScriptedPreheatProgress([progress(total: 4, remaining: 2)])
+        viewModel.preheatProgressProvider = { script.next() }
+        viewModel.startPreheatMonitoring()
+        try await waitUntil {
+            viewModel.state.preheat == .preheating(completed: 2, total: 4, bytesPerSecond: 1024)
+        }
+
+        viewModel.display(items: [], path: "/sub", title: "sub")
+
+        #expect(viewModel.state.preheat == .ready)
+        let callsAtReset = script.callCount
+        try await Task.sleep(for: .milliseconds(700))
+        #expect(script.callCount == callsAtReset)
+    }
+}
+
+/// Progress-provider double: answers with the scripted responses in order,
+/// repeating the last one, and counts calls so tests can assert the
+/// polling loop stopped.
+@MainActor
+private final class ScriptedPreheatProgress {
+    private var responses: [PreheatService.DirectoryPreheatProgress?]
+    private(set) var callCount = 0
+
+    init(_ responses: [PreheatService.DirectoryPreheatProgress?]) {
+        self.responses = responses
+    }
+
+    func next() -> PreheatService.DirectoryPreheatProgress? {
+        callCount += 1
+        guard responses.count > 1 else { return responses.first ?? nil }
+        return responses.removeFirst()
+    }
+}
+
 @Suite("Server presentation")
 @MainActor
 struct ServerViewModelTests {
