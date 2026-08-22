@@ -18,7 +18,8 @@ Everything else comes later.
 - Double-click a share card to browse it: directories, navigation into
   folders and back up (the back button returns to the share grid from the
   share root). The window title shows the current path while browsing.
-- `.DS_Store` and AppleDouble (`._*`) files are hidden.
+- Dot-prefixed entries (`.DS_Store`, AppleDouble `._*`, tool metadata files)
+  and `__MACOSX` folders are hidden.
 - Files are classified by type (video / image / pdf / comic / text / other)
   and shown with type icons. Image files get real thumbnails (square
   center-crop at 160 px) loaded through the same two-pool disk cache as the
@@ -34,11 +35,15 @@ Everything else comes later.
   reader: the archive is cached whole in the original pool, its image entries
   are sorted naturally (`1, 2, …, 10`), and pages decode into the display
   pool one at a time. (`.cbr`/`.cbt` are not supported yet.)
-- Optional preheating is limited to user-configured folders. Those folders
-  are enumerated breadth-first (image files only, capped at 5000 files) and
-  warmed over a dedicated SMB connection, so bulk reads never stall
-  browsing; the pipeline can be rate-limited. Current-directory and
-  reader-page preheating remain deferred until the adjacent-page design.
+- Preheating downloads originals into the local cache ahead of reading. The
+  browser toolbar has a "preheat this folder" button that warms the current
+  folder including its subfolders (breadth-first, capped at 5000 files / 1000
+  directories) with live progress and one-click cancel; navigation cancels it
+  automatically. Optional background preheating of user-configured folders is
+  also available; those folders are enumerated breadth-first (image files
+  only) and warmed over a dedicated SMB connection, so bulk reads never stall
+  browsing; the pipeline can be rate-limited. Automatic adjacent-page
+  preheating in the reader remains deferred.
 - Settings (app menu → 设置…, Cmd+,): cache budget (GB) and TTL (days) with
   live per-pool usage and a clear-now button; preheat on/off, rate limit
   (MB/s, 0 = unlimited), and the preheat folder list. Folder entries include
@@ -109,7 +114,7 @@ identifier in `project.yml` (`PRODUCT_BUNDLE_IDENTIFIER`).
 
 - `Cove/` — the app target. Pure AppKit (no SwiftUI), no storyboards; layout
   constraints are written with [SnapKit](https://github.com/SnapKit/SnapKit)
-  (Interface layer only).
+  (Features views and SharedUI only).
   - `Application/` — `main.swift` + `AppDelegate`, manual wiring.
   - `Features/` — feature-scoped AppKit views and `@MainActor` view models.
     The Reader feature now keeps its paging/loading state in a view model;
@@ -124,16 +129,15 @@ identifier in `project.yml` (`PRODUCT_BUNDLE_IDENTIFIER`).
   - `SharedUI/` — reusable AppKit components shared by multiple features.
   - `Tests/CoveTests/` — app-target Swift Testing coverage for ViewModels and
     concurrency-sensitive presentation behavior.
-  - `Interface/` — window & view controllers (never touches AMSMB2 directly).
   - `Resources/` — `Info.plist`, sandbox entitlements.
 - `Frameworks/` — local Swift packages:
   - `TraceKit` — thin `os_log` wrapper, zero dependencies.
   - `KeychainKit` — thin `SecItem` wrapper, zero dependencies.
   - `SourceKit` — `ContentSource` protocol (list / metadata / ranged reads,
     with a default whole-file read) + `SMBSource` (share-level sessions, an
-    actor) + `SMBServer` (server-level share enumeration) + the
-    `smb-spike` executable. The only place that imports
-    [AMSMB2](https://github.com/amosavian/AMSMB2).
+    actor) + `SMBServer` (server-level share enumeration) + the shared
+    natural-order comparator + the `smb-spike` executable. The only place
+    that imports [AMSMB2](https://github.com/amosavian/AMSMB2).
   - `ImagePipeline` — image decoding with on-demand downsampling (thin
     ImageIO wrapper, zero dependencies).
   - `CacheKit` — two-pool on-disk cache (original / display) with LRU

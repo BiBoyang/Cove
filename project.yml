@@ -67,8 +67,8 @@ targets:
         # distribution / notarization. Empty team + Automatic signing means
         # "Sign to Run Locally" (ad hoc), which is fine for development only.
         DEVELOPMENT_TEAM: ""
-        MARKETING_VERSION: "0.2.0"
-        CURRENT_PROJECT_VERSION: "2"
+        MARKETING_VERSION: "0.3.0"
+        CURRENT_PROJECT_VERSION: "3"
   CoveTests:
     type: bundle.unit-test
     platform: macOS
