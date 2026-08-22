@@ -21,7 +21,7 @@ final class LibraryCoordinator {
 
     private var currentServer: ServerConfig?
     private var currentShare: String?
-    private var pathStack: [String] = ["/"]
+    private var navigationPath = LibraryNavigationPath()
     private var activeAddServerSheet: AddServerSheetController?
     private var navigationGeneration = 0
     private var activeTask: Task<Void, Never>?
@@ -127,7 +127,7 @@ final class LibraryCoordinator {
         _ = beginNavigation()
         currentServer = nil
         currentShare = nil
-        pathStack = ["/"]
+        navigationPath.reset()
         onTitleChange?("Cove")
         browserViewController.thumbnailProvider = nil
         shareGridViewModel.showPlaceholder("双击左侧服务器以连接")
@@ -167,7 +167,7 @@ final class LibraryCoordinator {
                 try await sessionService.connect(to: server, share: share.name)
                 guard generation == navigationGeneration else { return }
                 currentShare = share.name
-                pathStack = ["/"]
+                navigationPath.reset()
                 onTitleChange?("\(server.displayName) / \(share.name)")
                 if let sourceID = sessionService.currentSourceID {
                     browserViewController.thumbnailProvider = ThumbnailService(
@@ -186,35 +186,35 @@ final class LibraryCoordinator {
 
     private func navigateInto(_ path: String) {
         let generation = beginNavigation()
-        pathStack.append(path)
+        navigationPath.navigateInto(path)
         activeTask = Task {
             do {
                 try await loadDirectory(at: path, generation: generation)
             } catch {
                 if Task.isCancelled || error is CancellationError { return }
                 guard generation == navigationGeneration else { return }
-                pathStack.removeLast()
+                navigationPath.rollbackInto()
                 onError?(error, "打开目录失败")
             }
         }
     }
 
     private func goBack() {
-        guard pathStack.count > 1 else {
+        switch navigationPath.backDestination {
+        case .shareGrid:
             backToShareGrid()
-            return
-        }
-        let generation = beginNavigation()
-        let popped = pathStack.removeLast()
-        let target = pathStack.last ?? "/"
-        activeTask = Task {
-            do {
-                try await loadDirectory(at: target, generation: generation)
-            } catch {
-                if Task.isCancelled || error is CancellationError { return }
-                guard generation == navigationGeneration else { return }
-                pathStack.append(popped)
-                onError?(error, "打开目录失败")
+        case .directory(let target):
+            let generation = beginNavigation()
+            let popped = navigationPath.goBack()
+            activeTask = Task {
+                do {
+                    try await loadDirectory(at: target, generation: generation)
+                } catch {
+                    if Task.isCancelled || error is CancellationError { return }
+                    guard generation == navigationGeneration else { return }
+                    navigationPath.restoreAfterFailedGoBack(popped)
+                    onError?(error, "打开目录失败")
+                }
             }
         }
     }
@@ -222,7 +222,7 @@ final class LibraryCoordinator {
     private func backToShareGrid() {
         _ = beginNavigation()
         currentShare = nil
-        pathStack = ["/"]
+        navigationPath.reset()
         onTitleChange?(currentServer?.displayName ?? "Cove")
         browserViewController.thumbnailProvider = nil
         onShowDetail?(shareGridViewController)
@@ -232,7 +232,7 @@ final class LibraryCoordinator {
     private func loadDirectory(at path: String, generation: Int) async throws {
         let items = try await sessionService.list(at: path)
         guard generation == navigationGeneration else { throw CancellationError() }
-        let title = path == "/" ? (currentShare ?? "/") : (path as NSString).lastPathComponent
+        let title = LibraryNavigationPath.browserTitle(forPath: path, shareName: currentShare)
         browserViewModel.display(items: items, path: path, title: title)
     }
 
@@ -266,6 +266,68 @@ final class LibraryCoordinator {
 
     private func makeFileReader() -> @Sendable (String) async throws -> Data {
         sessionService.makeFileReader()
+    }
+}
+
+/// Pure value-type navigation state for the library browser's path stack.
+///
+/// Factored out of LibraryCoordinator so the optimistic push/pop rules and
+/// their failure rollbacks are unit-testable without AppKit or an SMB
+/// session. The stack is always rooted at "/"; `goBack` from the root means
+/// leaving the share (back to the share grid), which the coordinator turns
+/// into a disconnect. The browser-pane title rule lives here too because it
+/// is path semantics — the root shows the share name, a subdirectory its
+/// folder name — while window titles involving the server display name stay
+/// in the coordinator with the session state they read.
+struct LibraryNavigationPath: Equatable, Sendable {
+    private(set) var stack: [String] = ["/"]
+
+    /// Where `goBack` leads from the current directory.
+    enum BackDestination: Equatable, Sendable {
+        /// At the share root: leaving the share, back to the share grid.
+        case shareGrid
+        /// The parent directory path to load.
+        case directory(String)
+    }
+
+    var currentPath: String { stack.last ?? "/" }
+
+    var backDestination: BackDestination {
+        stack.count > 1 ? .directory(stack[stack.count - 2]) : .shareGrid
+    }
+
+    /// Optimistic push into a subdirectory; pair with `rollbackInto()` when
+    /// the directory load fails.
+    mutating func navigateInto(_ path: String) {
+        stack.append(path)
+    }
+
+    /// Rolls back a failed `navigateInto`.
+    mutating func rollbackInto() {
+        if stack.count > 1 { stack.removeLast() }
+    }
+
+    /// Optimistic pop for `goBack`; returns the popped path so a failed
+    /// parent load can restore it via `restoreAfterFailedGoBack(_:)`.
+    /// Call only when `backDestination` is `.directory`.
+    mutating func goBack() -> String {
+        stack.removeLast()
+    }
+
+    /// Restores the path popped by `goBack()` after the parent load failed.
+    mutating func restoreAfterFailedGoBack(_ popped: String) {
+        stack.append(popped)
+    }
+
+    /// Back to a fresh share root (share switch, disconnect, reset).
+    mutating func reset() {
+        stack = ["/"]
+    }
+
+    /// Browser pane title for `path`: the share name at the root, the
+    /// directory name below it.
+    static func browserTitle(forPath path: String, shareName: String?) -> String {
+        path == "/" ? (shareName ?? "/") : (path as NSString).lastPathComponent
     }
 }
 

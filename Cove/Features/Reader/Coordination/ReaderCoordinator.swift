@@ -20,6 +20,14 @@ final class ReaderCoordinator: NSObject {
     var onError: ((_ error: Error, _ title: String) -> Void)?
     var onMessageError: ((_ message: String, _ title: String) -> Void)?
 
+    /// Presentation seam: production shows the reader window; tests
+    /// substitute a recorder to observe what an open intent would present.
+    /// Its two consumers are the production default and tests, nothing else.
+    /// (Lazy so the default may weakly capture the fully-initialized self.)
+    lazy var presentContent: @MainActor (ReaderContent, Int, String) -> Void = { [weak self] content, startIndex, sourceID in
+        self?.present(content: content, startIndex: startIndex, sourceID: sourceID)
+    }
+
     init(cache: CacheStore) {
         self.cache = cache
         super.init()
@@ -50,7 +58,7 @@ final class ReaderCoordinator: NSObject {
             cache: cache,
             sourceID: sourceID
         )
-        present(content: content, startIndex: startIndex, sourceID: sourceID)
+        presentContent(content, startIndex, sourceID)
     }
 
     func openComic(
@@ -72,7 +80,7 @@ final class ReaderCoordinator: NSObject {
                 )
                 guard generation == openGeneration, isSourceCurrent() else { return }
                 openTask = nil
-                present(content: content, startIndex: 0, sourceID: sourceID)
+                presentContent(content, 0, sourceID)
             } catch {
                 if Task.isCancelled || error is CancellationError { return }
                 guard generation == openGeneration else { return }

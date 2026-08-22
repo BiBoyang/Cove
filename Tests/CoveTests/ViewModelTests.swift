@@ -1,3 +1,4 @@
+import CacheKit
 import CoreGraphics
 import Foundation
 import ReaderKit
@@ -353,5 +354,255 @@ private actor DelayedReaderLoader: ReaderPageLoading {
             shouldInterpolate: false,
             intent: .defaultIntent
         )!
+    }
+}
+
+@Suite("Library navigation path")
+struct LibraryNavigationPathTests {
+    @Test("navigateInto pushes optimistically and rolls back on failure")
+    func navigateIntoRollback() {
+        var path = LibraryNavigationPath()
+        path.navigateInto("/docs")
+        #expect(path.currentPath == "/docs")
+        #expect(path.backDestination == .directory("/"))
+
+        path.rollbackInto()
+        #expect(path.stack == ["/"])
+    }
+
+    @Test("goBack pops to the parent and restores the pop on failure")
+    func goBackRestore() {
+        var path = LibraryNavigationPath()
+        path.navigateInto("/a")
+        path.navigateInto("/a/b")
+        #expect(path.backDestination == .directory("/a"))
+
+        let popped = path.goBack()
+        #expect(popped == "/a/b")
+        #expect(path.currentPath == "/a")
+
+        path.restoreAfterFailedGoBack(popped)
+        #expect(path.stack == ["/", "/a", "/a/b"])
+    }
+
+    @Test("goBack at the share root means leaving to the share grid")
+    func goBackAtRoot() {
+        let path = LibraryNavigationPath()
+        #expect(path.backDestination == .shareGrid)
+    }
+
+    @Test("reset returns to the share root")
+    func resetToRoot() {
+        var path = LibraryNavigationPath()
+        path.navigateInto("/a")
+        path.reset()
+        #expect(path.stack == ["/"])
+        #expect(path.backDestination == .shareGrid)
+    }
+
+    @Test("browser title is the share name at the root, folder name below")
+    func browserTitle() {
+        #expect(LibraryNavigationPath.browserTitle(forPath: "/", shareName: "media") == "media")
+        #expect(LibraryNavigationPath.browserTitle(forPath: "/", shareName: nil) == "/")
+        #expect(LibraryNavigationPath.browserTitle(forPath: "/docs/comics", shareName: "media") == "comics")
+    }
+}
+
+@Suite("Reader open coordination")
+@MainActor
+struct ReaderCoordinatorTests {
+    private func comicItem(_ name: String, size: Int64) -> ContentItem {
+        ContentItem(name: name, path: "/\(name)", isDirectory: false, size: size, modifiedDate: nil)
+    }
+
+    @Test("a rapid re-open presents only the newer comic", .timeLimit(.minutes(1)))
+    func rapidReopenPresentsOnlyNewer() async throws {
+        let coordinator = ReaderCoordinator(cache: makeTestCache())
+        let presented = Mutex<[[String]]>([])
+        coordinator.presentContent = { content, _, _ in
+            presented.withLock { $0.append(content.pages.map(\.id)) }
+        }
+
+        // Old open parks inside its archive read (a slow network fetch that,
+        // like real IO, ignores task cancellation); the new open is instant.
+        let slowA = GatedFileReader(payload: makeTestCBZBytes(page: "a1.jpg"))
+        let bytesB = makeTestCBZBytes(page: "b1.jpg")
+        coordinator.openComic(
+            item: comicItem("a.cbz", size: Int64(slowA.payload.count)),
+            sourceID: "s",
+            fileReader: { path in try await slowA.read(path) },
+            isSourceCurrent: { true }
+        )
+        await slowA.waitUntilStarted()
+        coordinator.openComic(
+            item: comicItem("b.cbz", size: Int64(bytesB.count)),
+            sourceID: "s",
+            fileReader: { _ in bytesB },
+            isSourceCurrent: { true }
+        )
+
+        try await waitUntil { !presented.withLock { $0 }.isEmpty }
+        #expect(presented.withLock { $0 } == [["/b.cbz!b1.jpg"]])
+
+        // The stale read finishes after the newer open already landed; its
+        // content must never be presented.
+        slowA.release()
+        try await Task.sleep(for: .milliseconds(100))
+        for _ in 0 ..< 10 { await Task.yield() }
+        #expect(presented.withLock { $0 } == [["/b.cbz!b1.jpg"]])
+    }
+
+    @Test("a cancelled open never presents once its slow read finishes", .timeLimit(.minutes(1)))
+    func cancelledOpenDoesNotPresent() async throws {
+        let coordinator = ReaderCoordinator(cache: makeTestCache())
+        let presented = Mutex<[[String]]>([])
+        let errors = Mutex<[String]>([])
+        coordinator.presentContent = { content, _, _ in
+            presented.withLock { $0.append(content.pages.map(\.id)) }
+        }
+        coordinator.onError = { _, title in
+            errors.withLock { $0.append(title) }
+        }
+
+        let slow = GatedFileReader(payload: makeTestCBZBytes(page: "a1.jpg"))
+        coordinator.openComic(
+            item: comicItem("a.cbz", size: Int64(slow.payload.count)),
+            sourceID: "s",
+            fileReader: { path in try await slow.read(path) },
+            isSourceCurrent: { true }
+        )
+        await slow.waitUntilStarted()
+
+        coordinator.cancelPendingOpen()
+        slow.release()
+
+        // Give the stale task every chance to run to completion.
+        try await Task.sleep(for: .milliseconds(100))
+        for _ in 0 ..< 10 { await Task.yield() }
+
+        #expect(presented.withLock { $0 }.isEmpty)
+        // Cancellation is silent: no error surfaces for a cancelled open.
+        #expect(errors.withLock { $0 }.isEmpty)
+    }
+}
+
+/// Cache store rooted at a fresh temp directory, for coordinator tests.
+private func makeTestCache() -> CacheStore {
+    CacheStore(
+        rootDirectory: FileManager.default.temporaryDirectory
+            .appendingPathComponent("CoveTests-\(UUID().uuidString)", isDirectory: true),
+        capacityBytes: 16 * 1024 * 1024,
+        ttl: 3600
+    )
+}
+
+/// Builds genuine CBZ bytes (a minimal ZIP of stored entries) by hand —
+/// CoveTests may not import ZIPFoundation, so ComicKit's real parser is
+/// exercised against archive bytes it did not write.
+private func makeTestCBZBytes(page: String) -> Data {
+    let payload = Data("page".utf8)
+    let name = Data(page.utf8)
+    let crc = crc32(payload)
+
+    var zip = Data()
+    // Local file header (stored, no compression, no data descriptor).
+    zip.appendLE32(0x0403_4B50)
+    zip.appendLE16(20)
+    zip.appendLE16(0)
+    zip.appendLE16(0)
+    zip.appendLE16(0)
+    zip.appendLE16(0)
+    zip.appendLE32(crc)
+    zip.appendLE32(UInt32(payload.count))
+    zip.appendLE32(UInt32(payload.count))
+    zip.appendLE16(UInt16(name.count))
+    zip.appendLE16(0)
+    zip.append(name)
+    zip.append(payload)
+
+    let centralOffset = UInt32(zip.count)
+    var central = Data()
+    central.appendLE32(0x0201_4B50)
+    central.appendLE16(20)
+    central.appendLE16(20)
+    central.appendLE16(0)
+    central.appendLE16(0)
+    central.appendLE16(0)
+    central.appendLE16(0)
+    central.appendLE32(crc)
+    central.appendLE32(UInt32(payload.count))
+    central.appendLE32(UInt32(payload.count))
+    central.appendLE16(UInt16(name.count))
+    central.appendLE16(0)
+    central.appendLE16(0)
+    central.appendLE16(0)
+    central.appendLE16(0)
+    central.appendLE32(0)
+    central.appendLE32(0)
+    central.append(name)
+    zip.append(central)
+
+    // End of central directory.
+    zip.appendLE32(0x0605_4B50)
+    zip.appendLE16(0)
+    zip.appendLE16(0)
+    zip.appendLE16(1)
+    zip.appendLE16(1)
+    zip.appendLE32(UInt32(central.count))
+    zip.appendLE32(centralOffset)
+    zip.appendLE16(0)
+    return zip
+}
+
+/// CRC-32 (ISO 3309, as ZIP uses), table-free — test payloads are tiny.
+private func crc32(_ data: Data) -> UInt32 {
+    var crc: UInt32 = 0xFFFF_FFFF
+    for byte in data {
+        crc ^= UInt32(byte)
+        for _ in 0 ..< 8 {
+            crc = (crc >> 1) ^ ((crc & 1) != 0 ? 0xEDB8_8320 : 0)
+        }
+    }
+    return crc ^ 0xFFFF_FFFF
+}
+
+extension Data {
+    fileprivate mutating func appendLE16(_ value: UInt16) {
+        append(UInt8(value & 0xFF))
+        append(UInt8(value >> 8))
+    }
+
+    fileprivate mutating func appendLE32(_ value: UInt32) {
+        append(UInt8(value & 0xFF))
+        append(UInt8((value >> 8) & 0xFF))
+        append(UInt8((value >> 16) & 0xFF))
+        append(UInt8(value >> 24))
+    }
+}
+
+/// fileReader double whose read parks until the test releases it —
+/// modelling a slow network fetch that, like real IO, ignores task
+/// cancellation.
+private final class GatedFileReader: Sendable {
+    let payload: Data
+    private let started = DispatchSemaphore(value: 0)
+    private let gate = DispatchSemaphore(value: 0)
+
+    init(payload: Data) {
+        self.payload = payload
+    }
+
+    func waitUntilStarted() async {
+        await Task.detached(priority: .utility) { self.started.wait() }.value
+    }
+
+    func release() {
+        gate.signal()
+    }
+
+    func read(_ path: String) async throws -> Data {
+        started.signal()
+        gate.wait()
+        return payload
     }
 }
