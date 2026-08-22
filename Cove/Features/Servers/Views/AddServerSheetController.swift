@@ -4,12 +4,9 @@ import SnapKit
 /// Servers feature modal sheet collecting server address / username / password.
 @MainActor
 final class AddServerSheetController: NSWindowController {
-    struct FormResult {
-        let host: String
-        let username: String
-        let password: String
-    }
+    typealias FormResult = AddServerViewModel.FormResult
 
+    private let viewModel = AddServerViewModel()
     private let hostField = NSTextField()
     private let usernameField = NSTextField()
     private let passwordField = NSSecureTextField()
@@ -102,17 +99,16 @@ final class AddServerSheetController: NSWindowController {
     }
 
     @objc private func confirm() {
-        let host = hostField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        let username = usernameField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !host.isEmpty else {
-            showHint("请填写服务器地址")
-            return
+        switch viewModel.submit(
+            host: hostField.stringValue,
+            username: usernameField.stringValue,
+            password: passwordField.stringValue
+        ) {
+        case .success(let result):
+            close(with: result)
+        case .failure(let error):
+            showHint(error.message)
         }
-        guard !username.isEmpty else {
-            showHint("请填写用户名")
-            return
-        }
-        close(with: FormResult(host: host, username: username, password: passwordField.stringValue))
     }
 
     @objc private func cancel() {

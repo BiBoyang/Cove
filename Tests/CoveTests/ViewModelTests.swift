@@ -70,6 +70,42 @@ struct ServerViewModelTests {
     }
 }
 
+@Suite("Add server validation")
+@MainActor
+struct AddServerViewModelTests {
+    @Test("trims host and username, passes the password through")
+    func trimsInput() {
+        let viewModel = AddServerViewModel()
+        let result = viewModel.submit(host: "  nas.local\n", username: "\tuser ", password: " p ")
+
+        #expect(result == .success(.init(host: "nas.local", username: "user", password: " p ")))
+    }
+
+    @Test("rejects an empty or whitespace-only host")
+    func emptyHost() {
+        let viewModel = AddServerViewModel()
+
+        #expect(viewModel.submit(host: "", username: "user", password: "") == .failure(.emptyHost))
+        #expect(viewModel.submit(host: "  \n ", username: "user", password: "") == .failure(.emptyHost))
+    }
+
+    @Test("rejects an empty or whitespace-only username")
+    func emptyUsername() {
+        let viewModel = AddServerViewModel()
+
+        #expect(viewModel.submit(host: "nas", username: "", password: "") == .failure(.emptyUsername))
+        #expect(viewModel.submit(host: "nas", username: "  ", password: "") == .failure(.emptyUsername))
+    }
+
+    @Test("accepts a fully filled form")
+    func valid() {
+        let viewModel = AddServerViewModel()
+        let result = viewModel.submit(host: "192.168.1.10", username: "admin", password: "secret")
+
+        #expect(result == .success(.init(host: "192.168.1.10", username: "admin", password: "secret")))
+    }
+}
+
 @Suite("Preferences presentation")
 @MainActor
 struct PreferencesViewModelTests {
