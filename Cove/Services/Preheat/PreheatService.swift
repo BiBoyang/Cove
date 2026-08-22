@@ -1,3 +1,4 @@
+import CacheKit
 import Foundation
 import PreheatKit
 import SourceKit
@@ -12,15 +13,15 @@ import TraceKit
 /// entries naming another share are skipped, and nothing auto-connects at
 /// launch. Directory-level preheating is deliberately off in A1.
 @MainActor
-final class PreheatService: NSObject {
-    static let shared = PreheatService()
-
+final class PreheatService {
     /// Supplies the display-variant width (screen backing pixels) used for
     /// display-pool keys. Set by the window layer at startup; evaluated on
     /// the main actor each time a scheduler is built.
     var displayWidthProvider: @MainActor () -> Int = { 3024 }
 
     private let logger = TraceLogger(category: "preheat.service")
+    private let settings: SettingsService
+    private let cacheStore: CacheStore
     private var scheduler: PreheatScheduler?
     /// The live preheat connection and the share it points at.
     private var connection: (source: any ContentSource, share: String)?
@@ -30,14 +31,12 @@ final class PreheatService: NSObject {
     /// not re-enumerate the NAS.
     private var submittedFolders: [String] = []
 
-    private override init() {
-        super.init()
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(settingsDidChange),
-            name: SettingsService.didChange,
-            object: nil
-        )
+    init(settings: SettingsService, cacheStore: CacheStore) {
+        self.settings = settings
+        self.cacheStore = cacheStore
+        settings.addChangeObserver { [weak self] in
+            self?.settingsDidChange()
+        }
     }
 
     // MARK: - Connection lifecycle (called by the coordinator)
@@ -58,8 +57,7 @@ final class PreheatService: NSObject {
 
     // MARK: - Settings
 
-    @objc private func settingsDidChange() {
-        let settings = SettingsService.shared
+    private func settingsDidChange() {
         if settings.preheatEnabled {
             // A live scheduler adopts the new limit without losing its queue.
             if scheduler == nil { rebuildScheduler() }
@@ -84,13 +82,12 @@ final class PreheatService: NSObject {
 
     private func rebuildScheduler() {
         teardownScheduler()
-        let settings = SettingsService.shared
         guard settings.preheatEnabled, let connection else { return }
         // Fixed per scheduler, like the reader fixes its width per session.
         let width = max(1, displayWidthProvider())
         scheduler = PreheatScheduler(
             source: connection.source,
-            cache: CacheService.shared.store,
+            cache: cacheStore,
             displayWidthProvider: { width },
             maxConcurrent: 2,
             rateLimitBytesPerSecond: Self.rateLimitBytes(from: settings)
@@ -102,7 +99,6 @@ final class PreheatService: NSObject {
     /// runs on the preheat connection, so it never stalls browsing.
     private func submitUserFolders() {
         folderTask?.cancel()
-        let settings = SettingsService.shared
         guard let scheduler, let connection, settings.preheatEnabled else { return }
         let folders = settings.preheatFolders
         submittedFolders = folders

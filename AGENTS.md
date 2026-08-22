@@ -18,7 +18,7 @@ Frameworks/              # 本地 SPM 包
 ├── KeychainKit/         # SecItem 薄封装（零依赖）
 ├── SourceKit/           # ContentSource 协议（list/metadata/ranged read）+ SMBSource（share 级会话，actor）+ SMBServer（共享枚举）+ NaturalSort（共享自然排序）+ smb-spike 命令行工具
 ├── ImagePipeline/       # 图片解码 + 按需降采样（ImageIO/CGImageSource 薄封装，零三方依赖）
-├── CacheKit/            # 磁盘双池缓存（original/display）+ LRU + TTL，容量/TTL 可运行时调整（仅依赖本地 TraceKit，零三方依赖）
+├── CacheKit/            # 磁盘双池缓存（original/display）+ LRU + TTL，容量/TTL 可运行时调整（仅依赖本地 TraceKit 与系统框架 CryptoKit，零三方依赖）
 ├── PreheatKit/          # 预热调度器：优先级队列 + 令牌桶限速 + 文件夹 BFS 枚举（依赖 SourceKit/CacheKit/ImagePipeline/TraceKit）
 ├── ComicKit/            # CBZ 漫画包：内存 ZIP 解析 + 图片 entry 过滤/自然排序 + 线程安全抽取（依赖 SourceKit + ZIPFoundation）
 └── ReaderKit/            # Reader 领域核心：有序页面模型 + 原始页数据源协议（仅依赖 Foundation）

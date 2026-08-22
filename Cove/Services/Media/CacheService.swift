@@ -11,9 +11,7 @@ import Foundation
 /// Rooted in the user's Caches directory under the app bundle identifier.
 /// (Sandboxed, so this resolves to the app container's Caches directory.)
 @MainActor
-final class CacheService: NSObject {
-    static let shared = CacheService()
-
+final class CacheService {
     /// The cache root directory; exposed for tests/debugging.
     static let rootDirectory: URL = {
         let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
@@ -21,27 +19,23 @@ final class CacheService: NSObject {
     }()
 
     let store: CacheStore
+    private let settings: SettingsService
 
-    private override init() {
-        let settings = SettingsService.shared
+    init(settings: SettingsService) {
+        self.settings = settings
         store = CacheStore(
             rootDirectory: Self.rootDirectory,
             capacityBytes: settings.cacheCapacityBytes,
             ttl: settings.cacheTTL
         )
-        super.init()
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(settingsDidChange),
-            name: SettingsService.didChange,
-            object: nil
-        )
+        settings.addChangeObserver { [weak self] in
+            self?.settingsDidChange()
+        }
         // Sweep expired entries and LRU overflow off the critical path.
         sweepInBackground()
     }
 
-    @objc private func settingsDidChange() {
-        let settings = SettingsService.shared
+    private func settingsDidChange() {
         store.setPolicy(capacityBytes: settings.cacheCapacityBytes, ttl: settings.cacheTTL)
         // A shrunken budget/TTL only takes effect on disk after eviction.
         sweepInBackground()

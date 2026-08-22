@@ -3,14 +3,12 @@ import Foundation
 /// Settings service backed by UserDefaults (cache budget, preheat behavior).
 ///
 /// Only non-secret values live here — credentials stay in the Keychain
-/// (AGENTS.md rule 4). Every mutation posts `SettingsService.didChange`;
-/// interested services observe it and re-apply their policy live.
+/// (AGENTS.md rule 4). Every mutation notifies observers registered via
+/// `addChangeObserver`; interested services re-apply their policy live.
 @MainActor
 final class SettingsService {
-    static let shared = SettingsService()
-
-    /// Posted on the main actor after any setting changes.
-    static let didChange = Notification.Name("CoveSettingsDidChange")
+    /// Observers invoked on the main actor after any setting changes.
+    private var changeObservers: [@MainActor () -> Void] = []
 
     private enum Keys {
         static let cacheCapacityGB = "cove.settings.cacheCapacityGB"
@@ -22,7 +20,7 @@ final class SettingsService {
 
     private let defaults: UserDefaults
 
-    private init(defaults: UserDefaults = .standard) {
+    init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         defaults.register(defaults: [
             Keys.cacheCapacityGB: 20,
@@ -66,7 +64,16 @@ final class SettingsService {
     var cacheCapacityBytes: Int64 { Int64(cacheCapacityGB) * 1024 * 1024 * 1024 }
     var cacheTTL: TimeInterval { TimeInterval(cacheTTLDays) * 24 * 60 * 60 }
 
+    /// Registers an observer called on the main actor after any setting
+    /// mutation. Retained for the lifetime of this service; observers
+    /// should capture their owner weakly.
+    func addChangeObserver(_ observer: @escaping @MainActor () -> Void) {
+        changeObservers.append(observer)
+    }
+
     private func post() {
-        NotificationCenter.default.post(name: Self.didChange, object: nil)
+        for observer in changeObservers {
+            observer()
+        }
     }
 }

@@ -11,14 +11,7 @@ final class MainWindowController: NSWindowController {
     private let splitViewController = NSSplitViewController()
     private let sidebarItem: NSSplitViewItem
 
-    init() {
-        let cache = CacheService.shared.store
-        let readerCoordinator = ReaderCoordinator(cache: cache)
-        let libraryCoordinator = LibraryCoordinator(
-            sessionService: SMBSessionService(),
-            cache: cache,
-            readerCoordinator: readerCoordinator
-        )
+    init(libraryCoordinator: LibraryCoordinator) {
         self.libraryCoordinator = libraryCoordinator
 
         sidebarItem = NSSplitViewItem(sidebarWithViewController: libraryCoordinator.serverListViewController)

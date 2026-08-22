@@ -5,10 +5,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Retained for the app lifetime; the window itself closes and reopens
     /// freely (`isReleasedWhenClosed = false`).
     private var preferencesWindowController: PreferencesWindowController?
+    /// The app's single composition root owns the service graph; the
+    /// preheat service is retained transitively by the library coordinator.
+    private var settingsService: SettingsService?
+    private var cacheService: CacheService?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         installMainMenu()
-        let controller = MainWindowController()
+        let settingsService = SettingsService()
+        let cacheService = CacheService(settings: settingsService)
+        let preheatService = PreheatService(settings: settingsService, cacheStore: cacheService.store)
+        let sessionService = SMBSessionService()
+        let readerCoordinator = ReaderCoordinator(cache: cacheService.store)
+        let libraryCoordinator = LibraryCoordinator(
+            sessionService: sessionService,
+            cache: cacheService.store,
+            readerCoordinator: readerCoordinator,
+            preheatService: preheatService
+        )
+        self.settingsService = settingsService
+        self.cacheService = cacheService
+        let controller = MainWindowController(libraryCoordinator: libraryCoordinator)
         controller.showWindow(nil)
         mainWindowController = controller
     }
@@ -60,9 +77,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @MainActor @objc private func showPreferences(_ sender: Any?) {
         if preferencesWindowController == nil {
+            guard let settingsService, let cacheService else { return }
             let viewModel = PreferencesViewModel(
-                settings: SettingsService.shared,
-                cache: PreferencesCacheAdapter(store: CacheService.shared.store)
+                settings: settingsService,
+                cache: PreferencesCacheAdapter(store: cacheService.store)
             )
             preferencesWindowController = PreferencesWindowController(viewModel: viewModel)
         }

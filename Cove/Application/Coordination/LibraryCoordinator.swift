@@ -10,6 +10,7 @@ final class LibraryCoordinator {
     private let sessionService: SMBSessionService
     private let cache: CacheStore
     private let readerCoordinator: ReaderCoordinator
+    private let preheatService: PreheatService
 
     private let serverListViewModel = ServerListViewModel()
     private let shareGridViewModel = ShareGridViewModel()
@@ -33,10 +34,16 @@ final class LibraryCoordinator {
     var onMessageError: ((_ message: String, _ title: String) -> Void)?
     var onUnsupportedFile: ((_ name: String) -> Void)?
 
-    init(sessionService: SMBSessionService, cache: CacheStore, readerCoordinator: ReaderCoordinator) {
+    init(
+        sessionService: SMBSessionService,
+        cache: CacheStore,
+        readerCoordinator: ReaderCoordinator,
+        preheatService: PreheatService
+    ) {
         self.sessionService = sessionService
         self.cache = cache
         self.readerCoordinator = readerCoordinator
+        self.preheatService = preheatService
         serverListViewController = ServerListViewController(viewModel: serverListViewModel)
         shareGridViewController = ShareGridViewController(viewModel: shareGridViewModel)
         browserViewController = BrowserViewController(viewModel: browserViewModel)
@@ -64,14 +71,14 @@ final class LibraryCoordinator {
     }
 
     private func wirePreheat() {
-        sessionService.onPreheatConnectionChanged = { connection in
+        sessionService.onPreheatConnectionChanged = { [preheatService] connection in
             if let connection {
-                PreheatService.shared.connectionReady(source: connection.source, share: connection.share)
+                preheatService.connectionReady(source: connection.source, share: connection.share)
             } else {
-                PreheatService.shared.connectionClosed()
+                preheatService.connectionClosed()
             }
         }
-        PreheatService.shared.displayWidthProvider = {
+        preheatService.displayWidthProvider = {
             ScreenGeometry.mainScreenPixelWidth
         }
     }
