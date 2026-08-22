@@ -17,6 +17,7 @@ struct BrowserViewModelTests {
             ContentItem(name: "._2.jpg", path: "/._2.jpg", isDirectory: false, size: 1, modifiedDate: nil),
             ContentItem(name: "Folder", path: "/Folder", isDirectory: true, size: 0, modifiedDate: nil),
             ContentItem(name: ".DS_Store", path: "/.DS_Store", isDirectory: false, size: 1, modifiedDate: nil),
+            ContentItem(name: "__MACOSX", path: "/__MACOSX", isDirectory: true, size: 0, modifiedDate: nil),
             ContentItem(name: "2.jpg", path: "/2.jpg", isDirectory: false, size: 2, modifiedDate: nil),
         ]
 

@@ -44,7 +44,7 @@ extension ContentItem {
     public static func isMacOSNoise(path: String) -> Bool {
         if path == "__MACOSX" || path.hasPrefix("__MACOSX/") { return true }
         let name = (path as NSString).lastPathComponent
-        return name == ".DS_Store" || name.hasPrefix("._")
+        return name == ".DS_Store" || name == "__MACOSX" || name.hasPrefix("._")
     }
 
     /// Whether this item is macOS metadata noise (see `isMacOSNoise(path:)`).

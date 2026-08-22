@@ -36,6 +36,19 @@ final class ContentItemTests: XCTestCase {
         XCTAssertNil(item("Movies", isDirectory: true).fileType)
     }
 
+    func testMacOSNoiseDetection() {
+        // SMB-side paths are share-relative and `/`-rooted.
+        XCTAssertTrue(ContentItem.isMacOSNoise(path: "/.DS_Store"))
+        XCTAssertTrue(ContentItem.isMacOSNoise(path: "/a/._x.jpg"))
+        XCTAssertTrue(ContentItem.isMacOSNoise(path: "/__MACOSX"))
+        XCTAssertTrue(ContentItem.isMacOSNoise(path: "/a/__MACOSX"))
+        // CBZ entry paths are archive-relative.
+        XCTAssertTrue(ContentItem.isMacOSNoise(path: "__MACOSX/._x.jpg"))
+        XCTAssertTrue(ContentItem.isMacOSNoise(path: "__MACOSX/"))
+        XCTAssertFalse(ContentItem.isMacOSNoise(path: "/a/page1.jpg"))
+        XCTAssertFalse(ContentItem.isMacOSNoise(path: "/a/macosx.jpg"))
+    }
+
     func testStoredFields() {
         let date = Date(timeIntervalSince1970: 1_000)
         let entry = ContentItem(name: "a.txt", path: "/docs/a.txt", isDirectory: false, size: 7, modifiedDate: date)
