@@ -179,14 +179,14 @@ final class BrowserViewController: NSViewController {
         switch preheat {
         case .unavailable:
             preheatButton.isEnabled = false
-            preheatButton.image = preheatSymbol("arrow.down.circle", description: "预热此文件夹")
-            preheatButton.toolTip = "预热此文件夹"
+            preheatButton.image = preheatSymbol("arrow.down.circle", description: "预热此文件夹（含子文件夹）")
+            preheatButton.toolTip = "预热此文件夹（含子文件夹）"
             preheatProgressLabel.stringValue = ""
             preheatProgressLabel.isHidden = true
         case .ready:
             preheatButton.isEnabled = true
-            preheatButton.image = preheatSymbol("arrow.down.circle", description: "预热此文件夹")
-            preheatButton.toolTip = "预热此文件夹"
+            preheatButton.image = preheatSymbol("arrow.down.circle", description: "预热此文件夹（含子文件夹）")
+            preheatButton.toolTip = "预热此文件夹（含子文件夹）"
             preheatProgressLabel.stringValue = ""
             preheatProgressLabel.isHidden = true
         case .preheating(let completed, let total, let bytesPerSecond):
@@ -201,11 +201,18 @@ final class BrowserViewController: NSViewController {
                 // Still enumerating the directory.
                 preheatProgressLabel.stringValue = "预热中…"
             }
-        case .finished(let failed):
+        case .finished(let failed, let truncatedAtCap):
             preheatButton.isEnabled = true
             preheatButton.image = preheatSymbol("checkmark.circle", description: "预热完成")
             preheatProgressLabel.isHidden = false
-            let text = failed > 0 ? "预热完成（\(failed) 个失败）" : "预热完成"
+            var notes: [String] = []
+            if let cap = truncatedAtCap {
+                notes.append("已达 \(cap) 张上限")
+            }
+            if failed > 0 {
+                notes.append("\(failed) 个失败")
+            }
+            let text = notes.isEmpty ? "预热完成" : "预热完成（\(notes.joined(separator: "，"))）"
             preheatButton.toolTip = text
             preheatProgressLabel.stringValue = text
         }

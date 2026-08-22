@@ -156,7 +156,7 @@ struct PreheatServiceTests {
         #expect(reads.contains("/dirB/b1.jpg"))
         #expect(reads.contains("/dirB/sub/s1.jpg"))
         let progress = await service.directoryPreheatProgress()
-        #expect(progress?.truncated == false)
+        #expect(progress?.truncatedAtCap == nil)
     }
 
     @Test("hitting the file cap marks the progress as truncated", .timeLimit(.minutes(1)))
@@ -180,7 +180,7 @@ struct PreheatServiceTests {
         try await waitUntil("enumeration did not hit the cap") {
             await service.directoryPreheatProgress()?.total == cap
         }
-        #expect(await service.directoryPreheatProgress()?.truncated == true)
+        #expect(await service.directoryPreheatProgress()?.truncatedAtCap == cap)
 
         service.cancelDirectoryPreheat()
         #expect(!service.isDirectoryPreheatActive)

@@ -13,7 +13,9 @@ final class BrowserViewModel {
         /// Running; `total` is 0 while the directory is still enumerating.
         case preheating(completed: Int, total: Int, bytesPerSecond: Double)
         /// Queue drained; stays until the user navigates or clicks.
-        case finished(failed: Int)
+        /// `truncatedAtCap` is non-nil when enumeration hit the file cap,
+        /// so "finished" does not imply the whole subtree was preheated.
+        case finished(failed: Int, truncatedAtCap: Int?)
     }
 
     struct State: Sendable {
@@ -93,7 +95,7 @@ final class BrowserViewModel {
 
     private func applyPreheatProgress(_ progress: PreheatService.DirectoryPreheatProgress) {
         if progress.isComplete {
-            setPreheat(.finished(failed: progress.failed))
+            setPreheat(.finished(failed: progress.failed, truncatedAtCap: progress.truncatedAtCap))
         } else {
             setPreheat(.preheating(
                 completed: progress.total - progress.remaining,

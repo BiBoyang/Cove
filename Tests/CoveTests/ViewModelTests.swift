@@ -44,11 +44,11 @@ struct BrowserViewModelTests {
 @MainActor
 struct BrowserPreheatTests {
     private func progress(
-        total: Int, remaining: Int, failed: Int = 0, rate: Double = 1024
+        total: Int, remaining: Int, failed: Int = 0, truncatedAtCap: Int? = nil, rate: Double = 1024
     ) -> PreheatService.DirectoryPreheatProgress {
         PreheatService.DirectoryPreheatProgress(
             total: total, remaining: remaining, failed: failed,
-            truncated: false, throughputBytesPerSecond: rate
+            truncatedAtCap: truncatedAtCap, throughputBytesPerSecond: rate
         )
     }
 
@@ -76,12 +76,28 @@ struct BrowserPreheatTests {
         try await waitUntil {
             viewModel.state.preheat == .preheating(completed: 1, total: 4, bytesPerSecond: 1024)
         }
-        try await waitUntil { viewModel.state.preheat == .finished(failed: 0) }
+        try await waitUntil { viewModel.state.preheat == .finished(failed: 0, truncatedAtCap: nil) }
 
         // Completion stops the polling loop.
         let callsAtCompletion = script.callCount
         try await Task.sleep(for: .milliseconds(700))
         #expect(script.callCount == callsAtCompletion)
+    }
+
+    @Test("a truncated completion carries the cap into the finished state", .timeLimit(.minutes(1)))
+    func finishedCarriesTruncatedCap() async throws {
+        let viewModel = BrowserViewModel()
+        viewModel.display(items: [], path: "/", title: "share")
+        let script = ScriptedPreheatProgress([
+            progress(total: 5000, remaining: 0, truncatedAtCap: 5000),
+        ])
+        viewModel.preheatProgressProvider = { script.next() }
+
+        viewModel.startPreheatMonitoring()
+
+        try await waitUntil {
+            viewModel.state.preheat == .finished(failed: 0, truncatedAtCap: 5000)
+        }
     }
 
     @Test("cancelling via the button returns to ready")
