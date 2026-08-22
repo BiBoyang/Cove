@@ -266,6 +266,14 @@ public actor PreheatScheduler {
             }
 
             if !cache.contains(forKey: job.displayKey, pool: .display) {
+                // ImagePipeline.decode/encodeJPEG are synchronous CPU-bound
+                // calls running on this actor's executor, so `maxConcurrent`
+                // jobs only overlap their network waits; the decode stage
+                // serializes behind the actor. Acceptable for preheat: this
+                // is low-priority background work and maxConcurrent defaults
+                // to 2, so at most one decode blocks the (otherwise idle)
+                // actor. Raising real parallelism would mean moving decode
+                // off the actor into a nonisolated/detached step.
                 guard let displaySize = ImagePipeline.displayDimensions(of: original),
                       let image = ImagePipeline.decode(
                         original,
