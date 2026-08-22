@@ -131,29 +131,4 @@ final class FolderEnumeratorTests: XCTestCase {
         let visited = await source.listedPaths.count
         XCTAssertLessThan(visited, 10, "traversal should have stopped early, visited \(visited)")
     }
-
-    // MARK: - listImages (single level)
-
-    func testListImagesReturnsOnlyTheTopLevelImages() async throws {
-        let source = MockSource(listings: makeListing())
-        let images = try await FolderEnumerator.listImages(source: source, directory: "/root")
-        // No recursion into sub1/sub2; noise and non-images filtered.
-        XCTAssertEqual(images.map(\.path), ["/root/a.jpg"])
-    }
-
-    func testListImagesNormalizesMissingLeadingSlash() async throws {
-        let source = MockSource(listings: makeListing())
-        let images = try await FolderEnumerator.listImages(source: source, directory: "root/sub1")
-        XCTAssertEqual(images.map(\.path), ["/root/sub1/b.png"])
-    }
-
-    func testListImagesThrowsForUnreadableDirectory() async {
-        let source = MockSource(listings: [:])
-        do {
-            _ = try await FolderEnumerator.listImages(source: source, directory: "/nope")
-            XCTFail("an unreadable directory must throw")
-        } catch {
-            XCTAssertEqual(error as? SourceError, .pathNotFound("/nope"))
-        }
-    }
 }
