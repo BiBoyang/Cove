@@ -119,25 +119,4 @@ public enum ImagePipeline {
         guard CGImageDestinationFinalize(destination) else { return nil }
         return buffer as Data
     }
-
-    /// Reports the pixel dimensions of the image in `data` without decoding
-    /// the payload.
-    ///
-    /// The values are the stored pixel width/height from the image header;
-    /// EXIF orientation is **not** applied. Callers that need the display
-    /// aspect ratio must account for orientation themselves.
-    ///
-    /// - Returns: `nil` when `data` is not a readable image or the header
-    ///   lacks dimension information.
-    public static func dimensions(of data: Data) -> CGSize? {
-        let options: [CFString: Any] = [kCGImageSourceShouldCache: false]
-        guard let source = CGImageSourceCreateWithData(data as CFData, options as CFDictionary),
-              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
-              let width = properties[kCGImagePropertyPixelWidth] as? Int,
-              let height = properties[kCGImagePropertyPixelHeight] as? Int
-        else {
-            return nil
-        }
-        return CGSize(width: width, height: height)
-    }
 }

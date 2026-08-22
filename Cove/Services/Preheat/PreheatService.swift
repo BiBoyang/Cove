@@ -10,9 +10,7 @@ import TraceKit
 /// A1 scope: only user-configured `preheatFolders` are preheated, and
 /// preheating only ever targets the currently connected share — folder
 /// entries naming another share are skipped, and nothing auto-connects at
-/// launch. Directory-level preheating is deliberately off in A1, so
-/// `submitDirectoryImages` / `submitReaderImages` currently have no
-/// callers; they are kept for the A2 preheat policy.
+/// launch. Directory-level preheating is deliberately off in A1.
 @MainActor
 final class PreheatService: NSObject {
     static let shared = PreheatService()
@@ -56,22 +54,6 @@ final class PreheatService: NSObject {
     func connectionClosed() {
         connection = nil
         teardown()
-    }
-
-    // MARK: - Submissions (reserved for the A2 preheat policy)
-
-    /// The directory on screen changed: warm it at medium priority.
-    /// No callers in A1 — directory-level preheating is off.
-    func submitDirectoryImages(_ items: [ContentItem]) {
-        guard let scheduler else { return }
-        Task { await scheduler.submit(items, priority: .currentDirectory) }
-    }
-
-    /// The reader opened: warm its pages at the highest priority.
-    /// No callers in A1 — reader-level preheating is off.
-    func submitReaderImages(_ items: [ContentItem]) {
-        guard let scheduler else { return }
-        Task { await scheduler.submit(items, priority: .immediate) }
     }
 
     // MARK: - Settings

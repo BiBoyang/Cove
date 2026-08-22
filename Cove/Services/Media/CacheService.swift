@@ -40,16 +40,6 @@ final class CacheService: NSObject {
         sweepInBackground()
     }
 
-    /// Payload bytes currently stored per pool, for the settings UI.
-    func usage() throws -> (original: Int64, display: Int64) {
-        (try store.currentSize(pool: .original), try store.currentSize(pool: .display))
-    }
-
-    /// Empties both pools (settings page "clear now").
-    func clearAll() throws {
-        try store.removeAll()
-    }
-
     @objc private func settingsDidChange() {
         let settings = SettingsService.shared
         store.setPolicy(capacityBytes: settings.cacheCapacityBytes, ttl: settings.cacheTTL)

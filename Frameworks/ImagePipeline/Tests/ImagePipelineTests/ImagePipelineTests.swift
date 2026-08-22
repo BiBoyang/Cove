@@ -93,27 +93,6 @@ final class ImagePipelineTests: XCTestCase {
         XCTAssertLessThan(decoded.width, decoded.height)
     }
 
-    // MARK: - dimensions
-
-    func testDimensionsProbe() throws {
-        let png = try encode(makeImage(width: 2000, height: 3000), type: .png)
-        let size = try XCTUnwrap(ImagePipeline.dimensions(of: png))
-        XCTAssertEqual(size, CGSize(width: 2000, height: 3000))
-    }
-
-    func testDimensionsRejectsUndecodableData() {
-        XCTAssertNil(ImagePipeline.dimensions(of: Data("junk".utf8)))
-        XCTAssertNil(ImagePipeline.dimensions(of: Data()))
-    }
-
-    func testDimensionsReportsStoredPixelsWithoutTransform() throws {
-        // The probe documents raw stored pixels; EXIF orientation is applied
-        // only by decode(). This locks the contract.
-        let jpeg = try encode(makeImage(width: 3000, height: 2000), type: .jpeg, orientation: 6)
-        let size = try XCTUnwrap(ImagePipeline.dimensions(of: jpeg))
-        XCTAssertEqual(size, CGSize(width: 3000, height: 2000))
-    }
-
     // MARK: - displayDimensions
 
     func testDisplayDimensionsMatchesDecodeOutput() throws {
