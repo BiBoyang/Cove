@@ -13,7 +13,8 @@ import TraceKit
 /// entries naming another share are skipped, and nothing auto-connects at
 /// launch. A2 adds on-demand directory preheating (the browser's
 /// "preheat this folder" button) at `.currentDirectory` priority,
-/// recursing into subdirectories.
+/// recursing into subdirectories. The reader's adjacent-page prefetch
+/// submits at `.immediate`, ahead of all background work.
 @MainActor
 final class PreheatService {
     /// Snapshot of the active on-demand directory preheat, for the browser
@@ -160,6 +161,20 @@ final class PreheatService {
             truncatedAtCap: state.truncatedAtCap,
             throughputBytesPerSecond: throughput
         )
+    }
+
+    // MARK: - Adjacent-page prefetch (reader)
+
+    /// Downloads the given reader pages into the original pool at
+    /// `.immediate` priority — ahead of directory and userFolder work,
+    /// since these are the pages the user is about to look at. One-shot:
+    /// no state, no lifecycle, no cancellation; the scheduler's built-in
+    /// dedup (queued / in-flight / already cached) makes repeat
+    /// submissions of the same page free. Safe no-op without a live
+    /// scheduler/connection or when preheating is disabled.
+    func prefetchPages(_ items: [ContentItem]) {
+        guard let scheduler, connection != nil, settings.preheatEnabled, !items.isEmpty else { return }
+        Task { await scheduler.submit(items, priority: .immediate) }
     }
 
     // MARK: - Settings

@@ -145,12 +145,14 @@ struct PreheatServiceTests {
 
         service.preheatDirectory(path: "/dirB")
 
-        // The subdirectory image is enumerated and submitted too.
+        // The subdirectory image is enumerated and submitted too. Wait for
+        // the reads themselves: `isComplete` flips once the queue drains
+        // into in-flight jobs, before the last reads finish.
         try await waitUntil("subdirectory images were not enumerated") {
             await service.directoryPreheatProgress()?.total == 2
         }
-        try await waitUntil("directory preheat did not complete") {
-            await service.directoryPreheatProgress()?.isComplete == true
+        try await waitUntil("directory preheat reads did not finish") {
+            await source.readCount == 2
         }
         let reads = await source.readPaths
         #expect(reads.contains("/dirB/b1.jpg"))
@@ -213,6 +215,62 @@ struct PreheatServiceTests {
         #expect(progress?.total == 2)
         #expect(progress?.remaining == 0)
         #expect(progress?.failed == 0)
+    }
+
+    @Test("prefetched pages are downloaded into the original pool", .timeLimit(.minutes(1)))
+    func prefetchReadsIntoOriginalPool() async throws {
+        let cacheRoot = makeCacheRoot()
+        defer { try? FileManager.default.removeItem(at: cacheRoot) }
+        let defaults = UserDefaults(suiteName: "PreheatServiceTests-\(UUID().uuidString)")!
+        let settings = SettingsService(defaults: defaults)
+        // The service must share this exact CacheStore instance: a second
+        // instance on the same root would race `store`'s payload-then-meta
+        // write pair and could sweep a half-written entry as "corrupt".
+        let cache = CacheStore(rootDirectory: cacheRoot, capacityBytes: 1_000_000_000, ttl: 3600)
+        let service = PreheatService(settings: settings, cacheStore: cache)
+        let png = makeTestPNG()
+        let size = Int64(png.count)
+        let source = FakeSource(
+            files: ["/dirB/b1.jpg": png, "/dirB/b2.jpg": png],
+            listings: [:]
+        )
+        service.connectionReady(source: source, share: "media")
+
+        service.prefetchPages([
+            image("b1.jpg", at: "/dirB", size: size),
+            image("b2.jpg", at: "/dirB", size: size),
+        ])
+
+        try await waitUntil("prefetch did not read the pages") { await source.readCount == 2 }
+
+        // Both payloads landed in the original pool under the raw key, so
+        // the reader's next page turn hits the cache instead of the
+        // network. Poll: the store trails the read (decode happens in
+        // between), so a one-shot check would race.
+        func isCached(_ name: String) -> Bool {
+            let key = CacheKey.sourceFile(
+                sourceID: source.sourceID, path: "/dirB/\(name)", fileSize: size,
+                modified: nil, variant: CacheKey.rawVariant
+            )
+            return (try? cache.data(forKey: key, pool: .original)) != nil
+        }
+        try await waitUntil("prefetched pages did not reach the original pool") {
+            isCached("b1.jpg") && isCached("b2.jpg")
+        }
+    }
+
+    @Test("prefetch without a connection is a safe no-op")
+    func prefetchWithoutConnectionIsNoOp() async throws {
+        let cacheRoot = makeCacheRoot()
+        defer { try? FileManager.default.removeItem(at: cacheRoot) }
+        let service = makeService(cacheRoot: cacheRoot)
+        let source = FakeSource(files: ["/dirB/b1.jpg": makeTestPNG()], listings: [:])
+
+        service.prefetchPages([image("b1.jpg", at: "/dirB", size: 10)])
+
+        // Give a misbehaving submit a chance to run before asserting.
+        try await Task.sleep(for: .milliseconds(200))
+        #expect(await source.readCount == 0)
     }
 }
 
