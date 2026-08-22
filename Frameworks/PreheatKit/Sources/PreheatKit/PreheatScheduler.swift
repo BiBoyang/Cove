@@ -156,6 +156,18 @@ public actor PreheatScheduler {
         pump()
     }
 
+    /// Drops every queued job at `priority`; in-flight jobs run to
+    /// completion (their results still land in the cache, harmlessly).
+    /// Used for directory preheat cancellation, where `cancelAll` would
+    /// also kill the settings page's userFolder queue.
+    public func cancel(priority: Priority) {
+        guard let queue = queues[priority], !queue.isEmpty else { return }
+        queues[priority] = []
+        for job in queue {
+            queueIndex.removeValue(forKey: job.originalKey)
+        }
+    }
+
     /// Drops every queued job and cancels in-flight reads.
     public func cancelAll() {
         queues.removeAll()
@@ -180,6 +192,10 @@ public actor PreheatScheduler {
     /// Jobs waiting in queue; in-flight jobs are not counted.
     public var pendingCount: Int {
         queues.values.reduce(0) { $0 + $1.count }
+    }
+    /// Jobs waiting at one priority; in-flight jobs are not counted.
+    public func pendingCount(priority: Priority) -> Int {
+        queues[priority]?.count ?? 0
     }
     /// Jobs finished successfully since creation.
     public var completedCount: Int { completed }

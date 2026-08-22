@@ -8,12 +8,29 @@ import TraceKit
 /// dedicated preheat connection (see `SMBSessionService`) comes up, and
 /// applies the settings page's enable/rate-limit/folder values live.
 ///
-/// A1 scope: only user-configured `preheatFolders` are preheated, and
+/// A1 scope: user-configured `preheatFolders` are preheated, and
 /// preheating only ever targets the currently connected share — folder
 /// entries naming another share are skipped, and nothing auto-connects at
-/// launch. Directory-level preheating is deliberately off in A1.
+/// launch. A2 adds single-directory preheating on demand (the browser's
+/// "preheat this folder" button) at `.currentDirectory` priority.
 @MainActor
 final class PreheatService {
+    /// Snapshot of the active on-demand directory preheat, for the browser
+    /// toolbar button. `remaining` counts only queued `.currentDirectory`
+    /// jobs — in-flight ones (≤ maxConcurrent) are not included, so
+    /// `isComplete` may flip while the last reads finish.
+    struct DirectoryPreheatProgress: Sendable, Equatable {
+        /// Images submitted for this directory; 0 while still enumerating.
+        let total: Int
+        /// Jobs still waiting in the `.currentDirectory` queue.
+        let remaining: Int
+        /// Jobs failed since this preheat started (global counter delta;
+        /// concurrent userFolder failures bleed in slightly).
+        let failed: Int
+        let throughputBytesPerSecond: Double
+
+        var isComplete: Bool { total > 0 && remaining == 0 }
+    }
     /// Supplies the display-variant width (screen backing pixels) used for
     /// display-pool keys. Set by the window layer at startup; evaluated on
     /// the main actor each time a scheduler is built.
@@ -30,6 +47,12 @@ final class PreheatService {
     /// The folder list as last submitted, so unrelated settings changes do
     /// not re-enumerate the NAS.
     private var submittedFolders: [String] = []
+    /// The active on-demand directory preheat: path, submitted image count
+    /// (0 while enumerating), and the scheduler's failed count at submit
+    /// time, so the progress snapshot reports only this batch's failures.
+    private var directoryPreheat: (path: String, total: Int, failedBaseline: Int)?
+    /// In-flight single-level enumeration for the directory preheat.
+    private var directoryTask: Task<Void, Never>?
 
     init(settings: SettingsService, cacheStore: CacheStore) {
         self.settings = settings
@@ -53,6 +76,77 @@ final class PreheatService {
     func connectionClosed() {
         connection = nil
         teardown()
+    }
+
+    // MARK: - Directory preheat (browser "preheat this folder" button)
+
+    /// Whether an on-demand directory preheat is active (enumerating,
+    /// queued, or finished but not yet dismissed by navigation/cancel).
+    var isDirectoryPreheatActive: Bool { directoryPreheat != nil }
+
+    /// Preheats the images directly inside `path` — one level, no
+    /// recursion — at `.currentDirectory` priority, so they jump ahead of
+    /// queued userFolder work but behind the reader's `.immediate` jobs.
+    /// Replaces any in-progress directory preheat. Safe no-op without a
+    /// live scheduler/connection or when preheating is disabled.
+    func preheatDirectory(path: String) {
+        cancelDirectoryPreheat()
+        guard let scheduler, let connection, settings.preheatEnabled else { return }
+        // Mark active synchronously so the first progress poll sees a
+        // (still enumerating, total 0) snapshot instead of "inactive".
+        directoryPreheat = (path, 0, 0)
+        let source = connection.source
+        directoryTask = Task {
+            do {
+                let images = try await FolderEnumerator.listImages(source: source, directory: path)
+                guard !Task.isCancelled else { return }
+                guard !images.isEmpty else {
+                    directoryPreheat = nil
+                    return
+                }
+                let failedBaseline = await scheduler.failedCount
+                directoryPreheat = (path, images.count, failedBaseline)
+                await scheduler.submit(images, priority: .currentDirectory)
+                logger.info(
+                    "Preheat directory \(path): queued \(images.count) images",
+                    privacy: .private
+                )
+            } catch {
+                if Task.isCancelled { return }
+                directoryPreheat = nil
+                logger.error(
+                    "Preheat directory enumeration failed for \(path): \(error.localizedDescription)",
+                    privacy: .private
+                )
+            }
+        }
+    }
+
+    /// Cancels the active directory preheat: stops the enumeration and
+    /// drops the `.currentDirectory` queue without touching userFolder
+    /// work. Safe no-op when nothing is active.
+    func cancelDirectoryPreheat() {
+        directoryTask?.cancel()
+        directoryTask = nil
+        directoryPreheat = nil
+        if let scheduler {
+            Task { await scheduler.cancel(priority: .currentDirectory) }
+        }
+    }
+
+    /// Progress of the active directory preheat; nil when none is active
+    /// (never started, cancelled, or enumeration failed).
+    func directoryPreheatProgress() async -> DirectoryPreheatProgress? {
+        guard let scheduler, let state = directoryPreheat else { return nil }
+        let remaining = await scheduler.pendingCount(priority: .currentDirectory)
+        let failed = await scheduler.failedCount - state.failedBaseline
+        let throughput = await scheduler.throughputBytesPerSecond
+        return DirectoryPreheatProgress(
+            total: state.total,
+            remaining: remaining,
+            failed: max(0, failed),
+            throughputBytesPerSecond: throughput
+        )
     }
 
     // MARK: - Settings
@@ -153,6 +247,7 @@ final class PreheatService {
         submittedFolders = []
         folderTask?.cancel()
         folderTask = nil
+        cancelDirectoryPreheat()
         teardownScheduler()
     }
 

@@ -14,6 +14,22 @@ public enum FolderEnumerator {
     /// must not keep the connection busy forever.
     public static let defaultMaxDirectories = 1000
 
+    /// Lists only `directory` itself — no recursion — returning image items
+    /// in listing order. Noise entries (SourceKit's `isNoise`) are skipped.
+    /// Backs the browser's "preheat this folder" button, where recursing
+    /// into subdirectories would be a surprise.
+    ///
+    /// An unreadable `directory` throws, since the user explicitly asked
+    /// for that folder.
+    public static func listImages(
+        source: any ContentSource,
+        directory: String
+    ) async throws -> [ContentItem] {
+        let path = directory.hasPrefix("/") ? directory : "/" + directory
+        let entries = try await source.list(at: path)
+        return entries.filter { !$0.isNoise && !$0.isDirectory && $0.fileType == .image }
+    }
+
     /// Lists `root` and every subdirectory breadth-first, returning image
     /// items in discovery order. Noise entries (SourceKit's `isNoise`, the
     /// same rule the browser uses) are skipped.

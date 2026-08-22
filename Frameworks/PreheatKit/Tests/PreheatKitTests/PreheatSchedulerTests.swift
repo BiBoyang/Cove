@@ -203,6 +203,69 @@ final class PreheatSchedulerTests: XCTestCase {
         XCTAssertLessThan(completed, 10, "cancelAll must stop the queue")
     }
 
+    // MARK: - Priority-scoped cancel
+
+    func testCancelPriorityDropsOnlyThatQueue() async throws {
+        let source = MockSource(files: [
+            "/c1.jpg": pngData, "/c2.jpg": pngData, "/u1.jpg": pngData,
+        ])
+        let scheduler = makeScheduler(source: source, maxConcurrent: 1)
+        await scheduler.pause()
+        await scheduler.submit([item("/u1.jpg")], priority: .userFolder)
+        await scheduler.submit([item("/c1.jpg"), item("/c2.jpg")], priority: .currentDirectory)
+
+        await scheduler.cancel(priority: .currentDirectory)
+
+        var pending = await scheduler.pendingCount(priority: .currentDirectory)
+        XCTAssertEqual(pending, 0)
+        pending = await scheduler.pendingCount(priority: .userFolder)
+        XCTAssertEqual(pending, 1, "other priorities must keep their queue")
+
+        await scheduler.resume()
+        let done = await waitUntil { await scheduler.completedCount == 1 }
+        XCTAssertTrue(done)
+        let reads = await source.readPaths
+        XCTAssertEqual(reads, ["/u1.jpg"], "cancelled jobs must never run")
+    }
+
+    func testCancelPriorityLetsInFlightJobsFinish() async throws {
+        let source = MockSource(
+            files: ["/c1.jpg": pngData, "/c2.jpg": pngData],
+            readDelayNanoseconds: 100_000_000
+        )
+        let scheduler = makeScheduler(source: source, maxConcurrent: 1)
+        await scheduler.submit([item("/c1.jpg"), item("/c2.jpg")], priority: .currentDirectory)
+
+        // c1 is in flight, c2 still queued; cancel drops only c2.
+        let started = await waitUntil { await source.readCount >= 1 }
+        XCTAssertTrue(started)
+        await scheduler.cancel(priority: .currentDirectory)
+
+        let pending = await scheduler.pendingCount(priority: .currentDirectory)
+        XCTAssertEqual(pending, 0)
+        let done = await waitUntil { await scheduler.completedCount == 1 }
+        XCTAssertTrue(done, "the in-flight job runs to completion")
+        let reads = await source.readPaths
+        XCTAssertEqual(reads, ["/c1.jpg"])
+    }
+
+    func testCancelledItemCanBeResubmitted() async throws {
+        let source = MockSource(files: ["/c1.jpg": pngData])
+        let scheduler = makeScheduler(source: source, maxConcurrent: 1)
+        await scheduler.pause()
+        await scheduler.submit([item("/c1.jpg")], priority: .currentDirectory)
+        await scheduler.cancel(priority: .currentDirectory)
+
+        // The dedup index must be cleaned: resubmitting re-queues the item.
+        await scheduler.submit([item("/c1.jpg")], priority: .currentDirectory)
+        let pending = await scheduler.pendingCount(priority: .currentDirectory)
+        XCTAssertEqual(pending, 1)
+
+        await scheduler.resume()
+        let done = await waitUntil { await scheduler.completedCount == 1 }
+        XCTAssertTrue(done)
+    }
+
     // MARK: - Rate limiter
 
     func testRateLimiterChargesWithinBudgetWithoutDelay() {
