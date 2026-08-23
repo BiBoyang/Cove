@@ -16,6 +16,7 @@ final class SettingsService {
         static let preheatEnabled = "cove.settings.preheatEnabled"
         static let preheatRateLimitMBps = "cove.settings.preheatRateLimitMBps"
         static let preheatFolders = "cove.settings.preheatFolders"
+        static let vaultRootBookmark = "cove.settings.vaultRootBookmark"
     }
 
     private let defaults: UserDefaults
@@ -59,6 +60,15 @@ final class SettingsService {
     var preheatFolders: [String] {
         get { defaults.stringArray(forKey: Keys.preheatFolders) ?? [] }
         set { defaults.set(newValue, forKey: Keys.preheatFolders); post() }
+    }
+
+    /// Security-scoped bookmark of the user-chosen vault root; nil means
+    /// the default container location (`Application Support/Cove/Vault`).
+    /// Stored instead of a plain path so a sandboxed relaunch keeps access
+    /// to a user-selected directory.
+    var vaultRootBookmark: Data? {
+        get { defaults.data(forKey: Keys.vaultRootBookmark) }
+        set { defaults.set(newValue, forKey: Keys.vaultRootBookmark); post() }
     }
 
     var cacheCapacityBytes: Int64 { Int64(cacheCapacityGB) * 1024 * 1024 * 1024 }

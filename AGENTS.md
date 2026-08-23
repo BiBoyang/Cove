@@ -9,6 +9,7 @@ Cove/                    # App target（纯 AppKit，禁止 import SwiftUI，不
 ├── Services/            # App 服务适配层，按 Infrastructure/Media/Preheat/Settings 分组
 │   ├── Infrastructure/  # SMB 会话 + 服务器配置持久化
 │   ├── Media/           # 缓存、缩略图、Reader 内容与图片加载适配
+│   ├── Vault/           # 本地仓库：根目录解析、递归/单文件下载（temp+rename）、本地删除
 │   ├── Preheat/         # 用户配置的后台预热生命周期
 │   └── Settings/        # UserDefaults 设置
 ├── SharedUI/            # 跨 Feature 复用的 AppKit 组件
@@ -16,7 +17,7 @@ Cove/                    # App target（纯 AppKit，禁止 import SwiftUI，不
 Frameworks/              # 本地 SPM 包
 ├── TraceKit/            # os_log 薄封装（零依赖）
 ├── KeychainKit/         # SecItem 薄封装（零依赖）
-├── SourceKit/           # ContentSource 协议（list/metadata/ranged read）+ SMBSource（share 级会话，actor）+ SMBServer（共享枚举）+ NaturalSort（共享自然排序）+ smb-spike 命令行工具
+├── SourceKit/           # ContentSource 协议（list/metadata/ranged read）+ SMBSource（share 级会话，actor）+ LocalFileSource（本地目录 ContentSource，vault 虚拟 share 用）+ SMBServer（共享枚举）+ NaturalSort（共享自然排序）+ smb-spike 命令行工具
 ├── ImagePipeline/       # 图片解码 + 按需降采样（ImageIO/CGImageSource 薄封装，零三方依赖）
 ├── CacheKit/            # 磁盘双池缓存（original/display）+ LRU + TTL，容量/TTL 可运行时调整（仅依赖本地 TraceKit 与系统框架 CryptoKit，零三方依赖）
 ├── PreheatKit/          # 预热调度器：优先级队列 + 令牌桶限速 + 文件夹 BFS 枚举（依赖 SourceKit/CacheKit/ImagePipeline/TraceKit）
