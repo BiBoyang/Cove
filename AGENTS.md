@@ -39,6 +39,9 @@ ReaderKit 是 Frameworks 下的领域核心包，不依赖 AppKit、SnapKit、SM
 3. View Controller 不许直接碰网络层，一律走 `SMBSessionService`。
 4. 禁止 `import SwiftUI`，界面全部用 AppKit 手写。
 5. 密码只进 Keychain；`UserDefaults` 只存地址 / 用户名 / 显示名 / 设置项。
+   密码、Token、真实 NAS 凭据不得写入源码、测试数据、日志、截图或 Git
+   提交记录；smb-spike 的命令行密码参数仅用于开发期连通性探针，不是
+   安全存储方案。
 6. 代码注释与标识符用英文；UI 文案用中文。
 7. `project.yml` 是工程的唯一事实来源：改完后跑 `make generate` 重新生成，
    `*.xcodeproj` 不入库（已在 .gitignore）。
@@ -77,6 +80,18 @@ make build      # Debug 构建
 make test       # 七个 Framework 包的单测 + smb-spike 编译检查
 make clean
 ```
+
+## 文档分工与协作纪律
+
+- `README.md`：项目定位、功能范围、环境要求、构建与使用说明。
+- `AGENTS.md`（本文件）：实现者与 AI agent 必须遵守的架构边界与操作规约。
+- `plans/`：任务拆解（TASK-*.md）、设计/选型报告（SPIKE-*、审计）与
+  全量待办索引（`BACKLOG.md`）——入库，对贡献者可见。
+- `sessions/`：AI 协作过程日志，**本地专用、不入库**（已 gitignore）。
+
+协作纪律：**任何会话开工前先跑 `pwd && git rev-parse --show-toplevel &&
+git log --oneline -1`，确认自己在正确的工作树上**——本机曾经存在一份
+过期克隆并导致过基于旧代码的错误修改。
 
 ## 当前签名状态
 
