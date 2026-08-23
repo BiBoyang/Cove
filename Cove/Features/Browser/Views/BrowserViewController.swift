@@ -38,6 +38,14 @@ final class BrowserViewController: NSViewController {
         return formatter
     }()
 
+    /// Shared date formatter for the row subtitle ("2025/11/18") — formatters
+    /// are expensive, so rows never create their own.
+    private let dateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy/M/d"
+        return formatter
+    }()
+
     init(viewModel: BrowserViewModel) {
         self.viewModel = viewModel
         super.init(nibName: nil, bundle: nil)
@@ -271,7 +279,8 @@ extension BrowserViewController: NSTableViewDataSource, NSTableViewDelegate {
     }
 
     func tableView(_ tableView: NSTableView, heightOfRow row: Int) -> CGFloat {
-        52
+        // 48-pt thumbnail + 8 pt of breathing room above and below.
+        64
     }
 
     func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? {
@@ -290,27 +299,37 @@ extension BrowserViewController: NSTableViewDataSource, NSTableViewDelegate {
         let item = viewModel.state.items[row]
         cell.configure(
             with: item,
-            sizeText: item.isDirectory ? "--" : byteFormatter.string(fromByteCount: item.size),
+            subtitle: subtitleText(for: item),
             thumbnailProvider: thumbnailProvider
         )
         return cell
     }
+
+    /// Row subtitle: files show "size · modified date", directories just
+    /// "文件夹". A file without a modification date shows only its size.
+    private func subtitleText(for item: ContentItem) -> String {
+        if item.isDirectory { return "文件夹" }
+        let size = byteFormatter.string(fromByteCount: item.size)
+        guard let modifiedDate = item.modifiedDate else { return size }
+        return "\(size) · \(dateFormatter.string(from: modifiedDate))"
+    }
 }
 
-/// One directory-entry row: a rounded icon badge, the file name (tail-
-/// truncated), and the file size pinned to the trailing edge.
+/// One directory-entry row: a 48-pt rounded thumbnail (or a monochrome
+/// symbol placeholder) on the leading edge, and two text lines — the file
+/// name (tail-truncated) over a metadata subtitle.
 ///
-/// Image rows replace the badge's SF Symbol with the real thumbnail once it
-/// arrives (fade-in over the symbol placeholder). The thumbnail loads async
-/// via the injected `ThumbnailService`; row reuse cancels the pending
-/// request, so off-screen rows never decode.
+/// Image rows replace the placeholder symbol with the real thumbnail once it
+/// arrives (fade-in over the placeholder). The thumbnail loads async via the
+/// injected `ThumbnailService`; row reuse cancels the pending request, so
+/// off-screen rows never decode.
 @MainActor
 private final class BrowserRowCellView: NSTableCellView {
     private let badgeView = RoundedFillView()
     private let badgeImageView = NSImageView()
     private let thumbnailImageView = NSImageView()
     private let nameLabel = NSTextField(labelWithString: "")
-    private let sizeLabel = NSTextField(labelWithString: "")
+    private let subtitleLabel = NSTextField(labelWithString: "")
 
     /// In-flight thumbnail request for the currently shown item.
     private var thumbnailTask: Task<Void, Never>?
@@ -321,35 +340,33 @@ private final class BrowserRowCellView: NSTableCellView {
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
 
-        badgeView.cornerRadius = 8
+        badgeView.cornerRadius = CoveStyle.radiusSmall
         // Clip the thumbnail image to the badge's rounded corners.
         badgeView.layer?.masksToBounds = true
 
         // The thumbnail is stored center-cropped to a square, so a plain
         // proportional NSImageView fills the badge exactly. The badge clips
-        // it to the 8-pt corner radius.
+        // it to the corner radius.
         thumbnailImageView.imageScaling = .scaleProportionallyUpOrDown
         thumbnailImageView.isHidden = true
 
-        nameLabel.font = .systemFont(ofSize: 13)
+        nameLabel.font = CoveStyle.titleFont
         nameLabel.textColor = .labelColor
         nameLabel.lineBreakMode = .byTruncatingTail
 
-        sizeLabel.font = .systemFont(ofSize: 11)
-        sizeLabel.textColor = .secondaryLabelColor
-        sizeLabel.alignment = .right
-        sizeLabel.setContentHuggingPriority(.required, for: .horizontal)
-        sizeLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
+        subtitleLabel.font = CoveStyle.captionFont
+        subtitleLabel.textColor = .secondaryLabelColor
+        subtitleLabel.lineBreakMode = .byTruncatingTail
 
         addSubview(badgeView)
         badgeView.addSubview(badgeImageView)
         badgeView.addSubview(thumbnailImageView)
         addSubview(nameLabel)
-        addSubview(sizeLabel)
+        addSubview(subtitleLabel)
         badgeView.snp.makeConstraints { make in
             make.leading.equalToSuperview().offset(20)
             make.centerY.equalToSuperview()
-            make.width.height.equalTo(40)
+            make.width.height.equalTo(48)
         }
         badgeImageView.snp.makeConstraints { make in
             make.center.equalToSuperview()
@@ -357,14 +374,16 @@ private final class BrowserRowCellView: NSTableCellView {
         thumbnailImageView.snp.makeConstraints { make in
             make.edges.equalToSuperview()
         }
-        sizeLabel.snp.makeConstraints { make in
-            make.trailing.equalToSuperview().offset(-20)
-            make.centerY.equalToSuperview()
-        }
+        // The two text lines sit as a pair centered on the row: the name
+        // ends just above the midpoint, the subtitle starts just below.
         nameLabel.snp.makeConstraints { make in
             make.leading.equalTo(badgeView.snp.trailing).offset(12)
-            make.trailing.lessThanOrEqualTo(sizeLabel.snp.leading).offset(-8)
-            make.centerY.equalToSuperview()
+            make.trailing.lessThanOrEqualToSuperview().offset(-20)
+            make.bottom.equalTo(self.snp.centerY).offset(-2)
+        }
+        subtitleLabel.snp.makeConstraints { make in
+            make.leading.trailing.equalTo(nameLabel)
+            make.top.equalTo(self.snp.centerY).offset(2)
         }
     }
 
@@ -380,20 +399,21 @@ private final class BrowserRowCellView: NSTableCellView {
         currentPath = nil
     }
 
-    func configure(with item: ContentItem, sizeText: String, thumbnailProvider: (any ThumbnailProviding)?) {
+    func configure(with item: ContentItem, subtitle: String, thumbnailProvider: (any ThumbnailProviding)?) {
         thumbnailTask?.cancel()
         thumbnailTask = nil
         currentPath = item.path
 
-        let style = Self.iconStyle(for: item)
-        badgeImageView.image = NSImage(systemSymbolName: style.symbolName, accessibilityDescription: nil)?
+        // Placeholders stay monochrome so the loaded thumbnail is the only
+        // saturated element on the row.
+        badgeImageView.image = NSImage(systemSymbolName: Self.placeholderSymbol(for: item), accessibilityDescription: nil)?
             .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 22, weight: .regular))
-        badgeImageView.contentTintColor = style.tint
+        badgeImageView.contentTintColor = .tertiaryLabelColor
         badgeImageView.isHidden = false
         thumbnailImageView.image = nil
         thumbnailImageView.isHidden = true
         nameLabel.stringValue = item.name
-        sizeLabel.stringValue = sizeText
+        subtitleLabel.stringValue = subtitle
 
         // Image rows swap the symbol for the real thumbnail once loaded.
         guard let thumbnailProvider, item.fileType == .image else { return }
@@ -417,16 +437,17 @@ private final class BrowserRowCellView: NSTableCellView {
         }
     }
 
-    /// Symbol and tint per file kind, following the app's badge palette.
-    private static func iconStyle(for item: ContentItem) -> (symbolName: String, tint: NSColor) {
-        if item.isDirectory { return ("folder.fill", .systemBlue) }
+    /// Placeholder symbol per file kind. Directories always show a folder;
+    /// image rows keep `photo` until the real thumbnail fades in.
+    private static func placeholderSymbol(for item: ContentItem) -> String {
+        if item.isDirectory { return "folder.fill" }
         switch item.fileType ?? .other {
-        case .video: return ("film.fill", .systemPurple)
-        case .image: return ("photo.fill", .systemGreen)
-        case .pdf: return ("doc.richtext.fill", .systemRed)
-        case .comic: return ("books.closed.fill", .systemOrange)
-        case .text: return ("doc.text.fill", .systemGray)
-        case .other: return ("doc.fill", .systemGray)
+        case .video: return "film.fill"
+        case .image: return "photo"
+        case .pdf: return "doc.richtext.fill"
+        case .comic: return "books.closed.fill"
+        case .text: return "doc.text.fill"
+        case .other: return "doc.fill"
         }
     }
 }
