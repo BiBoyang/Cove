@@ -136,7 +136,7 @@ extension ServerListViewController: NSTableViewDataSource, NSTableViewDelegate {
     }
 
     func tableView(_ tableView: NSTableView, heightOfRow row: Int) -> CGFloat {
-        row == 0 ? 26 : 32
+        row == 0 ? 26 : 34
     }
 
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
@@ -165,7 +165,7 @@ extension ServerListViewController: NSTableViewDataSource, NSTableViewDelegate {
             cell = NSTableCellView()
             cell.identifier = identifier
             let textField = NSTextField(labelWithString: "")
-            textField.font = .systemFont(ofSize: 11, weight: .semibold)
+            textField.font = CoveStyle.sectionHeaderFont
             textField.textColor = .secondaryLabelColor
             cell.addSubview(textField)
             cell.textField = textField
@@ -179,39 +179,33 @@ extension ServerListViewController: NSTableViewDataSource, NSTableViewDelegate {
     }
 }
 
-/// One server row: a small rounded icon badge and the server name.
+/// One server row: a plain accent-tinted symbol and the server name,
+/// in the spirit of SenPlayer's clean sidebar (no badge chrome).
 @MainActor
 private final class ServerRowCellView: NSTableCellView {
-    private let badgeView = RoundedFillView()
-    private let badgeImageView = NSImageView()
+    private let iconView = NSImageView()
     private let nameLabel = NSTextField(labelWithString: "")
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
 
-        badgeView.cornerRadius = 6
-        badgeView.fillColor = NSColor.systemBlue.withAlphaComponent(0.2)
-        badgeImageView.image = NSImage(systemSymbolName: "externaldrive.fill", accessibilityDescription: nil)?
-            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 12, weight: .regular))
-        badgeImageView.contentTintColor = .systemBlue
+        iconView.image = NSImage(systemSymbolName: "server.rack", accessibilityDescription: nil)?
+            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 14, weight: .regular))
+        iconView.contentTintColor = .controlAccentColor
 
-        nameLabel.font = .systemFont(ofSize: 13)
+        nameLabel.font = CoveStyle.bodyFont
         nameLabel.textColor = .labelColor
         nameLabel.lineBreakMode = .byTruncatingMiddle
 
-        addSubview(badgeView)
-        badgeView.addSubview(badgeImageView)
+        addSubview(iconView)
         addSubview(nameLabel)
-        badgeView.snp.makeConstraints { make in
-            make.leading.equalToSuperview().offset(4)
+        iconView.snp.makeConstraints { make in
+            make.leading.equalToSuperview().offset(6)
             make.centerY.equalToSuperview()
-            make.width.height.equalTo(24)
-        }
-        badgeImageView.snp.makeConstraints { make in
-            make.center.equalToSuperview()
+            make.width.height.equalTo(18)
         }
         nameLabel.snp.makeConstraints { make in
-            make.leading.equalTo(badgeView.snp.trailing).offset(8)
+            make.leading.equalTo(iconView.snp.trailing).offset(8)
             make.trailing.equalToSuperview().offset(-4)
             make.centerY.equalToSuperview()
         }
