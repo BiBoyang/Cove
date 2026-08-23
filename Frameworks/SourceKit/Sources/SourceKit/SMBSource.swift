@@ -62,12 +62,21 @@ public actor SMBSource: ContentSource {
         } catch {
             throw SMBErrorMapper.pathError(error, path: path, operation: "list")
         }
-        return entries.compactMap { entry in
+        return Self.contentItems(from: entries, base: path)
+    }
+
+    /// Maps AMSMB2's resource-key dictionaries to content items. Builds
+    /// each path from the raw entry name, never AMSMB2's `.pathKey`: that
+    /// one goes through Foundation URL APIs, which normalize the name to
+    /// NFD — and a precomposed (NFC) name on the server then fails to read
+    /// back with "path not found".
+    static func contentItems(from entries: [[URLResourceKey: Any]], base path: String) -> [ContentItem] {
+        entries.compactMap { entry in
             guard let name = entry[.nameKey] as? String else { return nil }
             let isDirectory = (entry[.isDirectoryKey] as? Bool) ?? false
             let size = (entry[.fileSizeKey] as? NSNumber)?.int64Value ?? 0
             let modified = entry[.contentModificationDateKey] as? Date
-            let fullPath = (entry[.pathKey] as? String) ?? Self.joinPath(base: path, name: name)
+            let fullPath = Self.joinPath(base: path, name: name)
             return ContentItem(
                 name: name,
                 path: fullPath,

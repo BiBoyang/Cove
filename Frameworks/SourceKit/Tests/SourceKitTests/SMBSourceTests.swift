@@ -29,6 +29,22 @@ final class SMBSourceTests: XCTestCase {
         XCTAssertNil(item.modifiedDate)
     }
 
+    func testListMappingKeepsPrecomposedNamesByteForByte() {
+        // NFC (precomposed) name, as stored on the server. AMSMB2's
+        // `.pathKey` would hand back an NFD-normalized path that the server
+        // cannot resolve; our mapping must preserve the raw name bytes.
+        let nfcName = "\u{B8E8}\u{C5A3}-test.mp4"
+        let entries: [[URLResourceKey: Any]] = [[
+            .nameKey: nfcName,
+            .isDirectoryKey: false,
+            .fileSizeKey: NSNumber(value: 42),
+        ]]
+        let items = SMBSource.contentItems(from: entries, base: "/")
+        XCTAssertEqual(items.count, 1)
+        XCTAssertEqual(items[0].path, "/\u{B8E8}\u{C5A3}-test.mp4")
+        XCTAssertEqual(Array(items[0].path.utf8), Array("/\(nfcName)".utf8))
+    }
+
     // MARK: - Actor regression: unconnected source under concurrent access
 
     /// list/read/metadata/disconnect fired concurrently at a source that was
