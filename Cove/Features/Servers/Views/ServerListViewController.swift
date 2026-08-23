@@ -14,8 +14,9 @@ final class ServerListViewController: NSViewController {
 
     private let tableView = NSTableView()
     private let scrollView = NSScrollView()
-    private let bottomBar = NSView()
-    private let addButton = NSButton()
+    /// Section-header add button, Notes-style: a small plus at the
+    /// trailing edge of the "服务器" group row.
+    private let headerAddButton = NSButton()
 
     init(viewModel: ServerListViewModel) {
         self.viewModel = viewModel
@@ -62,42 +63,9 @@ final class ServerListViewController: NSViewController {
         scrollView.hasVerticalScroller = true
         scrollView.drawsBackground = false
 
-        // Slim bottom bar with an add button, in the spirit of Finder's
-        // sidebar action row. Icon plus label: an icon-only 16pt plus was
-        // too small a target and read as a visual orphan.
-        addButton.bezelStyle = .accessoryBar
-        addButton.image = NSImage(
-            systemSymbolName: "plus",
-            accessibilityDescription: nil
-        )?.withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 12, weight: .medium))
-        addButton.imagePosition = .imageLeading
-        addButton.title = "添加服务器"
-        addButton.font = .systemFont(ofSize: 12)
-        addButton.target = self
-        addButton.action = #selector(handleAdd)
-
-        let separator = NSBox()
-        separator.boxType = .separator
-
-        bottomBar.addSubview(separator)
-        bottomBar.addSubview(addButton)
         root.addSubview(scrollView)
-        root.addSubview(bottomBar)
-        separator.snp.makeConstraints { make in
-            make.top.leading.trailing.equalToSuperview()
-            make.height.equalTo(1)
-        }
-        addButton.snp.makeConstraints { make in
-            make.leading.equalToSuperview().offset(8)
-            make.centerY.equalToSuperview()
-        }
-        bottomBar.snp.makeConstraints { make in
-            make.leading.trailing.bottom.equalToSuperview()
-            make.height.equalTo(28)
-        }
         scrollView.snp.makeConstraints { make in
-            make.top.leading.trailing.equalToSuperview()
-            make.bottom.equalTo(bottomBar.snp.top)
+            make.edges.equalToSuperview()
         }
 
         view = root
@@ -162,7 +130,8 @@ extension ServerListViewController: NSTableViewDataSource, NSTableViewDelegate {
         return cell
     }
 
-    /// Section header: small gray label, in the spirit of Finder's sidebar.
+    /// Section header: small gray label with a trailing add button, in
+    /// the spirit of Notes' sidebar section headers.
     private func makeHeaderCell(in tableView: NSTableView) -> NSTableCellView {
         let identifier = NSUserInterfaceItemIdentifier("ServerHeaderCell")
         let cell: NSTableCellView
@@ -176,9 +145,27 @@ extension ServerListViewController: NSTableViewDataSource, NSTableViewDelegate {
             textField.textColor = .secondaryLabelColor
             cell.addSubview(textField)
             cell.textField = textField
+
+            headerAddButton.isBordered = false
+            headerAddButton.image = NSImage(
+                systemSymbolName: "plus", accessibilityDescription: "添加服务器"
+            )?.withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 11, weight: .medium))
+            headerAddButton.contentTintColor = .secondaryLabelColor
+            headerAddButton.imagePosition = .imageOnly
+            headerAddButton.title = ""
+            headerAddButton.focusRingType = .none
+            headerAddButton.target = self
+            headerAddButton.action = #selector(handleAdd)
+            cell.addSubview(headerAddButton)
+
             textField.snp.makeConstraints { make in
-                make.leading.trailing.equalToSuperview().inset(4)
+                make.leading.equalToSuperview().inset(4)
                 make.centerY.equalToSuperview()
+            }
+            headerAddButton.snp.makeConstraints { make in
+                make.trailing.equalToSuperview().inset(4)
+                make.centerY.equalToSuperview()
+                make.size.equalTo(16)
             }
         }
         cell.textField?.stringValue = "服务器"
