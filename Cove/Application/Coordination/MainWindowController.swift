@@ -49,6 +49,14 @@ final class MainWindowController: NSWindowController {
     }
 
     private func showDetail(_ viewController: NSViewController) {
+        // Replacing the split view items tears down and re-attaches the
+        // detail pane; when done for the view controller that is already
+        // showing (e.g. connecting while the share grid is up), the split
+        // view transiently gives the sidebar the full window width and the
+        // source-list selection paints edge to edge. Skip no-op swaps.
+        if splitViewController.splitViewItems.last?.viewController === viewController {
+            return
+        }
         splitViewController.splitViewItems = [
             sidebarItem,
             NSSplitViewItem(viewController: viewController),
