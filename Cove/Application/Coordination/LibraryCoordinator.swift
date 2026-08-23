@@ -25,7 +25,7 @@ final class LibraryCoordinator {
     private var navigationPath = LibraryNavigationPath()
     private var activeAddServerSheet: AddServerSheetController?
     /// Owns the single v1 player window; a new video replaces it.
-    private let playerCoordinator = PlayerCoordinator()
+    private let playerCoordinator: PlayerCoordinator
     private var navigationGeneration = 0
     private var activeTask: Task<Void, Never>?
 
@@ -40,12 +40,14 @@ final class LibraryCoordinator {
         sessionService: SMBSessionService,
         cache: CacheStore,
         readerCoordinator: ReaderCoordinator,
-        preheatService: PreheatService
+        preheatService: PreheatService,
+        progressStore: PlaybackProgressStoring? = nil
     ) {
         self.sessionService = sessionService
         self.cache = cache
         self.readerCoordinator = readerCoordinator
         self.preheatService = preheatService
+        playerCoordinator = PlayerCoordinator(progressStore: progressStore)
         serverListViewController = ServerListViewController(viewModel: serverListViewModel)
         shareGridViewController = ShareGridViewController(viewModel: shareGridViewModel)
         browserViewController = BrowserViewController(viewModel: browserViewModel)
@@ -311,7 +313,11 @@ final class LibraryCoordinator {
             onMessageError?("无法定位视频文件。", "打开视频失败")
             return
         }
-        playerCoordinator.open(item: item, reader: sessionService.makeRangedFileReader())
+        playerCoordinator.open(
+            item: item,
+            sourceID: sessionService.currentSourceID,
+            reader: sessionService.makeRangedFileReader()
+        )
     }
 }
 

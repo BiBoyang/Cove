@@ -8,17 +8,25 @@ import SourceKit
 /// down in the required order before the new session is built.
 @MainActor
 final class PlayerCoordinator {
+    private let progressStore: PlaybackProgressStoring?
     private var windowController: PlayerWindowController?
 
     var onError: ((_ error: Error, _ title: String) -> Void)?
     var onMessageError: ((_ message: String, _ title: String) -> Void)?
 
-    func open(item: ContentItem, reader: @escaping VideoStreamBridge.RangedReader) {
+    init(progressStore: PlaybackProgressStoring? = nil) {
+        self.progressStore = progressStore
+    }
+
+    func open(item: ContentItem, sourceID: String?, reader: @escaping VideoStreamBridge.RangedReader) {
         windowController?.window?.close()
         let bridge = VideoStreamBridge(path: item.path, size: item.size, reader: reader)
         do {
             let core = try MPVPlayerCore(bridge: bridge)
-            let viewModel = PlayerViewModel(controller: core)
+            // Resume positions are remembered per source, so same-named
+            // files on different servers never collide.
+            let progressKey = sourceID.map { "\($0)|\(item.path)" }
+            let viewModel = PlayerViewModel(controller: core, progressStore: progressStore, progressKey: progressKey)
             core.onEvent = { [weak viewModel] event in viewModel?.apply(event) }
             viewModel.onError = { [weak self] detail in
                 self?.onMessageError?("播放中断：\(detail)", "播放失败")

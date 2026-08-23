@@ -298,6 +298,8 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
     }
 
     func windowWillClose(_ notification: Notification) {
+        // Persist the resume point before the mpv handle goes away.
+        viewModel.persistProgressOnClose()
         core.shutdown()
         onClose?()
         onClose = nil

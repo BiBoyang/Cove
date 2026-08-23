@@ -217,4 +217,162 @@ struct PlayerViewModelTests {
         #expect(viewModel.volume == 95)
         #expect(controller.commands == [.setVolume(95)])
     }
+
+    // MARK: Resume position
+
+    private final class FakeProgressStore: PlaybackProgressStoring {
+        var positions: [String: Double] = [:]
+        private(set) var saves: [Double] = []
+        private(set) var removals: [String] = []
+
+        func position(forKey key: String) -> Double? { positions[key] }
+
+        func savePosition(_ position: Double, forKey key: String) {
+            positions[key] = position
+            saves.append(position)
+        }
+
+        func removePosition(forKey key: String) {
+            positions[key] = nil
+            removals.append(key)
+        }
+    }
+
+    private func makeProgressViewModel(
+        savedPosition: Double? = nil
+    ) -> (PlayerViewModel, FakeController, FakeProgressStore) {
+        let controller = FakeController()
+        let store = FakeProgressStore()
+        if let savedPosition { store.positions["src|/a.mp4"] = savedPosition }
+        return (
+            PlayerViewModel(controller: controller, progressStore: store, progressKey: "src|/a.mp4"),
+            controller,
+            store
+        )
+    }
+
+    @Test("a mid-video record resumes with a single seek once duration is known")
+    func resumesMidVideo() {
+        let (viewModel, controller, _) = makeProgressViewModel(savedPosition: 60)
+        viewModel.apply(.fileLoaded)
+        // No resume while the duration is still unknown.
+        #expect(controller.commands.isEmpty)
+
+        viewModel.apply(.durationChanged(120))
+        #expect(controller.commands == [.seekTo(60)])
+
+        // A later duration correction must not seek again.
+        viewModel.apply(.durationChanged(121))
+        #expect(controller.commands == [.seekTo(60)])
+    }
+
+    @Test("resume also fires when the duration arrives before file-loaded")
+    func resumesWhenDurationComesFirst() {
+        let (viewModel, controller, _) = makeProgressViewModel(savedPosition: 60)
+        viewModel.apply(.durationChanged(120))
+        #expect(controller.commands.isEmpty)
+        viewModel.apply(.fileLoaded)
+        #expect(controller.commands == [.seekTo(60)])
+    }
+
+    @Test("a position within the first 5 seconds is not resumed")
+    func ignoresBarelyStarted() {
+        let (viewModel, controller, store) = makeProgressViewModel(savedPosition: 5)
+        viewModel.apply(.fileLoaded)
+        viewModel.apply(.durationChanged(120))
+        #expect(controller.commands.isEmpty)
+        #expect(store.removals.isEmpty)
+    }
+
+    @Test("a finished record is deleted and the replay starts from the top")
+    func forgetsFinished() {
+        let (viewModel, controller, store) = makeProgressViewModel(savedPosition: 118)
+        viewModel.apply(.fileLoaded)
+        viewModel.apply(.durationChanged(120))
+        #expect(controller.commands.isEmpty)
+        #expect(store.removals == ["src|/a.mp4"])
+        #expect(store.positions.isEmpty)
+    }
+
+    @Test("progress writes are throttled to one per 5s of movement")
+    func throttledWrites() {
+        let (viewModel, _, store) = makeProgressViewModel()
+        viewModel.apply(.fileLoaded)
+        viewModel.apply(.durationChanged(120))
+        viewModel.apply(.pauseChanged(false))
+
+        viewModel.apply(.timePosChanged(1))
+        viewModel.apply(.timePosChanged(4))
+        #expect(store.saves.isEmpty)
+
+        viewModel.apply(.timePosChanged(7))
+        #expect(store.saves == [7])
+
+        viewModel.apply(.timePosChanged(9))
+        #expect(store.saves == [7])
+        viewModel.apply(.timePosChanged(12))
+        #expect(store.saves == [7, 12])
+    }
+
+    @Test("pausing persists the position immediately")
+    func pausePersists() {
+        let (viewModel, _, store) = makeProgressViewModel()
+        viewModel.apply(.fileLoaded)
+        viewModel.apply(.durationChanged(120))
+        viewModel.apply(.timePosChanged(30))
+
+        viewModel.apply(.pauseChanged(true))
+        #expect(store.saves.last == 30)
+    }
+
+    @Test("closing the window persists the final position")
+    func closePersists() {
+        let (viewModel, _, store) = makeProgressViewModel()
+        viewModel.apply(.fileLoaded)
+        viewModel.apply(.durationChanged(120))
+        viewModel.apply(.timePosChanged(30))
+
+        viewModel.persistProgressOnClose()
+        #expect(store.saves.last == 30)
+    }
+
+    @Test("positions past 95% delete the record instead of saving")
+    func finishThresholdDeletes() {
+        let (viewModel, _, store) = makeProgressViewModel(savedPosition: 60)
+        viewModel.apply(.fileLoaded)
+        viewModel.apply(.durationChanged(120))
+
+        viewModel.apply(.timePosChanged(119))
+        #expect(store.saves.isEmpty)
+        #expect(store.removals == ["src|/a.mp4"])
+    }
+
+    @Test("a clean end deletes the record")
+    func endedDeletes() {
+        let (viewModel, _, store) = makeProgressViewModel(savedPosition: 60)
+        viewModel.apply(.fileLoaded)
+        viewModel.apply(.durationChanged(120))
+        #expect(store.positions["src|/a.mp4"] == 60)
+
+        viewModel.apply(.ended)
+        #expect(store.removals == ["src|/a.mp4"])
+        #expect(store.positions.isEmpty)
+    }
+
+    @Test("positions are not persisted while scrubbing")
+    func scrubbingSkipsWrites() {
+        let (viewModel, _, store) = makeProgressViewModel()
+        viewModel.apply(.fileLoaded)
+        viewModel.apply(.durationChanged(120))
+
+        viewModel.beginScrubbing()
+        viewModel.apply(.timePosChanged(50))
+        viewModel.scrubTo(80)
+        viewModel.endScrubbing()
+        #expect(store.saves.isEmpty)
+
+        // Playback resumes from the drop point; normal ticks persist again.
+        viewModel.apply(.timePosChanged(85))
+        #expect(store.saves == [85])
+    }
 }

@@ -28,11 +28,21 @@ final class PlayerViewModel {
     /// Seconds of pointer idleness after which the controls hide themselves
     /// during playback. Injected so tests can shrink the wait.
     private let idleHideInterval: TimeInterval
+    /// Resume-position persistence. Both are nil for sessions that should
+    /// not be remembered (e.g. no source id at open time).
+    private let progressStore: PlaybackProgressStoring?
+    private let progressKey: String?
 
     private var hasLoaded = false
     private var hasFailed = false
     private var isPaused = false
     private var isBuffering = false
+    /// Resume is attempted exactly once per session, only after both the
+    /// file is loaded and a real duration is known (streamed sources can
+    /// report duration late or never).
+    private var resumeAttempted = false
+    /// Baseline for the ~5s position-delta throttle on progress writes.
+    private var lastPersistedPosition = -Double.infinity
 
     private(set) var state: State = .loading
     private(set) var currentTime: Double = 0
@@ -55,9 +65,16 @@ final class PlayerViewModel {
     /// Playback failure detail, forwarded to the coordinator's error chain.
     var onError: ((String) -> Void)?
 
-    init(controller: PlayerPlaybackControlling, idleHideInterval: TimeInterval = 2.5) {
+    init(
+        controller: PlayerPlaybackControlling,
+        idleHideInterval: TimeInterval = 2.5,
+        progressStore: PlaybackProgressStoring? = nil,
+        progressKey: String? = nil
+    ) {
         self.controller = controller
         self.idleHideInterval = idleHideInterval
+        self.progressStore = progressStore
+        self.progressKey = progressKey
     }
 
     // MARK: - Event reduction
@@ -67,21 +84,34 @@ final class PlayerViewModel {
         case .fileLoaded:
             hasLoaded = true
         case .timePosChanged(let time):
-            if !isScrubbing { currentTime = time }
+            if !isScrubbing {
+                currentTime = time
+                // mpv ticks ~1/s; one persisted write per ≥5s of movement is
+                // plenty for a resume point. Scrubbed positions never reach
+                // here, so a drag's intermediate states are not persisted.
+                if time - lastPersistedPosition >= 5 {
+                    persistProgress(time)
+                }
+            }
         case .durationChanged(let value):
             duration = max(0, value)
         case .pauseChanged(let paused):
             isPaused = paused
+            if paused { persistProgress(currentTime) }
         case .bufferingChanged(let buffering):
             isBuffering = buffering
         case .ended:
             // v1: a clean end leaves the last frame up; the user closes the
-            // window or seeks back manually.
-            break
+            // window or seeks back manually. A finished video is forgotten
+            // so a replay starts from the top.
+            if let progressStore, let progressKey {
+                progressStore.removePosition(forKey: progressKey)
+            }
         case .playbackFailed(let detail):
             hasFailed = true
             onError?(detail)
         }
+        attemptResumeIfReady()
         state = Self.computeState(hasLoaded: hasLoaded, hasFailed: hasFailed, isPaused: isPaused, isBuffering: isBuffering)
         updateIdlePolicy()
         onChange?()
@@ -92,6 +122,42 @@ final class PlayerViewModel {
         guard hasLoaded else { return .loading }
         if isBuffering { return .buffering }
         return isPaused ? .paused : .playing
+    }
+
+    // MARK: - Resume position
+
+    /// Silent resume, checked after every event until both prerequisites
+    /// (file loaded, positive duration) have been seen once. Positions ≤5s
+    /// count as "not really started"; ≥95% of the duration count as
+    /// finished and the record is dropped so the replay starts from the top.
+    private func attemptResumeIfReady() {
+        guard !resumeAttempted, hasLoaded, duration > 0,
+              let progressStore, let progressKey else { return }
+        resumeAttempted = true
+        guard let position = progressStore.position(forKey: progressKey) else { return }
+        if position >= duration * 0.95 {
+            progressStore.removePosition(forKey: progressKey)
+        } else if position > 5 {
+            controller.seekTo(seconds: position)
+        }
+    }
+
+    /// Persists `position` as the resume point, or drops the record when
+    /// the position says the video is finished. Never writes before a real
+    /// duration is known.
+    private func persistProgress(_ position: Double) {
+        guard duration > 0, let progressStore, let progressKey else { return }
+        lastPersistedPosition = position
+        if position >= duration * 0.95 {
+            progressStore.removePosition(forKey: progressKey)
+        } else if position > 5 {
+            progressStore.savePosition(position, forKey: progressKey)
+        }
+    }
+
+    /// Final write, invoked by the window controller just before teardown.
+    func persistProgressOnClose() {
+        persistProgress(currentTime)
     }
 
     // MARK: - User intents
