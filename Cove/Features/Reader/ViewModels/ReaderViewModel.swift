@@ -34,6 +34,11 @@ final class ReaderViewModel {
         didSet { publishState() }
     }
 
+    /// Fired after the current page index lands. The view model does not
+    /// know what listens — the reader's adjacent-page prefetch hangs off
+    /// this seam in the coordinator.
+    var onPageChanged: ((Int) -> Void)?
+
     var state: State {
         State(
             pageTitle: pages[currentIndex].title,
@@ -79,6 +84,7 @@ final class ReaderViewModel {
         loadingTask?.cancel()
         loadingTask = nil
         onStateChange = nil
+        onPageChanged = nil
     }
 
     private func goToPage(_ index: Int) {
@@ -86,6 +92,7 @@ final class ReaderViewModel {
         currentIndex = index
         errorMessage = nil
         publishState()
+        onPageChanged?(index)
         loadCurrentPage()
     }
 

@@ -397,6 +397,28 @@ struct ReaderViewModelTests {
         #expect(viewModel.state.pageTitle == "2")
         #expect(viewModel.state.image?.width == 2)
     }
+
+    @Test("page turns report the new index via onPageChanged")
+    func pageTurnsReportIndex() {
+        let pages = (1...3).map { ReaderPage(id: "\($0)", title: "\($0)") }
+        let viewModel = ReaderViewModel(
+            pages: pages,
+            startIndex: 0,
+            loader: DelayedReaderLoader(),
+            logger: TraceLogger(category: "ReaderTests")
+        )
+        var indices: [Int] = []
+        viewModel.onPageChanged = { indices.append($0) }
+
+        viewModel.goNext()
+        viewModel.goNext()
+        viewModel.goPrevious()
+        // Every landed move reports; out-of-range moves do not.
+        viewModel.goPrevious()
+        viewModel.goPrevious()
+
+        #expect(indices == [1, 2, 1, 0])
+    }
 }
 
 @MainActor
@@ -583,9 +605,84 @@ struct ReaderCoordinatorTests {
         ContentItem(name: name, path: "/\(name)", isDirectory: false, size: size, modifiedDate: nil)
     }
 
+    /// Coordinator with an isolated (connection-less) preheat service; the
+    /// `submitPrefetch` seam is what tests actually observe.
+    private func makeReaderCoordinator() -> ReaderCoordinator {
+        let defaults = UserDefaults(suiteName: "ReaderCoordinatorTests-\(UUID().uuidString)")!
+        return ReaderCoordinator(
+            cache: makeTestCache(),
+            preheatService: PreheatService(
+                settings: SettingsService(defaults: defaults),
+                cacheStore: makeTestCache()
+            )
+        )
+    }
+
+    @Test("opening a directory prefetches the two following pages")
+    func openPrefetchesNextTwo() {
+        let coordinator = makeReaderCoordinator()
+        let submitted = Mutex<[[String]]>([])
+        coordinator.submitPrefetch = { items in
+            submitted.withLock { $0.append(items.map(\.path)) }
+        }
+        coordinator.presentContent = { _, _, _ in }
+        let items = (1...4).map { comicItem("p\($0).jpg", size: 10) }
+
+        coordinator.openDirectory(
+            items: items, selectedPath: "/p2.jpg", sourceID: "s", fileReader: { _ in Data() }
+        )
+
+        #expect(submitted.withLock { $0 } == [["/p3.jpg", "/p4.jpg"]])
+    }
+
+    @Test("prefetch stops at the last page")
+    func prefetchStopsAtEnd() {
+        let coordinator = makeReaderCoordinator()
+        let submitted = Mutex<[[String]]>([])
+        coordinator.submitPrefetch = { items in
+            submitted.withLock { $0.append(items.map(\.path)) }
+        }
+        coordinator.presentContent = { _, _, _ in }
+        let items = (1...3).map { comicItem("p\($0).jpg", size: 10) }
+
+        // Only one page remains after index 1.
+        coordinator.openDirectory(
+            items: items, selectedPath: "/p2.jpg", sourceID: "s", fileReader: { _ in Data() }
+        )
+        #expect(submitted.withLock { $0 } == [["/p3.jpg"]])
+
+        // Nothing follows the last page: no new submission.
+        coordinator.openDirectory(
+            items: items, selectedPath: "/p3.jpg", sourceID: "s", fileReader: { _ in Data() }
+        )
+        #expect(submitted.withLock { $0 } == [["/p3.jpg"]])
+    }
+
+    @Test("opening a comic does not prefetch", .timeLimit(.minutes(1)))
+    func comicOpenDoesNotPrefetch() async throws {
+        let coordinator = makeReaderCoordinator()
+        let submitted = Mutex<[[String]]>([])
+        let presented = Mutex(false)
+        coordinator.submitPrefetch = { items in
+            submitted.withLock { $0.append(items.map(\.path)) }
+        }
+        coordinator.presentContent = { _, _, _ in presented.withLock { $0 = true } }
+        let bytes = makeTestCBZBytes(page: "a1.jpg")
+
+        coordinator.openComic(
+            item: comicItem("a.cbz", size: Int64(bytes.count)),
+            sourceID: "s",
+            fileReader: { _ in bytes },
+            isSourceCurrent: { true }
+        )
+
+        try await waitUntil { presented.withLock { $0 } }
+        #expect(submitted.withLock { $0 }.isEmpty)
+    }
+
     @Test("a rapid re-open presents only the newer comic", .timeLimit(.minutes(1)))
     func rapidReopenPresentsOnlyNewer() async throws {
-        let coordinator = ReaderCoordinator(cache: makeTestCache())
+        let coordinator = makeReaderCoordinator()
         let presented = Mutex<[[String]]>([])
         coordinator.presentContent = { content, _, _ in
             presented.withLock { $0.append(content.pages.map(\.id)) }
@@ -622,7 +719,7 @@ struct ReaderCoordinatorTests {
 
     @Test("a cancelled open never presents once its slow read finishes", .timeLimit(.minutes(1)))
     func cancelledOpenDoesNotPresent() async throws {
-        let coordinator = ReaderCoordinator(cache: makeTestCache())
+        let coordinator = makeReaderCoordinator()
         let presented = Mutex<[[String]]>([])
         let errors = Mutex<[String]>([])
         coordinator.presentContent = { content, _, _ in

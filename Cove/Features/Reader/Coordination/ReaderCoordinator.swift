@@ -11,11 +11,15 @@ import TraceKit
 @MainActor
 final class ReaderCoordinator: NSObject {
     private let cache: CacheStore
+    private let preheatService: PreheatService
     private let logger = TraceLogger(category: "Reader")
 
     private var readerController: PagedReaderWindowController?
     private var openTask: Task<Void, Never>?
     private var openGeneration = 0
+    /// The presented directory's images in page order; nil in comic mode,
+    /// where prefetching is pointless (the archive is already cached whole).
+    private var directoryPrefetchItems: [ContentItem]?
 
     var onError: ((_ error: Error, _ title: String) -> Void)?
     var onMessageError: ((_ message: String, _ title: String) -> Void)?
@@ -28,8 +32,15 @@ final class ReaderCoordinator: NSObject {
         self?.present(content: content, startIndex: startIndex, sourceID: sourceID)
     }
 
-    init(cache: CacheStore) {
+    /// Prefetch seam, same pattern as `presentContent`: production forwards
+    /// to the preheat service; tests substitute a recorder.
+    lazy var submitPrefetch: ([ContentItem]) -> Void = { [weak self] items in
+        self?.preheatService.prefetchPages(items)
+    }
+
+    init(cache: CacheStore, preheatService: PreheatService) {
         self.cache = cache
+        self.preheatService = preheatService
         super.init()
     }
 
@@ -58,7 +69,11 @@ final class ReaderCoordinator: NSObject {
             cache: cache,
             sourceID: sourceID
         )
+        directoryPrefetchItems = items
         presentContent(content, startIndex, sourceID)
+        // Open trigger: warm the two pages after the start page, so the
+        // first page turn hits the cache.
+        prefetchFollowing(from: startIndex)
     }
 
     func openComic(
@@ -68,6 +83,7 @@ final class ReaderCoordinator: NSObject {
         isSourceCurrent: @escaping @MainActor () -> Bool
     ) {
         cancelPendingOpen()
+        directoryPrefetchItems = nil
         let generation = openGeneration
         openTask = Task { [weak self] in
             guard let self else { return }
@@ -106,6 +122,11 @@ final class ReaderCoordinator: NSObject {
             loader: loader,
             logger: logger
         )
+        // Page-turn trigger: the only seam between the reader and
+        // prefetching — the view model never learns why we listen.
+        viewModel.onPageChanged = { [weak self] index in
+            self?.prefetchFollowing(from: index)
+        }
         let reader = PagedReaderWindowController(viewModel: viewModel)
         readerController = reader
         NotificationCenter.default.addObserver(
@@ -115,6 +136,16 @@ final class ReaderCoordinator: NSObject {
             object: reader.window
         )
         reader.showWindow(nil)
+    }
+
+    /// Submits the two pages after `index` for original-pool prefetch.
+    /// Directory mode only; repeat submissions are deduped by the
+    /// scheduler, and already-downloaded pages are skipped there too.
+    private func prefetchFollowing(from index: Int) {
+        guard let items = directoryPrefetchItems else { return }
+        let upcoming = items.dropFirst(index + 1).prefix(2)
+        guard !upcoming.isEmpty else { return }
+        submitPrefetch(Array(upcoming))
     }
 
     @objc private func readerWindowWillClose(_ notification: Notification) {

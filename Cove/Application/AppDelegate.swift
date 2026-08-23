@@ -16,7 +16,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let cacheService = CacheService(settings: settingsService)
         let preheatService = PreheatService(settings: settingsService, cacheStore: cacheService.store)
         let sessionService = SMBSessionService()
-        let readerCoordinator = ReaderCoordinator(cache: cacheService.store)
+        let readerCoordinator = ReaderCoordinator(cache: cacheService.store, preheatService: preheatService)
         let libraryCoordinator = LibraryCoordinator(
             sessionService: sessionService,
             cache: cacheService.store,
