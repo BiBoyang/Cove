@@ -34,15 +34,21 @@ public actor SMBSource: ContentSource {
             throw SourceError.connectionFailed("invalid host: \(host)")
         }
         let credential = URLCredential(user: username, password: password, persistence: .none)
-        guard let client = SMB2Manager(url: url, credential: credential) else {
-            throw SourceError.connectionFailed("could not create SMB client for \(host)")
-        }
         do {
-            try await client.connectShare(name: share)
+            // A fresh client per attempt: a failed libsmb2 context is
+            // destroyed, so retrying on the same manager is not safe.
+            self.client = try await TransientRetry.run {
+                guard let client = SMB2Manager(url: url, credential: credential) else {
+                    throw SourceError.connectionFailed("could not create SMB client for \(host)")
+                }
+                try await client.connectShare(name: share)
+                return client
+            }
+        } catch let error as SourceError {
+            throw error
         } catch {
             throw SMBErrorMapper.connectError(error, host: host, resource: share)
         }
-        self.client = client
     }
 
     public func disconnect() async {

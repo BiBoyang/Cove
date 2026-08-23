@@ -49,12 +49,16 @@ public struct SMBServer: Sendable {
             throw SourceError.connectionFailed("invalid host: \(host)")
         }
         let credential = URLCredential(user: username, password: password, persistence: .none)
-        guard let client = SMB2Manager(url: url, credential: credential) else {
-            throw SourceError.connectionFailed("could not create SMB client for \(host)")
-        }
         let shares: [(name: String, comment: String)]
         do {
-            shares = try await client.listShares(enumerateHidden: false)
+            shares = try await TransientRetry.run {
+                guard let client = SMB2Manager(url: url, credential: credential) else {
+                    throw SourceError.connectionFailed("could not create SMB client for \(host)")
+                }
+                return try await client.listShares(enumerateHidden: false)
+            }
+        } catch let error as SourceError {
+            throw error
         } catch {
             throw SMBErrorMapper.connectError(error, host: host, resource: "IPC$")
         }
