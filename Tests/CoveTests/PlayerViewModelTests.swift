@@ -22,9 +22,18 @@ struct PlayerViewModelTests {
         func setVolume(_ volume: Double) { commands.append(.setVolume(volume)) }
     }
 
-    private func makeViewModel() -> (PlayerViewModel, FakeController) {
+    private func makeViewModel(
+        idleHideInterval: TimeInterval = 2.5
+    ) -> (PlayerViewModel, FakeController) {
         let controller = FakeController()
-        return (PlayerViewModel(controller: controller), controller)
+        return (PlayerViewModel(controller: controller, idleHideInterval: idleHideInterval), controller)
+    }
+
+    /// Drives the view model into the playing state (file loaded, not
+    /// paused), which is the only state where idle auto-hide can engage.
+    private func reachPlaying(_ viewModel: PlayerViewModel) {
+        viewModel.apply(.fileLoaded)
+        viewModel.apply(.pauseChanged(false))
     }
 
     @Test("stays loading until the file is loaded, then follows pause")
@@ -122,5 +131,90 @@ struct PlayerViewModelTests {
         #expect(PlayerViewModel.formatTime(65) == "1:05")
         #expect(PlayerViewModel.formatTime(3661) == "1:01:01")
         #expect(PlayerViewModel.formatTime(-3) == "0:00")
+    }
+
+    // MARK: Idle auto-hide
+
+    /// Idle intervals are injected tiny; "past the timeout" sleeps use a
+    /// generous 4x margin. The negative cases (paused/scrubbing/hover) are
+    /// gated by state, not timing, so they stay robust under CI load.
+    @Test("controls hide after the idle timeout while playing")
+    func idleHidesControls() async throws {
+        let (viewModel, _) = makeViewModel(idleHideInterval: 0.05)
+        reachPlaying(viewModel)
+        #expect(viewModel.controlsVisible)
+
+        try await Task.sleep(for: .milliseconds(200))
+        #expect(viewModel.controlsVisible == false)
+    }
+
+    @Test("paused playback never hides the controls")
+    func pausedKeepsControls() async throws {
+        let (viewModel, _) = makeViewModel(idleHideInterval: 0.05)
+        reachPlaying(viewModel)
+        viewModel.apply(.pauseChanged(true))
+        #expect(viewModel.state == .paused)
+
+        try await Task.sleep(for: .milliseconds(200))
+        #expect(viewModel.controlsVisible)
+    }
+
+    @Test("scrubbing holds the controls; releasing restarts the countdown")
+    func scrubbingKeepsControls() async throws {
+        let (viewModel, _) = makeViewModel(idleHideInterval: 0.05)
+        reachPlaying(viewModel)
+        viewModel.apply(.durationChanged(120))
+        viewModel.beginScrubbing()
+
+        try await Task.sleep(for: .milliseconds(200))
+        #expect(viewModel.controlsVisible)
+
+        viewModel.endScrubbing()
+        try await Task.sleep(for: .milliseconds(200))
+        #expect(viewModel.controlsVisible == false)
+    }
+
+    @Test("mouse activity restores the controls and resets the countdown")
+    func mouseActivityRestoresControls() async throws {
+        let (viewModel, _) = makeViewModel(idleHideInterval: 0.05)
+        reachPlaying(viewModel)
+
+        try await Task.sleep(for: .milliseconds(200))
+        #expect(viewModel.controlsVisible == false)
+
+        viewModel.noteMouseActivity()
+        #expect(viewModel.controlsVisible)
+
+        // The countdown restarted with the activity, so it hides again.
+        try await Task.sleep(for: .milliseconds(200))
+        #expect(viewModel.controlsVisible == false)
+    }
+
+    @Test("hovering the capsule keeps the controls up")
+    func hoverKeepsControls() async throws {
+        let (viewModel, _) = makeViewModel(idleHideInterval: 0.05)
+        reachPlaying(viewModel)
+        viewModel.setPointerOverControls(true)
+
+        try await Task.sleep(for: .milliseconds(200))
+        #expect(viewModel.controlsVisible)
+
+        viewModel.setPointerOverControls(false)
+        try await Task.sleep(for: .milliseconds(200))
+        #expect(viewModel.controlsVisible == false)
+    }
+
+    @Test("arrow-key volume counts as activity and reveals the controls")
+    func volumeKeyRevealsControls() async throws {
+        let (viewModel, controller) = makeViewModel(idleHideInterval: 0.05)
+        reachPlaying(viewModel)
+
+        try await Task.sleep(for: .milliseconds(200))
+        #expect(viewModel.controlsVisible == false)
+
+        viewModel.adjustVolume(by: -5)
+        #expect(viewModel.controlsVisible)
+        #expect(viewModel.volume == 95)
+        #expect(controller.commands == [.setVolume(95)])
     }
 }

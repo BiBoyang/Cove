@@ -25,6 +25,9 @@ final class PlayerViewModel {
     }
 
     private let controller: PlayerPlaybackControlling
+    /// Seconds of pointer idleness after which the controls hide themselves
+    /// during playback. Injected so tests can shrink the wait.
+    private let idleHideInterval: TimeInterval
 
     private var hasLoaded = false
     private var hasFailed = false
@@ -38,6 +41,13 @@ final class PlayerViewModel {
     /// user is dragging does not fight playback position updates.
     private(set) var isScrubbing = false
     private(set) var volume: Double = 100
+    /// Whether the floating controls (capsule + overlay title) are shown.
+    /// Auto-hide only ever engages during smooth playback; see
+    /// `updateIdlePolicy`.
+    private(set) var controlsVisible = true
+
+    private var isPointerOverControls = false
+    private var idleHideTask: Task<Void, Never>?
 
     /// Called whenever a displayed value may have changed; the view
     /// re-renders from the view model's public state.
@@ -45,8 +55,9 @@ final class PlayerViewModel {
     /// Playback failure detail, forwarded to the coordinator's error chain.
     var onError: ((String) -> Void)?
 
-    init(controller: PlayerPlaybackControlling) {
+    init(controller: PlayerPlaybackControlling, idleHideInterval: TimeInterval = 2.5) {
         self.controller = controller
+        self.idleHideInterval = idleHideInterval
     }
 
     // MARK: - Event reduction
@@ -72,6 +83,7 @@ final class PlayerViewModel {
             onError?(detail)
         }
         state = Self.computeState(hasLoaded: hasLoaded, hasFailed: hasFailed, isPaused: isPaused, isBuffering: isBuffering)
+        updateIdlePolicy()
         onChange?()
     }
 
@@ -96,6 +108,7 @@ final class PlayerViewModel {
     func beginScrubbing() {
         guard isProgressEnabled else { return }
         isScrubbing = true
+        updateIdlePolicy()
     }
 
     /// Updates the displayed position while dragging; no seek is issued
@@ -112,6 +125,7 @@ final class PlayerViewModel {
         // currentTime already holds the drop target, so the slider shows
         // the destination while mpv's post-seek time-pos catches up.
         controller.seekTo(seconds: currentTime)
+        updateIdlePolicy()
         onChange?()
     }
 
@@ -119,6 +133,68 @@ final class PlayerViewModel {
         volume = min(max(0, newValue), 100)
         controller.setVolume(volume)
         onChange?()
+    }
+
+    /// Arrow-key volume nudge. Counts as user activity so the controls
+    /// reveal themselves (and the change is visible) when hidden.
+    func adjustVolume(by delta: Double) {
+        setVolume(volume + delta)
+        noteMouseActivity()
+    }
+
+    // MARK: - Idle auto-hide
+
+    /// Auto-hide is only ever allowed during smooth playback: never while
+    /// paused/buffering/error, scrubbing, or with the pointer resting on
+    /// the capsule.
+    private var isIdleHideEligible: Bool {
+        state == .playing && !isScrubbing && !isPointerOverControls
+    }
+
+    /// The view forwards every pointer movement over the window content:
+    /// the controls come back immediately and the idle countdown restarts.
+    func noteMouseActivity() {
+        idleHideTask?.cancel()
+        idleHideTask = nil
+        controlsVisible = true
+        updateIdlePolicy()
+        onChange?()
+    }
+
+    /// The view forwards capsule hover so the controls stay up while the
+    /// pointer rests on them.
+    func setPointerOverControls(_ over: Bool) {
+        guard isPointerOverControls != over else { return }
+        isPointerOverControls = over
+        updateIdlePolicy()
+        onChange?()
+    }
+
+    /// Single choke point that reconciles `controlsVisible` and the idle
+    /// timer with the current inputs; called from every path that can
+    /// change them (state reduction, scrubbing, hover, mouse activity).
+    private func updateIdlePolicy() {
+        guard isIdleHideEligible else {
+            idleHideTask?.cancel()
+            idleHideTask = nil
+            controlsVisible = true
+            return
+        }
+        if idleHideTask == nil && controlsVisible {
+            scheduleIdleHide()
+        }
+    }
+
+    private func scheduleIdleHide() {
+        idleHideTask = Task { [weak self, idleHideInterval] in
+            try? await Task.sleep(for: .milliseconds(Int(idleHideInterval * 1000)))
+            guard !Task.isCancelled, let self else { return }
+            self.idleHideTask = nil
+            // Re-evaluate: the inputs may have changed while sleeping.
+            guard self.isIdleHideEligible else { return }
+            self.controlsVisible = false
+            self.onChange?()
+        }
     }
 
     // MARK: - Display projections
