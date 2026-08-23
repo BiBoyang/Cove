@@ -9,6 +9,12 @@ final class RoundedFillView: NSView {
         didSet { needsDisplay = true }
     }
 
+    /// Optional hairline border, re-resolved with the fill on appearance
+    /// changes. Nil means no border.
+    var borderColor: NSColor? {
+        didSet { needsDisplay = true }
+    }
+
     var cornerRadius: CGFloat = 8 {
         didSet { layer?.cornerRadius = cornerRadius }
     }
@@ -28,6 +34,12 @@ final class RoundedFillView: NSView {
 
     override func updateLayer() {
         layer?.backgroundColor = fillColor.cgColor
+        if let borderColor {
+            layer?.borderWidth = 1
+            layer?.borderColor = borderColor.cgColor
+        } else {
+            layer?.borderWidth = 0
+        }
     }
 
     override func viewDidChangeEffectiveAppearance() {
