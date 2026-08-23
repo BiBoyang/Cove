@@ -13,6 +13,8 @@ final class ShareGridViewController: NSViewController {
     private let scrollView = NSScrollView()
     private let collectionView = NSCollectionView()
     private let placeholderLabel = NSTextField(labelWithString: "")
+    private let placeholderIcon = NSImageView()
+    private let placeholderStack = NSStackView()
 
     init(viewModel: ShareGridViewModel) {
         self.viewModel = viewModel
@@ -52,14 +54,23 @@ final class ShareGridViewController: NSViewController {
         scrollView.documentView = collectionView
         scrollView.hasVerticalScroller = true
 
+        placeholderIcon.image = NSImage(
+            systemSymbolName: "externaldrive", accessibilityDescription: nil
+        )?.withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 36, weight: .light))
+        placeholderIcon.contentTintColor = .tertiaryLabelColor
         placeholderLabel.textColor = .secondaryLabelColor
+        placeholderStack.orientation = .vertical
+        placeholderStack.alignment = .centerX
+        placeholderStack.spacing = 10
+        placeholderStack.addArrangedSubview(placeholderIcon)
+        placeholderStack.addArrangedSubview(placeholderLabel)
 
         root.addSubview(scrollView)
-        root.addSubview(placeholderLabel)
+        root.addSubview(placeholderStack)
         scrollView.snp.makeConstraints { make in
             make.edges.equalToSuperview()
         }
-        placeholderLabel.snp.makeConstraints { make in
+        placeholderStack.snp.makeConstraints { make in
             make.center.equalToSuperview()
         }
 
@@ -71,7 +82,7 @@ final class ShareGridViewController: NSViewController {
         loadViewIfNeeded()
         collectionView.reloadData()
         placeholderLabel.stringValue = state.placeholder ?? ""
-        placeholderLabel.isHidden = state.placeholder == nil
+        placeholderStack.isHidden = state.placeholder == nil
     }
 
     @objc private func handleDoubleClick(_ gesture: NSClickGestureRecognizer) {
@@ -190,7 +201,9 @@ final class ShareCardItem: NSCollectionViewItem {
         } else if isHovering {
             cardView.fillColor = .quaternaryLabelColor
         } else {
-            cardView.fillColor = .secondarySystemFill
+            // Elevated surface: lighter than the window background so the
+            // cards read as floating tiles, not flat patches.
+            cardView.fillColor = .controlBackgroundColor
         }
     }
 }

@@ -32,13 +32,19 @@ final class ServerListViewController: NSViewController {
     }
 
     override func loadView() {
-        let root = NSView()
+        // Sidebar vibrancy: the visual effect root gives the whole pane
+        // the translucent desktop-tinted material instead of a flat fill.
+        let root = NSVisualEffectView()
+        root.material = .sidebar
+        root.blendingMode = .behindWindow
+        root.state = .followsWindowActiveState
 
         let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("server"))
         tableView.addTableColumn(column)
         tableView.headerView = nil
         // Source-list style provides the rounded capsule selection.
         tableView.style = .sourceList
+        tableView.backgroundColor = .clear
         tableView.dataSource = self
         tableView.delegate = self
         tableView.target = self
@@ -54,6 +60,7 @@ final class ServerListViewController: NSViewController {
 
         scrollView.documentView = tableView
         scrollView.hasVerticalScroller = true
+        scrollView.drawsBackground = false
 
         // Slim bottom bar with an add button, in the spirit of Finder's
         // sidebar action row. Icon plus label: an icon-only 16pt plus was
