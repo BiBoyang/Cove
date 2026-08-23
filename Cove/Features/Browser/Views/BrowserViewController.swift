@@ -30,7 +30,6 @@ final class BrowserViewController: NSViewController {
     private let preheatButton = NSButton()
     private let preheatProgressLabel = NSTextField(labelWithString: "")
     private let locationLabel = NSTextField(labelWithString: "")
-    private let searchField = NSSearchField()
 
     private let byteFormatter: ByteCountFormatter = {
         let formatter = ByteCountFormatter()
@@ -95,14 +94,10 @@ final class BrowserViewController: NSViewController {
         locationLabel.setContentHuggingPriority(.defaultLow, for: .horizontal)
         locationLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
-        searchField.placeholderString = "搜索"
-        searchField.isEnabled = false
-
         toolbarView.addSubview(backButton)
         toolbarView.addSubview(preheatButton)
         toolbarView.addSubview(preheatProgressLabel)
         toolbarView.addSubview(locationLabel)
-        toolbarView.addSubview(searchField)
         backButton.snp.makeConstraints { make in
             make.leading.equalToSuperview().offset(20)
             make.centerY.equalToSuperview()
@@ -120,12 +115,7 @@ final class BrowserViewController: NSViewController {
         locationLabel.snp.makeConstraints { make in
             make.center.equalToSuperview()
             make.leading.greaterThanOrEqualTo(preheatProgressLabel.snp.trailing).offset(8)
-            make.trailing.lessThanOrEqualTo(searchField.snp.leading).offset(-8)
-        }
-        searchField.snp.makeConstraints { make in
-            make.trailing.equalToSuperview().offset(-20)
-            make.centerY.equalToSuperview()
-            make.width.equalTo(160)
+            make.trailing.lessThanOrEqualToSuperview().offset(-20)
         }
 
         let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("item"))
