@@ -1,6 +1,7 @@
 import CacheKit
 import CoreGraphics
 import Foundation
+import ImageIO
 import ReaderKit
 import SourceKit
 import Synchronization
@@ -667,7 +668,7 @@ struct ReaderCoordinatorTests {
             submitted.withLock { $0.append(items.map(\.path)) }
         }
         coordinator.presentContent = { _, _, _ in presented.withLock { $0 = true } }
-        let bytes = makeTestCBZBytes(page: "a1.jpg")
+        let bytes = makeTestCBZBytes(pages: ["a1.jpg"])
 
         coordinator.openComic(
             item: comicItem("a.cbz", size: Int64(bytes.count)),
@@ -690,8 +691,8 @@ struct ReaderCoordinatorTests {
 
         // Old open parks inside its archive read (a slow network fetch that,
         // like real IO, ignores task cancellation); the new open is instant.
-        let slowA = GatedFileReader(payload: makeTestCBZBytes(page: "a1.jpg"))
-        let bytesB = makeTestCBZBytes(page: "b1.jpg")
+        let slowA = GatedFileReader(payload: makeTestCBZBytes(pages: ["a1.jpg"]))
+        let bytesB = makeTestCBZBytes(pages: ["b1.jpg"])
         coordinator.openComic(
             item: comicItem("a.cbz", size: Int64(slowA.payload.count)),
             sourceID: "s",
@@ -729,7 +730,7 @@ struct ReaderCoordinatorTests {
             errors.withLock { $0.append(title) }
         }
 
-        let slow = GatedFileReader(payload: makeTestCBZBytes(page: "a1.jpg"))
+        let slow = GatedFileReader(payload: makeTestCBZBytes(pages: ["a1.jpg"]))
         coordinator.openComic(
             item: comicItem("a.cbz", size: Int64(slow.payload.count)),
             sourceID: "s",
@@ -749,6 +750,192 @@ struct ReaderCoordinatorTests {
         // Cancellation is silent: no error surfaces for a cancelled open.
         #expect(errors.withLock { $0 }.isEmpty)
     }
+
+    @Test("opening a comic warms the two following pages", .timeLimit(.minutes(1)))
+    func comicOpenWarmsNextTwo() async throws {
+        let coordinator = makeReaderCoordinator()
+        let warmed = Mutex<[[Int]]>([])
+        coordinator.presentContent = { _, _, _ in }
+        coordinator.warmPages = { indices in warmed.withLock { $0.append(indices) } }
+        let bytes = makeTestCBZBytes(pages: ["a1.jpg", "a2.jpg", "a3.jpg", "a4.jpg"])
+
+        coordinator.openComic(
+            item: comicItem("a.cbz", size: Int64(bytes.count)),
+            sourceID: "s",
+            fileReader: { _ in bytes },
+            isSourceCurrent: { true }
+        )
+
+        try await waitUntil { !warmed.withLock { $0 }.isEmpty }
+        #expect(warmed.withLock { $0 } == [[1, 2]])
+    }
+
+    @Test("a comic page turn warms the following pages", .timeLimit(.minutes(1)))
+    func comicPageTurnWarmsFollowing() async throws {
+        let coordinator = makeReaderCoordinator()
+        let warmed = Mutex<[[Int]]>([])
+        coordinator.presentContent = { _, _, _ in }
+        coordinator.warmPages = { indices in warmed.withLock { $0.append(indices) } }
+        let bytes = makeTestCBZBytes(pages: ["a1.jpg", "a2.jpg", "a3.jpg", "a4.jpg"])
+
+        coordinator.openComic(
+            item: comicItem("a.cbz", size: Int64(bytes.count)),
+            sourceID: "s",
+            fileReader: { _ in bytes },
+            isSourceCurrent: { true }
+        )
+        try await waitUntil { !warmed.withLock { $0 }.isEmpty }
+
+        coordinator.pageDidChange(at: 1)
+
+        #expect(warmed.withLock { $0 } == [[1, 2], [2, 3]])
+    }
+
+    @Test("directory mode prefetches and never warms")
+    func directoryModeNeverWarms() {
+        let coordinator = makeReaderCoordinator()
+        let submitted = Mutex<[[String]]>([])
+        let warmed = Mutex<[[Int]]>([])
+        coordinator.submitPrefetch = { items in
+            submitted.withLock { $0.append(items.map(\.path)) }
+        }
+        coordinator.warmPages = { indices in warmed.withLock { $0.append(indices) } }
+        coordinator.presentContent = { _, _, _ in }
+        let items = (1...4).map { comicItem("p\($0).jpg", size: 10) }
+
+        coordinator.openDirectory(
+            items: items, selectedPath: "/p1.jpg", sourceID: "s", fileReader: { _ in Data() }
+        )
+        coordinator.pageDidChange(at: 1)
+
+        // Directory turns keep prefetching original bytes…
+        #expect(submitted.withLock { $0 } == [["/p2.jpg", "/p3.jpg"], ["/p3.jpg", "/p4.jpg"]])
+        // …and never trigger display warm (warm would re-download them).
+        #expect(warmed.withLock { $0 }.isEmpty)
+    }
+
+    @Test("warm shortens to existing pages near the end", .timeLimit(.minutes(1)))
+    func warmStopsAtEnd() async throws {
+        let coordinator = makeReaderCoordinator()
+        let warmed = Mutex<[[Int]]>([])
+        coordinator.presentContent = { _, _, _ in }
+        coordinator.warmPages = { indices in warmed.withLock { $0.append(indices) } }
+        let bytes = makeTestCBZBytes(pages: ["a1.jpg", "a2.jpg", "a3.jpg"])
+
+        coordinator.openComic(
+            item: comicItem("a.cbz", size: Int64(bytes.count)),
+            sourceID: "s",
+            fileReader: { _ in bytes },
+            isSourceCurrent: { true }
+        )
+        try await waitUntil { !warmed.withLock { $0 }.isEmpty }
+
+        coordinator.pageDidChange(at: 1)
+        coordinator.pageDidChange(at: 2)
+
+        // One page remains after 1; nothing remains after the last page.
+        #expect(warmed.withLock { $0 } == [[1, 2], [2], []])
+    }
+}
+
+@Suite("Reader image warm")
+struct ReaderImageLoaderWarmTests {
+    private let targetWidth = 1024
+
+    /// Comic-mode loader over a real in-memory CBZ (real ComicArchive,
+    /// real entry extraction), so warm exercises the production path.
+    private func makeComicLoader(
+        cache: CacheStore, pages: [String], payload: Data
+    ) async throws -> (loader: ReaderImageLoader, archiveSize: Int64) {
+        let bytes = makeTestCBZBytes(pages: pages, payload: payload)
+        let item = ContentItem(
+            name: "a.cbz", path: "/a.cbz", isDirectory: false,
+            size: Int64(bytes.count), modifiedDate: nil
+        )
+        let content = try await ReaderContent.comic(
+            item: item, fileReader: { _ in bytes }, cache: cache, sourceID: "s"
+        )
+        let loader = ReaderImageLoader(
+            cache: cache, sourceID: "s", targetWidth: targetWidth,
+            logger: TraceLogger(category: "ReaderWarmTests"), content: content
+        )
+        return (loader, Int64(bytes.count))
+    }
+
+    /// Probes the display pool with the production key factory.
+    private func comicDisplayKey(archiveSize: Int64, entry: String) -> CacheKey {
+        CacheKey.sourceFile(
+            sourceID: "s", path: "/a.cbz!\(entry)", fileSize: archiveSize,
+            modified: nil, variant: CacheKey.displayWidthVariant(targetWidth)
+        )
+    }
+
+    @Test("warm decodes a cold comic page into the display pool", .timeLimit(.minutes(1)))
+    func warmStoresDisplayVariant() async throws {
+        let cache = makeTestCache()
+        let (loader, archiveSize) = try await makeComicLoader(
+            cache: cache, pages: ["a1.jpg", "a2.jpg", "a3.jpg"], payload: makeTestJPEGData()
+        )
+        let key = comicDisplayKey(archiveSize: archiveSize, entry: "a2.jpg")
+        #expect((try? cache.data(forKey: key, pool: .display)) == nil)
+
+        await loader.warm(pageAt: 1)
+
+        #expect((try? cache.data(forKey: key, pool: .display)) != nil)
+    }
+
+    @Test("warm skips an already-warm page before decoding", .timeLimit(.minutes(1)))
+    func warmSkipsExistingVariant() async throws {
+        let cache = makeTestCache()
+        let jpeg = makeTestJPEGData()
+        let reads = Mutex(0)
+        let item = ContentItem(
+            name: "p1.jpg", path: "/p1.jpg", isDirectory: false,
+            size: Int64(jpeg.count), modifiedDate: nil
+        )
+        let content = ReaderContent.directory(
+            items: [item],
+            fileReader: { _ in
+                reads.withLock { $0 += 1 }
+                return jpeg
+            },
+            cache: cache,
+            sourceID: "s"
+        )
+        let loader = ReaderImageLoader(
+            cache: cache, sourceID: "s", targetWidth: targetWidth,
+            logger: TraceLogger(category: "ReaderWarmTests"), content: content
+        )
+        // Seed a display variant by hand. Its payload is garbage on
+        // purpose: a plain `load` would decode it, fail, and fall through
+        // to the original pool (incrementing `reads`). A correct warm
+        // returns at the existence check — no decode, no fall-through.
+        let key = CacheKey.sourceFile(
+            sourceID: "s", path: "/p1.jpg", fileSize: Int64(jpeg.count),
+            modified: nil, variant: CacheKey.displayWidthVariant(targetWidth)
+        )
+        try cache.store(Data("not a jpeg".utf8), forKey: key, pool: .display)
+
+        await loader.warm(pageAt: 0)
+
+        #expect(reads.withLock { $0 } == 0)
+    }
+
+    @Test("warm tolerates undecodable pages and out-of-range indices", .timeLimit(.minutes(1)))
+    func warmToleratesBadPages() async throws {
+        let cache = makeTestCache()
+        // The dummy payload parses as a ZIP entry but not as an image.
+        let (loader, archiveSize) = try await makeComicLoader(
+            cache: cache, pages: ["a1.jpg"], payload: Data("page".utf8)
+        )
+
+        await loader.warm(pageAt: 0)
+        await loader.warm(pageAt: 7)
+        await loader.warm(pageAt: -1)
+
+        let key = comicDisplayKey(archiveSize: archiveSize, entry: "a1.jpg")
+        #expect((try? cache.data(forKey: key, pool: .display)) == nil)
+    }
 }
 
 /// Cache store rooted at a fresh temp directory, for coordinator tests.
@@ -761,58 +948,88 @@ private func makeTestCache() -> CacheStore {
     )
 }
 
+/// Solid-color CGImage, built the same way the loader double builds its
+/// test images.
+private func makeSolidImage(width: Int, height: Int) -> CGImage {
+    let bytes = [UInt8](repeating: 0xFF, count: width * height * 4)
+    let provider = CGDataProvider(data: Data(bytes) as CFData)!
+    return CGImage(
+        width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 32,
+        bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
+        bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
+        provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent
+    )!
+}
+
+/// Real JPEG bytes, so ImagePipeline's decode path is genuinely exercised.
+private func makeTestJPEGData(width: Int = 8, height: Int = 8) -> Data {
+    let output = NSMutableData()
+    let destination = CGImageDestinationCreateWithData(
+        output, "public.jpeg" as CFString, 1, nil
+    )!
+    CGImageDestinationAddImage(destination, makeSolidImage(width: width, height: height), nil)
+    precondition(CGImageDestinationFinalize(destination), "test JPEG encode failed")
+    return output as Data
+}
+
 /// Builds genuine CBZ bytes (a minimal ZIP of stored entries) by hand —
 /// CoveTests may not import ZIPFoundation, so ComicKit's real parser is
-/// exercised against archive bytes it did not write.
-private func makeTestCBZBytes(page: String) -> Data {
-    let payload = Data("page".utf8)
-    let name = Data(page.utf8)
+/// exercised against archive bytes it did not write. All entries share
+/// one payload; only entry names differ.
+private func makeTestCBZBytes(pages: [String], payload: Data = Data("page".utf8)) -> Data {
     let crc = crc32(payload)
 
     var zip = Data()
-    // Local file header (stored, no compression, no data descriptor).
-    zip.appendLE32(0x0403_4B50)
-    zip.appendLE16(20)
-    zip.appendLE16(0)
-    zip.appendLE16(0)
-    zip.appendLE16(0)
-    zip.appendLE16(0)
-    zip.appendLE32(crc)
-    zip.appendLE32(UInt32(payload.count))
-    zip.appendLE32(UInt32(payload.count))
-    zip.appendLE16(UInt16(name.count))
-    zip.appendLE16(0)
-    zip.append(name)
-    zip.append(payload)
+    for page in pages {
+        let name = Data(page.utf8)
+        // Local file header (stored, no compression, no data descriptor).
+        zip.appendLE32(0x0403_4B50)
+        zip.appendLE16(20)
+        zip.appendLE16(0)
+        zip.appendLE16(0)
+        zip.appendLE16(0)
+        zip.appendLE16(0)
+        zip.appendLE32(crc)
+        zip.appendLE32(UInt32(payload.count))
+        zip.appendLE32(UInt32(payload.count))
+        zip.appendLE16(UInt16(name.count))
+        zip.appendLE16(0)
+        zip.append(name)
+        zip.append(payload)
+    }
 
     let centralOffset = UInt32(zip.count)
     var central = Data()
-    central.appendLE32(0x0201_4B50)
-    central.appendLE16(20)
-    central.appendLE16(20)
-    central.appendLE16(0)
-    central.appendLE16(0)
-    central.appendLE16(0)
-    central.appendLE16(0)
-    central.appendLE32(crc)
-    central.appendLE32(UInt32(payload.count))
-    central.appendLE32(UInt32(payload.count))
-    central.appendLE16(UInt16(name.count))
-    central.appendLE16(0)
-    central.appendLE16(0)
-    central.appendLE16(0)
-    central.appendLE16(0)
-    central.appendLE32(0)
-    central.appendLE32(0)
-    central.append(name)
+    for page in pages {
+        let name = Data(page.utf8)
+        central.appendLE32(0x0201_4B50)
+        central.appendLE16(20)
+        central.appendLE16(20)
+        central.appendLE16(0)
+        central.appendLE16(0)
+        central.appendLE16(0)
+        central.appendLE16(0)
+        central.appendLE32(crc)
+        central.appendLE32(UInt32(payload.count))
+        central.appendLE32(UInt32(payload.count))
+        central.appendLE16(UInt16(name.count))
+        central.appendLE16(0)
+        central.appendLE16(0)
+        central.appendLE16(0)
+        central.appendLE16(0)
+        central.appendLE32(0)
+        central.appendLE32(0)
+        central.append(name)
+    }
     zip.append(central)
 
     // End of central directory.
+    let entryCount = UInt16(pages.count)
     zip.appendLE32(0x0605_4B50)
     zip.appendLE16(0)
     zip.appendLE16(0)
-    zip.appendLE16(1)
-    zip.appendLE16(1)
+    zip.appendLE16(entryCount)
+    zip.appendLE16(entryCount)
     zip.appendLE32(UInt32(central.count))
     zip.appendLE32(centralOffset)
     zip.appendLE16(0)

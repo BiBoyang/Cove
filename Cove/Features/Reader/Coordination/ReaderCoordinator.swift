@@ -20,6 +20,13 @@ final class ReaderCoordinator: NSObject {
     /// The presented directory's images in page order; nil in comic mode,
     /// where prefetching is pointless (the archive is already cached whole).
     private var directoryPrefetchItems: [ContentItem]?
+    /// The current comic-mode loader. Set only when a comic presentation
+    /// actually built one (production `present` path); nil in directory
+    /// mode and while `presentContent` is substituted by tests. Powers
+    /// the `warmPages` default.
+    private var comicLoader: ReaderImageLoader?
+    /// The current comic-mode page count, for computing warm ranges.
+    private var comicPageCount: Int?
 
     var onError: ((_ error: Error, _ title: String) -> Void)?
     var onMessageError: ((_ message: String, _ title: String) -> Void)?
@@ -36,6 +43,20 @@ final class ReaderCoordinator: NSObject {
     /// to the preheat service; tests substitute a recorder.
     lazy var submitPrefetch: ([ContentItem]) -> Void = { [weak self] items in
         self?.preheatService.prefetchPages(items)
+    }
+
+    /// Warm seam, same pattern as `submitPrefetch`: production pre-decodes
+    /// the given comic pages on a detached task (decode is CPU-bound and
+    /// must stay off the main actor); tests substitute a recorder. Invoked
+    /// in comic mode only — directory-mode display variants depend on
+    /// network bytes the prefetch path already covers.
+    lazy var warmPages: ([Int]) -> Void = { [weak self] indices in
+        guard let loader = self?.comicLoader else { return }
+        Task.detached(priority: .utility) {
+            for index in indices {
+                await loader.warm(pageAt: index)
+            }
+        }
     }
 
     init(cache: CacheStore, preheatService: PreheatService) {
@@ -70,6 +91,7 @@ final class ReaderCoordinator: NSObject {
             sourceID: sourceID
         )
         directoryPrefetchItems = items
+        comicPageCount = nil
         presentContent(content, startIndex, sourceID)
         // Open trigger: warm the two pages after the start page, so the
         // first page turn hits the cache.
@@ -97,6 +119,9 @@ final class ReaderCoordinator: NSObject {
                 guard generation == openGeneration, isSourceCurrent() else { return }
                 openTask = nil
                 presentContent(content, 0, sourceID)
+                comicPageCount = content.cachePages.count
+                // Open trigger: warm the two pages after the first page.
+                warmPages(upcomingWarmIndices(from: 0))
             } catch {
                 if Task.isCancelled || error is CancellationError { return }
                 guard generation == openGeneration else { return }
@@ -122,10 +147,13 @@ final class ReaderCoordinator: NSObject {
             loader: loader,
             logger: logger
         )
+        // Comic mode keeps the loader for `warmPages`; directory mode's
+        // display variants are the prefetch path's business.
+        comicLoader = (directoryPrefetchItems == nil) ? loader : nil
         // Page-turn trigger: the only seam between the reader and
-        // prefetching — the view model never learns why we listen.
+        // prefetching/warming — the view model never learns why we listen.
         viewModel.onPageChanged = { [weak self] index in
-            self?.prefetchFollowing(from: index)
+            self?.pageDidChange(at: index)
         }
         let reader = PagedReaderWindowController(viewModel: viewModel)
         readerController = reader
@@ -136,6 +164,24 @@ final class ReaderCoordinator: NSObject {
             object: reader.window
         )
         reader.showWindow(nil)
+    }
+
+    /// Page-turn dispatch, wired to `onPageChanged`: directory mode
+    /// continues original-byte prefetch; comic mode pre-decodes the next
+    /// display variants (its bytes are local — the cost is CPU, not the
+    /// network).
+    func pageDidChange(at index: Int) {
+        if directoryPrefetchItems != nil {
+            prefetchFollowing(from: index)
+        } else {
+            warmPages(upcomingWarmIndices(from: index))
+        }
+    }
+
+    /// The at most two comic pages after `index` that still exist.
+    private func upcomingWarmIndices(from index: Int) -> [Int] {
+        guard let count = comicPageCount, count > index + 1 else { return [] }
+        return Array((index + 1)..<min(index + 3, count))
     }
 
     /// Submits the two pages after `index` for original-pool prefetch.
@@ -156,6 +202,10 @@ final class ReaderCoordinator: NSObject {
         )
         if readerController?.window === (notification.object as? NSWindow) {
             readerController = nil
+            // Drop the comic loader with the window: it pins the whole
+            // in-memory archive.
+            comicLoader = nil
+            comicPageCount = nil
         }
     }
 }

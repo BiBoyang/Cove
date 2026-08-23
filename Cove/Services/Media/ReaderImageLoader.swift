@@ -35,11 +35,7 @@ struct ReaderImageLoader: ReaderPageLoading {
                 "load finish index=\(index) duration=\(CFAbsoluteTimeGetCurrent() - startedAt)"
             )
         }
-        let page = content.cachePages[index]
-        let displayKey = CacheKey.sourceFile(
-            sourceID: sourceID, path: page.cachePath, fileSize: page.cacheFileSize,
-            modified: page.cacheModified, variant: CacheKey.displayWidthVariant(targetWidth)
-        )
+        let displayKey = self.displayKey(pageAt: index)
         if let payload = try? cache.data(forKey: displayKey, pool: .display) {
             try Task.checkCancellation()
             if let image = ImagePipeline.decode(payload, maxPixelSize: Self.displayPayloadDecodeCap) {
@@ -66,5 +62,31 @@ struct ReaderImageLoader: ReaderPageLoading {
             try? cache.store(payload, forKey: displayKey, pool: .display)
         }
         return ReaderLoadedImage(image: image, size: CGSize(width: image.width, height: image.height))
+    }
+
+    /// Best-effort pre-decode of one page into the display pool.
+    ///
+    /// A page whose display variant already exists is skipped *before*
+    /// any decoding: `load`'s display-hit path still decodes the stored
+    /// payload for display, which would spend exactly the CPU this warm
+    /// exists to save. Errors are swallowed — the page's real load, when
+    /// the user reaches it, is what surfaces them.
+    func warm(pageAt index: Int) async {
+        guard content.cachePages.indices.contains(index) else { return }
+        if let payload = try? cache.data(forKey: displayKey(pageAt: index), pool: .display) {
+            logger.debug("warm skip index=\(index) variant=w\(targetWidth) bytes=\(payload.count)")
+            return
+        }
+        _ = try? await load(pageAt: index)
+    }
+
+    /// The page's display-pool identity, shared by `load` and `warm` so
+    /// the two can never drift apart.
+    private func displayKey(pageAt index: Int) -> CacheKey {
+        let page = content.cachePages[index]
+        return CacheKey.sourceFile(
+            sourceID: sourceID, path: page.cachePath, fileSize: page.cacheFileSize,
+            modified: page.cacheModified, variant: CacheKey.displayWidthVariant(targetWidth)
+        )
     }
 }
