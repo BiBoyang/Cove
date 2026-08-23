@@ -27,3 +27,7 @@ Carthage/Build/
 # Assemble locally with scripts/assemble-libmpv.sh; see
 # plans/SPIKE-video-playback.md.
 Vendor/libmpv/
+
+# Local-only collaboration logs (AI-assisted dev process). Design knowledge
+# lives in plans/, which stays tracked.
+sessions/
