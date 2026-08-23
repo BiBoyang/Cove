@@ -20,6 +20,23 @@ enum PlayerCoreError: LocalizedError {
     }
 }
 
+/// Events forwarded from mpv to the player view model. Property replies
+/// arrive on the main actor through the core's event drain; mpv also sends
+/// each observed property's initial value right after observation starts.
+enum PlayerCoreEvent {
+    case fileLoaded
+    case timePosChanged(Double)
+    case durationChanged(Double)
+    case pauseChanged(Bool)
+    /// mpv's `paused-for-cache`: playback is stalled waiting for the
+    /// demuxer cache to refill (the v1 buffering signal).
+    case bufferingChanged(Bool)
+    /// Clean end of file.
+    case ended
+    /// Playback died with an mpv error (end-file with a negative error code).
+    case playbackFailed(String)
+}
+
 /// Owns one mpv handle and its OpenGL render context for a single video.
 ///
 /// Everything in this class runs on the main actor. mpv itself is
@@ -40,6 +57,19 @@ final class MPVPlayerCore {
     /// Hop target for mpv's wakeup callback; see below.
     private let wakeupBox = MPVWakeupBox()
     private var isShutdown = false
+
+    /// Property-observation reply IDs, matched against `reply_userdata` in
+    /// the drain loop.
+    private enum ObservedProperty {
+        static let timePos: UInt64 = 1
+        static let duration: UInt64 = 2
+        static let pause: UInt64 = 3
+        static let pausedForCache: UInt64 = 4
+    }
+
+    /// Receives playback events on the main actor; wired to the view model
+    /// by the player coordinator.
+    var onEvent: ((PlayerCoreEvent) -> Void)?
 
     init(bridge: VideoStreamBridge) throws {
         self.bridge = bridge
@@ -82,6 +112,7 @@ final class MPVPlayerCore {
         }
         mpv_set_wakeup_callback(handle, coveMPVWakeup, Unmanaged.passUnretained(wakeupBox).toOpaque())
         mpv_request_log_messages(handle, "warn")
+        observeProperties()
 
         guard let renderer = MPVGLRenderer(mpvHandle: UnsafeMutableRawPointer(handle), updateHandler: { [videoLayer] in
             MainActor.assumeIsolated { videoLayer.mpvNeedsDisplay() }
@@ -109,6 +140,53 @@ final class MPVPlayerCore {
     /// Relative seek in seconds, using mpv's built-in demuxer seek.
     func seek(bySeconds seconds: Int) {
         command(["seek", String(seconds)])
+    }
+
+    /// Absolute seek in seconds, for the progress slider.
+    func seekTo(seconds: Double) {
+        command(["seek", String(seconds), "absolute"])
+    }
+
+    /// Volume on mpv's 0-100 scale.
+    func setVolume(_ volume: Double) {
+        // The command is "set", not "set_property": mpv's C API function
+        // names (mpv_set_property) and its command names are different
+        // namespaces — no command uses snake_case. A wrong command name
+        // fails silently here (command() only logs), which is how a dead
+        // volume slider shipped in the Step 2 review build.
+        command(["set", "volume", String(volume)])
+    }
+
+    /// Observes the properties the player UI reads. Replies (including each
+    /// property's initial value) arrive as MPV_EVENT_PROPERTY_CHANGE in the
+    /// drain loop, distinguished by `reply_userdata`.
+    private func observeProperties() {
+        guard let handle else { return }
+        mpv_observe_property(handle, ObservedProperty.timePos, "time-pos", MPV_FORMAT_DOUBLE)
+        mpv_observe_property(handle, ObservedProperty.duration, "duration", MPV_FORMAT_DOUBLE)
+        mpv_observe_property(handle, ObservedProperty.pause, "pause", MPV_FORMAT_FLAG)
+        mpv_observe_property(handle, ObservedProperty.pausedForCache, "paused-for-cache", MPV_FORMAT_FLAG)
+    }
+
+    /// Reads one property-change event and forwards it. The observation ID
+    /// travels on the outer event's `reply_userdata` (mpv_event_property
+    /// itself carries only name/format/data). MPV_FORMAT_NONE (property
+    /// unavailable, e.g. duration before demux) is ignored.
+    private func handlePropertyChange(_ property: mpv_event_property, replyUserdata: UInt64) {
+        switch replyUserdata {
+        case ObservedProperty.timePos, ObservedProperty.duration:
+            guard property.format == MPV_FORMAT_DOUBLE, let data = property.data else { return }
+            let value = data.assumingMemoryBound(to: Double.self).pointee
+            onEvent?(replyUserdata == ObservedProperty.timePos
+                ? .timePosChanged(value) : .durationChanged(value))
+        case ObservedProperty.pause, ObservedProperty.pausedForCache:
+            guard property.format == MPV_FORMAT_FLAG, let data = property.data else { return }
+            let value = data.assumingMemoryBound(to: Int32.self).pointee != 0
+            onEvent?(replyUserdata == ObservedProperty.pause
+                ? .pauseChanged(value) : .bufferingChanged(value))
+        default:
+            break
+        }
     }
 
     /// Tears down the session. Idempotent; safe on window close at any
@@ -164,19 +242,30 @@ final class MPVPlayerCore {
             // demuxer never got far enough (see VideoStream logs).
             case MPV_EVENT_FILE_LOADED:
                 logger.info("mpv event: file loaded")
+                onEvent?(.fileLoaded)
             case MPV_EVENT_VIDEO_RECONFIG:
                 logger.info("mpv event: video reconfig")
             case MPV_EVENT_AUDIO_RECONFIG:
                 logger.info("mpv event: audio reconfig")
             case MPV_EVENT_PLAYBACK_RESTART:
                 logger.info("mpv event: playback restart")
+            case MPV_EVENT_PROPERTY_CHANGE:
+                if let data = event.pointee.data {
+                    handlePropertyChange(
+                        data.assumingMemoryBound(to: mpv_event_property.self).pointee,
+                        replyUserdata: event.pointee.reply_userdata
+                    )
+                }
             case MPV_EVENT_END_FILE:
                 if let data = event.pointee.data {
                     let endFile = data.assumingMemoryBound(to: mpv_event_end_file.self).pointee
                     if endFile.error < 0 {
-                        logger.error("Playback ended with error: \(String(cString: mpv_error_string(endFile.error)))", privacy: .private)
+                        let detail = String(cString: mpv_error_string(endFile.error))
+                        logger.error("Playback ended with error: \(detail)", privacy: .private)
+                        onEvent?(.playbackFailed(detail))
                     } else {
                         logger.info("mpv event: end of file (clean)")
+                        onEvent?(.ended)
                     }
                 }
             default:

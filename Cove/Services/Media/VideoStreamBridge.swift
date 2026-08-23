@@ -160,7 +160,9 @@ private final class WeakContextBox: @unchecked Sendable {
 /// Per-open stream state shared between mpv's serial callbacks.
 /// All mutable state lives behind a `Mutex`; the callbacks never perform
 /// IO under the lock (seek/size/close are pure state transitions).
-private final class StreamContext: Sendable {
+/// Internal (not private) so CoveTests can drive the read mapping with a
+/// fake `RangedReader` — no mpv handle required.
+final class StreamContext: Sendable {
     private struct State {
         var position: Int64 = 0
         var closed = false
