@@ -103,7 +103,8 @@ extension ShareGridViewController: NSCollectionViewDataSource {
 }
 
 /// One card in the share grid: large folder icon, share name, remark.
-/// The rounded background lights up while selected.
+/// The fill brightens on hover and the rounded background lights up
+/// while selected.
 @MainActor
 final class ShareCardItem: NSCollectionViewItem {
     static let identifier = NSUserInterfaceItemIdentifier("ShareCardItem")
@@ -112,27 +113,32 @@ final class ShareCardItem: NSCollectionViewItem {
     private let iconView = NSImageView()
     private let nameLabel = NSTextField(labelWithString: "")
     private let commentLabel = NSTextField(labelWithString: "")
+    private var trackingAreaRef: NSTrackingArea?
+    private var isHovering = false {
+        didSet { updateHighlight() }
+    }
 
     override var isSelected: Bool {
         didSet { updateHighlight() }
     }
 
     override func loadView() {
-        cardView.cornerRadius = 10
+        cardView.cornerRadius = CoveStyle.radiusMedium
+        cardView.borderColor = CoveStyle.cardBorderColor
 
         let folderIcon = NSImage(systemSymbolName: "folder.fill", accessibilityDescription: nil)?
             .withSymbolConfiguration(
-                NSImage.SymbolConfiguration(pointSize: 48, weight: .regular)
+                NSImage.SymbolConfiguration(pointSize: 44, weight: .regular)
             )
         iconView.image = folderIcon
-        iconView.contentTintColor = .systemBlue
+        iconView.contentTintColor = .controlAccentColor
 
         nameLabel.alignment = .center
-        nameLabel.font = .systemFont(ofSize: 13, weight: .medium)
+        nameLabel.font = CoveStyle.titleFont
         nameLabel.lineBreakMode = .byTruncatingMiddle
 
         commentLabel.alignment = .center
-        commentLabel.font = .systemFont(ofSize: 11)
+        commentLabel.font = CoveStyle.captionFont
         commentLabel.textColor = .secondaryLabelColor
         commentLabel.lineBreakMode = .byTruncatingTail
 
@@ -156,6 +162,20 @@ final class ShareCardItem: NSCollectionViewItem {
         updateHighlight()
     }
 
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        let area = NSTrackingArea(
+            rect: .zero,
+            options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
+            owner: self
+        )
+        view.addTrackingArea(area)
+        trackingAreaRef = area
+    }
+
+    override func mouseEntered(with event: NSEvent) { isHovering = true }
+    override func mouseExited(with event: NSEvent) { isHovering = false }
+
     func configure(with share: SMBShareInfo) {
         nameLabel.stringValue = share.name
         commentLabel.stringValue = share.comment
@@ -165,8 +185,12 @@ final class ShareCardItem: NSCollectionViewItem {
     // `RoundedFillView` re-resolves the fill on appearance changes, so the
     // highlight never goes stale across light/dark flips.
     private func updateHighlight() {
-        cardView.fillColor = isSelected
-            ? .selectedContentBackgroundColor
-            : .secondarySystemFill
+        if isSelected {
+            cardView.fillColor = .selectedContentBackgroundColor
+        } else if isHovering {
+            cardView.fillColor = .quaternaryLabelColor
+        } else {
+            cardView.fillColor = .secondarySystemFill
+        }
     }
 }
