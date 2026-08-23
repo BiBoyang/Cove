@@ -17,7 +17,16 @@ Everything else comes later.
   (drops both the config and the Keychain password, after confirmation).
 - Double-click a share card to browse it: directories, navigation into
   folders and back up (the back button returns to the share grid from the
-  share root). The window title shows the current path while browsing.
+  share root). Rows show a large rounded thumbnail with a name-plus-metadata
+  line, and the toolbar shows a breadcrumb of the current location.
+- **Video playback**: double-click a video file (mp4, mkv, avi, mov, wmv,
+  flv, webm, ts and more — anything mpv plays) to stream it straight off the
+  NAS via [libmpv](https://mpv.io) bridged onto Cove's own SMB stack; nothing
+  is downloaded in advance. A floating frosted control capsule (play/pause,
+  seekable progress, volume) hides itself with the cursor during playback
+  and returns on mouse movement; keyboard: space, ←/→ seek, ↑/↓ volume.
+  Each video's playback position is remembered and resumed on reopen
+  (finished videos start over).
 - Dot-prefixed entries (`.DS_Store`, AppleDouble `._*`, tool metadata files)
   and `__MACOSX` folders are hidden.
 - Files are classified by type (video / image / pdf / comic / text / other)
@@ -28,13 +37,15 @@ Everything else comes later.
 - Double-click an image file to open a full-screen single-page reader:
   exactly one image is shown at a time on a black background, centered and
   fit proportionally. Previous/next buttons, `←`/`→` (plus PageUp/PageDown),
-  `Esc`, and a page counter support manual navigation. Originals and
-  downsampled display variants use the disk cache; A1 does not prefetch
-  adjacent pages or start automatic directory warming.
+  `Esc`, and a page counter support manual navigation. The two pages after
+  the current one are prefetched in the background so page turns hit the
+  local cache. Originals and downsampled display variants use the disk
+  cache; A1 does not start automatic directory warming.
 - Double-click a `.cbz` comic archive to read it in the same single-page
   reader: the archive is cached whole in the original pool, its image entries
-  are sorted naturally (`1, 2, …, 10`), and pages decode into the display
-  pool one at a time. (`.cbr`/`.cbt` are not supported yet.)
+  are sorted naturally (`1, 2, …, 10`), pages decode into the display pool,
+  and the next two pages are pre-decoded ahead of the current one.
+  (`.cbr`/`.cbt` are not supported yet.)
 - Preheating downloads originals into the local cache ahead of reading. The
   browser toolbar has a "preheat this folder" button that warms the current
   folder including its subfolders (breadth-first, capped at 5000 files / 1000
@@ -63,10 +74,16 @@ explicit `.private`. Passwords are never logged.
 
 ## Build
 
+The video player needs the vendored libmpv dylib forest, which is **not**
+committed to the repo (116 MB, licensing-sensitive). Assemble it locally
+once after cloning (requires [IINA](https://iina.io) installed, or point
+`IINA_APP` at another copy):
+
 ```sh
-make generate   # generate Cove.xcodeproj from project.yml via XcodeGen
-make build      # Debug build via xcodebuild
-make test       # Framework package tests + Cove Swift Testing + smb-spike compile check
+scripts/assemble-libmpv.sh   # copies Vendor/libmpv from IINA.app + mpv headers
+make generate                # generate Cove.xcodeproj from project.yml via XcodeGen
+make build                   # Debug build via xcodebuild
+make test                    # Framework package tests + Cove Swift Testing + smb-spike compile check
 make clean
 ```
 
