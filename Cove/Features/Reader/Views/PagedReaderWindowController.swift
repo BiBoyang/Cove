@@ -19,9 +19,15 @@ final class PagedReaderWindowController: NSWindowController {
     private let rootView = PagedReaderRootView()
     private let imageView = NSImageView()
     private let statusLabel = NSTextField(labelWithString: "")
-    private let previousButton = NSButton()
-    private let nextButton = NSButton()
-    private let exitButton = NSButton()
+    private let previousButton = FrostedCircleButton(
+        symbolName: "chevron.left", pointSize: 16, accessibilityDescription: "上一张"
+    )
+    private let nextButton = FrostedCircleButton(
+        symbolName: "chevron.right", pointSize: 16, accessibilityDescription: "下一张"
+    )
+    private let exitButton = FrostedCircleButton(
+        symbolName: "xmark", pointSize: 12, accessibilityDescription: "退出阅读器"
+    )
     private let progressLabel = NSTextField(labelWithString: "")
 
     init(viewModel: ReaderViewModel) {
@@ -88,21 +94,12 @@ final class PagedReaderWindowController: NSWindowController {
         statusLabel.textColor = .secondaryLabelColor
         statusLabel.isHidden = true
 
-        configureButton(
-            previousButton, symbol: "chevron.left",
-            accessibilityDescription: "上一张",
-            action: #selector(handlePrevious(_:))
-        )
-        configureButton(
-            nextButton, symbol: "chevron.right",
-            accessibilityDescription: "下一张",
-            action: #selector(handleNext(_:))
-        )
-        configureButton(
-            exitButton, symbol: "xmark",
-            accessibilityDescription: "退出阅读器",
-            action: #selector(handleExit(_:))
-        )
+        previousButton.target = self
+        previousButton.action = #selector(handlePrevious(_:))
+        nextButton.target = self
+        nextButton.action = #selector(handleNext(_:))
+        exitButton.target = self
+        exitButton.action = #selector(handleExit(_:))
 
         progressLabel.font = .monospacedDigitSystemFont(ofSize: 12, weight: .medium)
         progressLabel.textColor = .white
@@ -128,17 +125,17 @@ final class PagedReaderWindowController: NSWindowController {
         previousButton.snp.makeConstraints { make in
             make.leading.equalToSuperview().offset(16)
             make.centerY.equalToSuperview()
-            make.size.equalTo(40)
+            make.size.equalTo(44)
         }
         nextButton.snp.makeConstraints { make in
             make.trailing.equalToSuperview().offset(-16)
             make.centerY.equalToSuperview()
-            make.size.equalTo(40)
+            make.size.equalTo(44)
         }
         exitButton.snp.makeConstraints { make in
             make.leading.equalToSuperview().offset(16)
             make.top.equalToSuperview().offset(16)
-            make.size.equalTo(28)
+            make.size.equalTo(32)
         }
         progressLabel.snp.makeConstraints { make in
             make.centerX.equalToSuperview()
@@ -148,24 +145,6 @@ final class PagedReaderWindowController: NSWindowController {
         rootView.onKeyDown = { [weak self] event in
             self?.handleKey(event) ?? false
         }
-    }
-
-    private func configureButton(
-        _ button: NSButton,
-        symbol: String,
-        accessibilityDescription: String,
-        action: Selector
-    ) {
-        button.bezelStyle = .circular
-        button.isBordered = false
-        button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: accessibilityDescription)?
-            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 16, weight: .semibold))
-        button.contentTintColor = .white
-        button.imagePosition = .imageOnly
-        button.title = ""
-        button.target = self
-        button.action = action
-        button.focusRingType = .none
     }
 
     private func registerObservers() {
