@@ -29,8 +29,7 @@ final class BrowserViewController: NSViewController {
     private let backButton = NSButton()
     private let preheatButton = NSButton()
     private let preheatProgressLabel = NSTextField(labelWithString: "")
-    private let titleLabel = NSTextField(labelWithString: "")
-    private let pathLabel = NSTextField(labelWithString: "")
+    private let locationLabel = NSTextField(labelWithString: "")
     private let searchField = NSSearchField()
 
     private let byteFormatter: ByteCountFormatter = {
@@ -84,15 +83,9 @@ final class BrowserViewController: NSViewController {
         preheatProgressLabel.isHidden = true
         preheatProgressLabel.setContentHuggingPriority(.required, for: .horizontal)
 
-        pathLabel.font = .systemFont(ofSize: 11)
-        pathLabel.textColor = .secondaryLabelColor
-        pathLabel.lineBreakMode = .byTruncatingMiddle
-        pathLabel.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        pathLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-
-        titleLabel.font = .systemFont(ofSize: 13, weight: .semibold)
-        titleLabel.alignment = .center
-        titleLabel.lineBreakMode = .byTruncatingTail
+        locationLabel.lineBreakMode = .byTruncatingMiddle
+        locationLabel.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        locationLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
         searchField.placeholderString = "搜索"
         searchField.isEnabled = false
@@ -100,8 +93,7 @@ final class BrowserViewController: NSViewController {
         toolbarView.addSubview(backButton)
         toolbarView.addSubview(preheatButton)
         toolbarView.addSubview(preheatProgressLabel)
-        toolbarView.addSubview(pathLabel)
-        toolbarView.addSubview(titleLabel)
+        toolbarView.addSubview(locationLabel)
         toolbarView.addSubview(searchField)
         backButton.snp.makeConstraints { make in
             make.leading.equalToSuperview().offset(20)
@@ -117,13 +109,9 @@ final class BrowserViewController: NSViewController {
             make.leading.equalTo(preheatButton.snp.trailing).offset(8)
             make.centerY.equalToSuperview()
         }
-        pathLabel.snp.makeConstraints { make in
-            make.leading.equalTo(preheatProgressLabel.snp.trailing).offset(8)
-            make.centerY.equalToSuperview()
-        }
-        titleLabel.snp.makeConstraints { make in
+        locationLabel.snp.makeConstraints { make in
             make.center.equalToSuperview()
-            make.leading.greaterThanOrEqualTo(pathLabel.snp.trailing).offset(8)
+            make.leading.greaterThanOrEqualTo(preheatProgressLabel.snp.trailing).offset(8)
             make.trailing.lessThanOrEqualTo(searchField.snp.leading).offset(-8)
         }
         searchField.snp.makeConstraints { make in
@@ -168,12 +156,38 @@ final class BrowserViewController: NSViewController {
 
     private func render(_ state: BrowserViewModel.State) {
         loadViewIfNeeded()
-        titleLabel.stringValue = state.title
-        pathLabel.stringValue = state.path
-        pathLabel.toolTip = state.path
+        locationLabel.attributedStringValue = Self.locationText(path: state.path, title: state.title)
+        locationLabel.toolTip = state.path
         backButton.isEnabled = state.canGoUp
         renderPreheat(state.preheat)
         tableView.reloadData()
+    }
+
+    /// One label for location: gray parent chain + semibold current name.
+    /// Showing the raw path and the title separately duplicated the last
+    /// path component.
+    static func locationText(path: String, title: String) -> NSAttributedString {
+        let titleAttributes: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 13, weight: .semibold),
+            .foregroundColor: NSColor.labelColor,
+        ]
+        let parentAttributes: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 12),
+            .foregroundColor: NSColor.secondaryLabelColor,
+        ]
+        let components = path.split(separator: "/", omittingEmptySubsequences: true)
+        // At the share root the title stands alone; deeper, the parents
+        // lead in gray.
+        let parents = components.dropLast()
+        let text = NSMutableAttributedString()
+        if !parents.isEmpty {
+            text.append(NSAttributedString(
+                string: parents.joined(separator: " / ") + " / ",
+                attributes: parentAttributes
+            ))
+        }
+        text.append(NSAttributedString(string: title, attributes: titleAttributes))
+        return text
     }
 
     private func renderPreheat(_ preheat: BrowserViewModel.PreheatButtonState) {

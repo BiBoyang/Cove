@@ -28,6 +28,23 @@ struct BrowserViewModelTests {
         #expect(visible.map(\.name) == ["Folder", "2.jpg", "10.jpg"])
     }
 
+    @Test("location label merges path and title without duplication")
+    func locationText() {
+        // Share root: title alone.
+        #expect(
+            BrowserViewController.locationText(path: "/", title: "media").string == "media"
+        )
+        // One level deep: the title is the last component, no parent shown.
+        #expect(
+            BrowserViewController.locationText(path: "/anime", title: "anime").string == "anime"
+        )
+        // Deeper: gray parent chain leads the title.
+        #expect(
+            BrowserViewController.locationText(path: "/anime/2024/fall", title: "fall").string
+                == "anime / 2024 / fall"
+        )
+    }
+
     @Test("exposes images and item lookup from displayed state")
     func projections() {
         let viewModel = BrowserViewModel()
