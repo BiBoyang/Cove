@@ -17,6 +17,9 @@ final class MainWindowController: NSWindowController {
         sidebarItem = NSSplitViewItem(sidebarWithViewController: libraryCoordinator.serverListViewController)
         sidebarItem.minimumThickness = 220
         sidebarItem.preferredThicknessFraction = 0.25
+        // There is no UI to bring a collapsed sidebar back, so collapsing
+        // is disabled until a sidebar toggle exists.
+        sidebarItem.canCollapse = false
         splitViewController.splitViewItems = [
             sidebarItem,
             NSSplitViewItem(viewController: libraryCoordinator.shareGridViewController),
