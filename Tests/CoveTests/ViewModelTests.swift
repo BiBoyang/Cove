@@ -956,7 +956,8 @@ struct ReaderImageLoaderWarmTests {
 }
 
 /// Cache store rooted at a fresh temp directory, for coordinator tests.
-private func makeTestCache() -> CacheStore {
+/// Internal (not file-private) so sibling test files share one factory.
+func makeTestCache() -> CacheStore {
     CacheStore(
         rootDirectory: FileManager.default.temporaryDirectory
             .appendingPathComponent("CoveTests-\(UUID().uuidString)", isDirectory: true),

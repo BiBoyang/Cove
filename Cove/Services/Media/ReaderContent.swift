@@ -32,10 +32,12 @@ struct ReaderContent: Sendable, ReaderPageSource {
 }
 
 extension ReaderContent {
-    /// Original-pool layering shared by both modes: a hit returns cached
-    /// bytes; a miss reads via `fileReader` and best-effort stores the
-    /// payload under the file's "raw" key.
-    private static func originalBytes(
+    /// Original-pool layering shared by all whole-file readers (directory,
+    /// CBZ, PDF): a hit returns cached bytes; a miss reads via `fileReader`
+    /// and best-effort stores the payload under the file's "raw" key.
+    /// Internal (not private) so the PDF reader reuses the exact same
+    /// original-pool policy instead of copying it.
+    static func originalBytes(
         for item: ContentItem,
         fileReader: @Sendable (String) async throws -> Data,
         cache: CacheStore,

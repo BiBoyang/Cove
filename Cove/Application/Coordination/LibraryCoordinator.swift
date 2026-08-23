@@ -26,6 +26,8 @@ final class LibraryCoordinator {
     private var activeAddServerSheet: AddServerSheetController?
     /// Owns the single v1 player window; a new video replaces it.
     private let playerCoordinator: PlayerCoordinator
+    /// Owns the single PDF reader window; a new PDF replaces it.
+    private let pdfReaderCoordinator: PdfReaderCoordinator
     private var navigationGeneration = 0
     private var activeTask: Task<Void, Never>?
 
@@ -48,6 +50,7 @@ final class LibraryCoordinator {
         self.readerCoordinator = readerCoordinator
         self.preheatService = preheatService
         playerCoordinator = PlayerCoordinator(progressStore: progressStore)
+        pdfReaderCoordinator = PdfReaderCoordinator(cache: cache)
         serverListViewController = ServerListViewController(viewModel: serverListViewModel)
         shareGridViewController = ShareGridViewController(viewModel: shareGridViewModel)
         browserViewController = BrowserViewController(viewModel: browserViewModel)
@@ -69,6 +72,7 @@ final class LibraryCoordinator {
         browserViewController.onOpenImage = { [weak self] in self?.openReader(forImageAt: $0) }
         browserViewController.onOpenComic = { [weak self] in self?.openComicReader(at: $0) }
         browserViewController.onOpenVideo = { [weak self] in self?.openPlayer(at: $0) }
+        browserViewController.onOpenPdf = { [weak self] in self?.openPdfReader(at: $0) }
         browserViewController.onUnsupportedFile = { [weak self] in self?.onUnsupportedFile?($0) }
         browserViewController.onGoUp = { [weak self] in self?.goBack() }
         browserViewController.onPreheatTapped = { [weak self] in self?.toggleDirectoryPreheat() }
@@ -76,6 +80,8 @@ final class LibraryCoordinator {
         readerCoordinator.onMessageError = { [weak self] in self?.onMessageError?($0, $1) }
         playerCoordinator.onError = { [weak self] in self?.onError?($0, $1) }
         playerCoordinator.onMessageError = { [weak self] in self?.onMessageError?($0, $1) }
+        pdfReaderCoordinator.onError = { [weak self] in self?.onError?($0, $1) }
+        pdfReaderCoordinator.onMessageError = { [weak self] in self?.onMessageError?($0, $1) }
     }
 
     private func wirePreheat() {
@@ -113,6 +119,7 @@ final class LibraryCoordinator {
         activeTask?.cancel()
         activeTask = nil
         readerCoordinator.cancelPendingOpen()
+        pdfReaderCoordinator.cancelPendingOpen()
         // Directory preheats are tied to the directory on screen: any
         // navigation (switch folder, leave the share, open the reader)
         // cancels the queue without touching userFolder work.
@@ -297,6 +304,21 @@ final class LibraryCoordinator {
             sourceID: sourceID,
             fileReader: makeFileReader(),
             isSourceCurrent: { [weak self] in self?.sessionService.currentSourceID == sourceID }
+        )
+    }
+
+    /// Opens the PDF reader for a PDF file. The PdfReaderCoordinator owns
+    /// the single PDF window; opening another PDF replaces it.
+    private func openPdfReader(at path: String) {
+        guard let item = browserViewModel.item(atPath: path), let sourceID = sessionService.currentSourceID else {
+            onMessageError?("无法定位 PDF 文件，或当前共享已断开。", "打开 PDF 失败")
+            return
+        }
+        _ = beginNavigation()
+        pdfReaderCoordinator.open(
+            item: item,
+            sourceID: sourceID,
+            fileReader: makeFileReader()
         )
     }
 
