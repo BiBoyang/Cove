@@ -24,6 +24,9 @@ final class LibraryCoordinator {
     private var currentShare: String?
     private var navigationPath = LibraryNavigationPath()
     private var activeAddServerSheet: AddServerSheetController?
+    /// Step 1 spike: the single ad-hoc player window; a new video replaces
+    /// it. Step 2 replaces this with the real PlayerCoordinator.
+    private var spikePlayerWindowController: SpikePlayerWindowController?
     private var navigationGeneration = 0
     private var activeTask: Task<Void, Never>?
 
@@ -64,6 +67,7 @@ final class LibraryCoordinator {
         browserViewController.onOpenDirectory = { [weak self] in self?.navigateInto($0) }
         browserViewController.onOpenImage = { [weak self] in self?.openReader(forImageAt: $0) }
         browserViewController.onOpenComic = { [weak self] in self?.openComicReader(at: $0) }
+        browserViewController.onOpenVideo = { [weak self] in self?.openSpikePlayer(at: $0) }
         browserViewController.onUnsupportedFile = { [weak self] in self?.onUnsupportedFile?($0) }
         browserViewController.onGoUp = { [weak self] in self?.goBack() }
         browserViewController.onPreheatTapped = { [weak self] in self?.toggleDirectoryPreheat() }
@@ -295,6 +299,33 @@ final class LibraryCoordinator {
 
     private func makeFileReader() -> @Sendable (String) async throws -> Data {
         sessionService.makeFileReader()
+    }
+
+    /// Step 1 spike wiring: opens the ad-hoc player window for a video
+    /// file. Opening another video tears the previous session down first
+    /// (window close shuts the mpv handle and the stream bridge down via
+    /// `windowWillClose`).
+    private func openSpikePlayer(at path: String) {
+        guard let item = browserViewModel.item(atPath: path) else {
+            onMessageError?("无法定位视频文件。", "打开视频失败")
+            return
+        }
+        spikePlayerWindowController?.window?.close()
+        let bridge = VideoStreamBridge(
+            path: item.path,
+            size: item.size,
+            reader: sessionService.makeRangedFileReader()
+        )
+        do {
+            let core = try MPVPlayerCore(bridge: bridge)
+            let player = SpikePlayerWindowController(item: item, core: core)
+            spikePlayerWindowController = player
+            player.onClose = { [weak self] in self?.spikePlayerWindowController = nil }
+            player.show()
+        } catch {
+            bridge.detach()
+            onError?(error, "打开视频失败")
+        }
     }
 }
 

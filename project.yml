@@ -69,6 +69,37 @@ targets:
         DEVELOPMENT_TEAM: ""
         MARKETING_VERSION: "0.3.0"
         CURRENT_PROJECT_VERSION: "3"
+        # Vendored libmpv (Vendor/libmpv): IINA.app Frameworks forest
+        # (mpv 0.38.0, universal, @rpath layout) plus mpv 0.41.0 client
+        # headers. Not committed to git; run scripts/assemble-libmpv.sh
+        # to assemble it locally. See plans/SPIKE-video-playback.md.
+        OTHER_LDFLAGS: "-lmpv"
+        LIBRARY_SEARCH_PATHS: "$(PROJECT_DIR)/Vendor/libmpv"
+        # -isystem (not -I): keep vendored third-party headers' own
+        # warnings out of the build log.
+        SYSTEM_HEADER_SEARCH_PATHS: "$(PROJECT_DIR)/Vendor/libmpv/include"
+        SWIFT_OBJC_BRIDGING_HEADER: "Cove/Services/Media/MPVBridgingHeader.h"
+        LD_RUNPATH_SEARCH_PATHS:
+          - "$(inherited)"
+          - "@executable_path/../Frameworks"
+    # Embed the vendored libmpv dylib forest into Contents/Frameworks and
+    # ad-hoc re-sign every dylib (equivalent of "Code Sign On Copy" for
+    # plain dylibs, which the Embed Frameworks phase cannot handle).
+    postBuildScripts:
+      - name: Embed libmpv dylibs
+        shell: /bin/sh
+        basedOnDependencyAnalysis: false
+        script: |
+          set -e
+          FRAMEWORKS_DIR="$BUILT_PRODUCTS_DIR/$PRODUCT_NAME.app/Contents/Frameworks"
+          mkdir -p "$FRAMEWORKS_DIR"
+          for lib in "$PROJECT_DIR"/Vendor/libmpv/*.dylib; do
+            # Skip the libmpv.dylib link-time symlink.
+            if [ -L "$lib" ]; then continue; fi
+            name="$(basename "$lib")"
+            ditto "$lib" "$FRAMEWORKS_DIR/$name"
+            codesign --force --sign - "$FRAMEWORKS_DIR/$name"
+          done
   CoveTests:
     type: bundle.unit-test
     platform: macOS
@@ -83,6 +114,20 @@ targets:
         SWIFT_STRICT_CONCURRENCY: complete
         PRODUCT_BUNDLE_IDENTIFIER: com.biboyang.cove.tests
         GENERATE_INFOPLIST_FILE: "YES"
+        # Same "Sign to Run Locally" resolution as the app target: without
+        # an explicit style/team the test bundle's CodeSign phase is skipped
+        # and the app's own codesign then rejects the unsigned PlugIns copy.
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: ""
+        # The test bundle compiles the app's bridging header and links the
+        # app binary, so it needs the same vendored libmpv paths.
+        OTHER_LDFLAGS: "-lmpv"
+        LIBRARY_SEARCH_PATHS: "$(PROJECT_DIR)/Vendor/libmpv"
+        SYSTEM_HEADER_SEARCH_PATHS: "$(PROJECT_DIR)/Vendor/libmpv/include"
+        LD_RUNPATH_SEARCH_PATHS:
+          - "$(inherited)"
+          - "@executable_path/../Frameworks"
+          - "@loader_path/../Frameworks"
 
 schemes:
   Cove:

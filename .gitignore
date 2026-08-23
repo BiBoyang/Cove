@@ -22,3 +22,8 @@ xcuserdata/
 # CocoaPods / Carthage (not used, ignored defensively)
 Pods/
 Carthage/Build/
+
+# Vendored libmpv forest (116MB of IINA-signed dylibs, licensing-sensitive).
+# Assemble locally with scripts/assemble-libmpv.sh; see
+# plans/SPIKE-video-playback.md.
+Vendor/libmpv/

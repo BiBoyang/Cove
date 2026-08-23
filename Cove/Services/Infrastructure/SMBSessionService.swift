@@ -34,6 +34,13 @@ private final class SMBReadRouter: Sendable {
         }
         return try await source.read(at: path)
     }
+
+    func read(at path: String, range: Range<Int64>) async throws -> Data {
+        guard let source = state.withLock({ $0 }) else {
+            throw SourceError.notConnected
+        }
+        return try await source.read(at: path, range: range)
+    }
 }
 
 /// Infrastructure service owning the SMB session lifecycle and persisted server list.
@@ -176,6 +183,16 @@ final class SMBSessionService {
     func makeFileReader() -> @Sendable (String) async throws -> Data {
         { [readRouter] path in
             try await readRouter.read(at: path)
+        }
+    }
+
+    /// A ranged-read closure with the same non-main-actor routing as
+    /// `makeFileReader()`. Drives the video player's mpv stream bridge:
+    /// mpv's demuxer issues the byte ranges it needs and this hops them
+    /// straight onto the SMB actor.
+    func makeRangedFileReader() -> @Sendable (String, Range<Int64>) async throws -> Data {
+        { [readRouter] path, range in
+            try await readRouter.read(at: path, range: range)
         }
     }
 

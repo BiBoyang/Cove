@@ -14,6 +14,7 @@ final class BrowserViewController: NSViewController {
     var onOpenDirectory: ((_ path: String) -> Void)?
     var onOpenImage: ((_ path: String) -> Void)?
     var onOpenComic: ((_ path: String) -> Void)?
+    var onOpenVideo: ((_ path: String) -> Void)?
     var onUnsupportedFile: ((_ name: String) -> Void)?
     var onGoUp: (() -> Void)?
     var onPreheatTapped: (() -> Void)?
@@ -242,6 +243,8 @@ final class BrowserViewController: NSViewController {
             onOpenImage?(item.path)
         } else if item.fileType == .comic {
             onOpenComic?(item.path)
+        } else if item.fileType == .video {
+            onOpenVideo?(item.path)
         } else {
             onUnsupportedFile?(item.name)
         }
