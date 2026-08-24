@@ -53,10 +53,12 @@ Everything else comes later.
   local cache. Originals and downsampled display variants use the disk
   cache; A1 does not start automatic directory warming.
 - Double-click a `.cbz` comic archive to read it in the same single-page
-  reader: the archive is cached whole in the original pool, its image entries
-  are sorted naturally (`1, 2, …, 10`), pages decode into the display pool,
-  and the next two pages are pre-decoded ahead of the current one.
-  (`.cbr`/`.cbt` are not supported yet.)
+  reader — or in **continuous strip mode**: comic archives default to a
+  vertical, webtoon-style continuous scroll (a toolbar button toggles
+  between single-page and strip, preserving the current page), with the
+  archive cached whole in the original pool, image entries sorted
+  naturally (`1, 2, …, 10`), pages decoded into the display pool, and the
+  next pages pre-decoded ahead. (`.cbr`/`.cbt` are not supported yet.)
 - Preheating downloads originals into the local cache ahead of reading. The
   browser toolbar has a "preheat this folder" button that warms the current
   folder including its subfolders (breadth-first, capped at 5000 files / 1000
