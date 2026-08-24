@@ -36,15 +36,14 @@
 
 ## Step 列表与 DoD
 
-### Step 1：条带核心（slot 拓扑 + 虚拟化 + 锚定重排）
+### Step 1：条带逻辑层（slot 拓扑 + 虚拟化 + 锚定重排，纯逻辑无 UI）
 
-- `ContinuousReaderView`（NSScrollView 文档）：index→slot 映射、±3 屏窗口、估计高、锚定重排、滚动监听驱动创建/销毁。
-- 逻辑层（slot 管理器，无 AppKit 渲染依赖可测）：窗口计算、高度更新后的锚定 offset 调整。
+- 逻辑层 `StripLayoutModel`（slot 管理器，无 AppKit 渲染依赖可测）：index→slot 映射、±3 屏窗口计算、估计高、高度更新后的锚定 offset 调整。
 - DoD：逻辑层测试——slot 身份稳定（异步结果不错位）、高度更新锚定正确（可见页不跳）、窗口滚动创建/销毁正确；`make test` 全绿。
 
 ### Step 2：接入阅读器 + 加载调度 + 模式切换
 
-- 条带容器接入阅读器窗口（与单页共存切换），加载调度（可见即载 + 向前 1 屏），模式切换按钮，CBZ 默认条带。
+- `ContinuousReaderView`（NSScrollView 文档视图）：按逻辑层窗口创建/销毁 slot view（窗外销毁、不复用），滚动监听驱动，异步结果落地前校验 `slot.pageIndex`；条带容器接入阅读器窗口（与单页共存切换），加载调度（可见即载 + 向前 1 屏），模式切换按钮，CBZ 默认条带。
 - DoD：单页回归零变化；`make generate && make build` 零警告；人工检查点（用户）：CBZ 百页连滚无错位/无闪退/内存稳定、快速滚动无陈旧错位、模式切换保留当前页、单页模式行为不变。
 
 ## 风险与回滚点
