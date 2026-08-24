@@ -27,6 +27,17 @@ Everything else comes later.
   and returns on mouse movement; keyboard: space, ←/→ seek, ↑/↓ volume.
   Each video's playback position is remembered and resumed on reopen
   (finished videos start over).
+- **PDF reading**: double-click a `.pdf` to read it with PDFKit — the file
+  is cached whole in the original pool (instant on reopen) and shown as
+  continuous pages with breaks (`.cbr`-style one-offs are not special-cased;
+  any valid PDF works).
+- **Vault (local library)**: right-click any file or folder and choose
+  "下载到本地仓库" to download a permanent local copy (folders are
+  downloaded recursively, unchanged files are skipped on re-download).
+  The vault lives outside the cache — it is never evicted and answers even
+  when the NAS is offline. A "本地仓库" entry in the sidebar browses it
+  exactly like a share (reading and playback included); the vault root
+  defaults to the app container and can be changed in Settings.
 - Dot-prefixed entries (`.DS_Store`, AppleDouble `._*`, tool metadata files)
   and `__MACOSX` folders are hidden.
 - Files are classified by type (video / image / pdf / comic / text / other)

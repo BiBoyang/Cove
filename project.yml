@@ -67,8 +67,8 @@ targets:
         # distribution / notarization. Empty team + Automatic signing means
         # "Sign to Run Locally" (ad hoc), which is fine for development only.
         DEVELOPMENT_TEAM: ""
-        MARKETING_VERSION: "0.4.0"
-        CURRENT_PROJECT_VERSION: "4"
+        MARKETING_VERSION: "0.5.0"
+        CURRENT_PROJECT_VERSION: "5"
         # Vendored libmpv (Vendor/libmpv): IINA.app Frameworks forest
         # (mpv 0.38.0, universal, @rpath layout) plus mpv 0.41.0 client
         # headers. Not committed to git; run scripts/assemble-libmpv.sh
