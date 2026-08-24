@@ -17,7 +17,7 @@ enum CoveStyle {
     // MARK: Fonts
 
     /// Row/card titles.
-    static let titleFont = NSFont.systemFont(ofSize: 13, weight: .medium)
+    static let titleFont = NSFont.systemFont(ofSize: 14, weight: .medium)
     /// Primary body text (list rows).
     static let bodyFont = NSFont.systemFont(ofSize: 13)
     /// Secondary metadata (dates, sizes, comments).

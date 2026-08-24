@@ -113,9 +113,9 @@ extension ShareGridViewController: NSCollectionViewDataSource {
     }
 }
 
-/// One card in the share grid: large folder icon, share name, remark.
-/// The fill brightens on hover and the rounded background lights up
-/// while selected.
+/// One card in the share grid: outline folder icon, share name, remark.
+/// Borderless by default (Finder/Infuse-style icon grid); a rounded fill
+/// appears on hover and lights up while selected.
 @MainActor
 final class ShareCardItem: NSCollectionViewItem {
     static let identifier = NSUserInterfaceItemIdentifier("ShareCardItem")
@@ -135,14 +135,13 @@ final class ShareCardItem: NSCollectionViewItem {
 
     override func loadView() {
         cardView.cornerRadius = CoveStyle.radiusMedium
-        cardView.borderColor = CoveStyle.cardBorderColor
 
-        let folderIcon = NSImage(systemSymbolName: "folder.fill", accessibilityDescription: nil)?
+        let folderIcon = NSImage(systemSymbolName: "folder", accessibilityDescription: nil)?
             .withSymbolConfiguration(
-                NSImage.SymbolConfiguration(pointSize: 44, weight: .regular)
+                NSImage.SymbolConfiguration(pointSize: 36, weight: .regular)
             )
         iconView.image = folderIcon
-        iconView.contentTintColor = .controlAccentColor
+        iconView.contentTintColor = .labelColor
 
         nameLabel.alignment = .center
         nameLabel.font = CoveStyle.titleFont
@@ -153,20 +152,23 @@ final class ShareCardItem: NSCollectionViewItem {
         commentLabel.textColor = .secondaryLabelColor
         commentLabel.lineBreakMode = .byTruncatingTail
 
-        cardView.addSubview(iconView)
-        cardView.addSubview(nameLabel)
-        cardView.addSubview(commentLabel)
-        iconView.snp.makeConstraints { make in
-            make.top.equalToSuperview().offset(16)
-            make.centerX.equalToSuperview()
+        // Icon + labels as one vertically centered group; the stack collapses
+        // the remark line cleanly when a share has no comment.
+        let contentStack = NSStackView(views: [iconView, nameLabel, commentLabel])
+        contentStack.orientation = .vertical
+        contentStack.alignment = .centerX
+        contentStack.spacing = 8
+        contentStack.setCustomSpacing(4, after: nameLabel)
+
+        cardView.addSubview(contentStack)
+        contentStack.snp.makeConstraints { make in
+            make.center.equalToSuperview()
         }
         nameLabel.snp.makeConstraints { make in
-            make.top.equalTo(iconView.snp.bottom).offset(8)
-            make.leading.trailing.equalToSuperview().inset(8)
+            make.width.equalTo(cardView).offset(-16)
         }
         commentLabel.snp.makeConstraints { make in
-            make.top.equalTo(nameLabel.snp.bottom).offset(2)
-            make.leading.trailing.equalTo(nameLabel)
+            make.width.lessThanOrEqualTo(cardView).offset(-16)
         }
 
         view = cardView
@@ -194,16 +196,14 @@ final class ShareCardItem: NSCollectionViewItem {
     }
 
     // `RoundedFillView` re-resolves the fill on appearance changes, so the
-    // highlight never goes stale across light/dark flips.
+    // highlight never goes stale across appearance flips.
     private func updateHighlight() {
         if isSelected {
             cardView.fillColor = .selectedContentBackgroundColor
         } else if isHovering {
             cardView.fillColor = .quaternaryLabelColor
         } else {
-            // Elevated surface: lighter than the window background so the
-            // cards read as floating tiles, not flat patches.
-            cardView.fillColor = .controlBackgroundColor
+            cardView.fillColor = .clear
         }
     }
 }

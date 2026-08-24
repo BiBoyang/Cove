@@ -135,7 +135,7 @@ extension ServerListViewController: NSTableViewDataSource, NSTableViewDelegate {
             cell.identifier = identifier
         }
         if viewModel.isVaultRow(row) {
-            cell.configure(symbol: "externaldrive.fill", title: "本地仓库", tint: .controlAccentColor)
+            cell.configure(symbol: "externaldrive.fill", title: "本地仓库", tint: .labelColor)
         } else if let server = viewModel.server(atTableRow: row) {
             cell.configure(with: server)
         }
@@ -209,8 +209,8 @@ extension ServerListViewController: NSTableViewDataSource, NSTableViewDelegate {
     }
 }
 
-/// One server row: a plain accent-tinted symbol and the server name,
-/// in the spirit of SenPlayer's clean sidebar (no badge chrome).
+/// One server row: a plain monochrome symbol and the server name, in the
+/// spirit of SenPlayer's clean sidebar (no badge chrome).
 @MainActor
 private final class ServerRowCellView: NSTableCellView {
     private let iconView = NSImageView()
@@ -221,7 +221,7 @@ private final class ServerRowCellView: NSTableCellView {
 
         iconView.image = NSImage(systemSymbolName: "server.rack", accessibilityDescription: nil)?
             .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 14, weight: .regular))
-        iconView.contentTintColor = .controlAccentColor
+        iconView.contentTintColor = .labelColor
 
         nameLabel.font = CoveStyle.bodyFont
         nameLabel.textColor = .labelColor
@@ -247,7 +247,7 @@ private final class ServerRowCellView: NSTableCellView {
     }
 
     func configure(with server: ServerConfig) {
-        configure(symbol: "server.rack", title: server.displayName, tint: .controlAccentColor)
+        configure(symbol: "server.rack", title: server.displayName, tint: .labelColor)
     }
 
     /// Generic icon + title content (the vault row uses it too).

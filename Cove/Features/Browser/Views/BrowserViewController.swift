@@ -60,12 +60,21 @@ final class BrowserViewController: NSViewController {
     private let tableView = NSTableView()
     private let scrollView = NSScrollView()
     private let toolbarView = NSView()
-    private let backButton = NSButton()
-    private let preheatButton = NSButton()
+    private let backButton = PillButton(
+        symbolName: "chevron.left", pointSize: 15, style: .secondary,
+        accessibilityDescription: "返回"
+    )
+    private let preheatButton = PillButton(
+        symbolName: "arrow.down.circle", pointSize: 15, style: .secondary,
+        accessibilityDescription: "预热此文件夹（含子文件夹）"
+    )
     private let preheatProgressLabel = NSTextField(labelWithString: "")
     private let locationLabel = NSTextField(labelWithString: "")
     private let downloadLabel = NSTextField(labelWithString: "")
-    private let downloadCancelButton = NSButton()
+    private let downloadCancelButton = PillButton(
+        symbolName: "xmark", pointSize: 11, style: .secondary,
+        accessibilityDescription: "取消下载"
+    )
 
     private let byteFormatter: ByteCountFormatter = {
         let formatter = ByteCountFormatter()
@@ -95,16 +104,9 @@ final class BrowserViewController: NSViewController {
     override func loadView() {
         let root = NSView()
 
-        // Toolbar: circular back button, the full path in small gray text,
+        // Toolbar: pill back button, the full path in small gray text,
         // the current directory name centered, and a disabled search field
         // reserving the slot for future filtering.
-        backButton.bezelStyle = .circular
-        backButton.image = NSImage(
-            systemSymbolName: "chevron.left",
-            accessibilityDescription: "返回"
-        )?.withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 15, weight: .semibold))
-        backButton.imagePosition = .imageOnly
-        backButton.title = ""
         backButton.target = self
         backButton.action = #selector(handleGoUp)
         backButton.isEnabled = false
@@ -113,9 +115,6 @@ final class BrowserViewController: NSViewController {
         // "Preheat this folder" button: downloads the current directory's
         // images (one level) into the cache in the background. Its state
         // (idle / running with N/M progress / finished) is VM-driven.
-        preheatButton.bezelStyle = .circular
-        preheatButton.imagePosition = .imageOnly
-        preheatButton.title = ""
         preheatButton.target = self
         preheatButton.action = #selector(handlePreheatTapped)
         preheatButton.isEnabled = false
@@ -136,13 +135,6 @@ final class BrowserViewController: NSViewController {
         downloadLabel.textColor = .secondaryLabelColor
         downloadLabel.lineBreakMode = .byTruncatingMiddle
         downloadLabel.isHidden = true
-        downloadCancelButton.bezelStyle = .circular
-        downloadCancelButton.image = NSImage(
-            systemSymbolName: "xmark",
-            accessibilityDescription: "取消下载"
-        )?.withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 11, weight: .semibold))
-        downloadCancelButton.imagePosition = .imageOnly
-        downloadCancelButton.title = ""
         downloadCancelButton.toolTip = "取消下载"
         downloadCancelButton.target = self
         downloadCancelButton.action = #selector(handleCancelDownload)
@@ -300,19 +292,19 @@ final class BrowserViewController: NSViewController {
         switch preheat {
         case .unavailable:
             preheatButton.isEnabled = false
-            preheatButton.image = preheatSymbol("arrow.down.circle", description: "预热此文件夹（含子文件夹）")
+            preheatButton.setSymbol("arrow.down.circle", accessibilityDescription: "预热此文件夹（含子文件夹）")
             preheatButton.toolTip = "预热此文件夹（含子文件夹）"
             preheatProgressLabel.stringValue = ""
             preheatProgressLabel.isHidden = true
         case .ready:
             preheatButton.isEnabled = true
-            preheatButton.image = preheatSymbol("arrow.down.circle", description: "预热此文件夹（含子文件夹）")
+            preheatButton.setSymbol("arrow.down.circle", accessibilityDescription: "预热此文件夹（含子文件夹）")
             preheatButton.toolTip = "预热此文件夹（含子文件夹）"
             preheatProgressLabel.stringValue = ""
             preheatProgressLabel.isHidden = true
         case .preheating(let completed, let total, let bytesPerSecond):
             preheatButton.isEnabled = true
-            preheatButton.image = preheatSymbol("stop.circle", description: "取消预热")
+            preheatButton.setSymbol("stop.circle", accessibilityDescription: "取消预热")
             preheatButton.toolTip = "取消预热"
             preheatProgressLabel.isHidden = false
             if total > 0 {
@@ -324,7 +316,7 @@ final class BrowserViewController: NSViewController {
             }
         case .finished(let failed, let truncatedAtCap):
             preheatButton.isEnabled = true
-            preheatButton.image = preheatSymbol("checkmark.circle", description: "预热完成")
+            preheatButton.setSymbol("checkmark.circle", accessibilityDescription: "预热完成")
             preheatProgressLabel.isHidden = false
             var notes: [String] = []
             if let cap = truncatedAtCap {
@@ -337,11 +329,6 @@ final class BrowserViewController: NSViewController {
             preheatButton.toolTip = text
             preheatProgressLabel.stringValue = text
         }
-    }
-
-    private func preheatSymbol(_ name: String, description: String) -> NSImage? {
-        NSImage(systemSymbolName: name, accessibilityDescription: description)?
-            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 15, weight: .semibold))
     }
 
     @objc private func handleGoUp() {
@@ -479,11 +466,11 @@ private final class BrowserRowCellView: NSTableCellView {
         nameLabel.snp.makeConstraints { make in
             make.leading.equalTo(badgeView.snp.trailing).offset(12)
             make.trailing.lessThanOrEqualToSuperview().offset(-20)
-            make.bottom.equalTo(self.snp.centerY).offset(-2)
+            make.bottom.equalTo(self.snp.centerY).offset(-4)
         }
         subtitleLabel.snp.makeConstraints { make in
             make.leading.trailing.equalTo(nameLabel)
-            make.top.equalTo(self.snp.centerY).offset(2)
+            make.top.equalTo(self.snp.centerY).offset(4)
         }
     }
 

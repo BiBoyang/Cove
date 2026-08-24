@@ -66,10 +66,12 @@ final class AddServerSheetController: NSWindowController {
         hintLabel.font = .systemFont(ofSize: 11)
         hintLabel.isHidden = true
 
-        let cancelButton = NSButton(title: "取消", target: self, action: #selector(cancel))
-        cancelButton.bezelStyle = .rounded
-        let confirmButton = NSButton(title: "添加", target: self, action: #selector(confirm))
-        confirmButton.bezelStyle = .rounded
+        let cancelButton = PillButton(title: "取消", style: .secondary)
+        cancelButton.target = self
+        cancelButton.action = #selector(cancel)
+        let confirmButton = PillButton(title: "添加", style: .primary)
+        confirmButton.target = self
+        confirmButton.action = #selector(confirm)
         confirmButton.keyEquivalent = "\r"
 
         let buttonRow = NSStackView(views: [cancelButton, confirmButton])
