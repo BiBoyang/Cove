@@ -19,7 +19,6 @@ import SnapKit
 final class PagedReaderWindowController: NSWindowController {
     private let viewModel: ReaderViewModel
     private var isTornDown = false
-    private var didRequestFullScreen = false
 
     private let rootView = PagedReaderRootView()
     private let imageView = NSImageView()
@@ -85,10 +84,6 @@ final class PagedReaderWindowController: NSWindowController {
         super.showWindow(sender)
         guard let window else { return }
         window.makeFirstResponder(rootView)
-        if !didRequestFullScreen, !window.styleMask.contains(.fullScreen) {
-            didRequestFullScreen = true
-            window.toggleFullScreen(nil)
-        }
     }
 
     // MARK: - View assembly
@@ -271,13 +266,14 @@ final class PagedReaderWindowController: NSWindowController {
 
     /// Returns true when the key was consumed. Works in full screen because
     /// the root view is the window's first responder. In strip mode scroll
-    /// keys go to the strip view; Esc still closes the window.
+    /// keys go to the strip view; Esc steps out of full screen and is
+    /// otherwise ignored.
     private func handleKey(_ event: NSEvent) -> Bool {
         // Leave menu commands (Cmd+W, Cmd+Q, …) to the responder chain.
         guard !event.modifierFlags.contains(.command) else { return false }
         if mode == .strip {
             if event.keyCode == 53 { // Esc
-                close()
+                handleEscape()
                 return true
             }
             return stripView?.handleKey(event) ?? false
@@ -288,11 +284,18 @@ final class PagedReaderWindowController: NSWindowController {
         case 124, 121: // →, PageDown
             viewModel.goNext()
         case 53: // Esc
-            close()
+            handleEscape()
         default:
             return false
         }
         return true
+    }
+
+    /// Esc steps out of full screen; in a windowed session it does nothing
+    /// (close via the ✕ button or Cmd+W).
+    private func handleEscape() {
+        guard let window, window.styleMask.contains(.fullScreen) else { return }
+        window.toggleFullScreen(nil)
     }
 
     // MARK: - Lifecycle

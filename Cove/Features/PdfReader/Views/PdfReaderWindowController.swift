@@ -3,8 +3,9 @@ import PDFKit
 import SnapKit
 
 /// AppKit PDF reader window: one `PDFView` in continuous single-page mode
-/// over a black background, full screen with a hidden title bar and Esc to
-/// close — same look and feel as the image and video readers.
+/// over a black background, windowed with a hidden title bar and Esc
+/// stepping out of full screen — same look and feel as the image and video
+/// readers.
 ///
 /// The loading state machine, cancellation, and failure reporting belong to
 /// the injected `PdfReaderViewModel`; this controller only renders AppKit
@@ -13,7 +14,6 @@ import SnapKit
 final class PdfReaderWindowController: NSWindowController {
     private let viewModel: PdfReaderViewModel
     private var isTornDown = false
-    private var didRequestFullScreen = false
 
     private let rootView = PdfReaderRootView()
     private let pdfView = PDFView()
@@ -60,10 +60,6 @@ final class PdfReaderWindowController: NSWindowController {
         super.showWindow(sender)
         guard let window else { return }
         window.makeFirstResponder(rootView)
-        if !didRequestFullScreen, !window.styleMask.contains(.fullScreen) {
-            didRequestFullScreen = true
-            window.toggleFullScreen(nil)
-        }
     }
 
     // MARK: - View assembly
@@ -154,10 +150,17 @@ final class PdfReaderWindowController: NSWindowController {
         // Leave menu commands (Cmd+W, Cmd+Q, …) to the responder chain.
         guard !event.modifierFlags.contains(.command) else { return false }
         if event.keyCode == 53 { // Esc
-            close()
+            handleEscape()
             return true
         }
         return false
+    }
+
+    /// Esc steps out of full screen; in a windowed session it does nothing
+    /// (close via the ✕ button or Cmd+W).
+    private func handleEscape() {
+        guard let window, window.styleMask.contains(.fullScreen) else { return }
+        window.toggleFullScreen(nil)
     }
 
     // MARK: - Lifecycle
