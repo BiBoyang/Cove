@@ -297,6 +297,12 @@ final class LibraryCoordinator {
             forPath: path, shareName: browsingVault ? "本地仓库" : currentShare
         )
         browserViewModel.display(items: items, path: path, title: title)
+        if browsingVault {
+            // `display` resets the preheat button to ready; the vault has
+            // no preheat pipeline, so keep it unavailable on every
+            // navigation, not just on entry.
+            browserViewModel.setPreheatAvailable(false)
+        }
     }
 
     // MARK: - Vault
@@ -320,7 +326,6 @@ final class LibraryCoordinator {
                 try await sessionService.connectLocal(LocalFileSource(root: vaultService.rootURL))
                 guard generation == navigationGeneration else { return }
                 try await loadDirectory(at: "/", generation: generation)
-                browserViewModel.setPreheatAvailable(false)
             } catch {
                 if Task.isCancelled || error is CancellationError { return }
                 guard generation == navigationGeneration else { return }
