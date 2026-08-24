@@ -77,7 +77,8 @@ final class ReaderCoordinator: NSObject {
         items: [ContentItem],
         selectedPath: String,
         sourceID: String,
-        fileReader: @escaping @Sendable (String) async throws -> Data
+        fileReader: @escaping @Sendable (String) async throws -> Data,
+        bypassOriginalPool: Bool = false
     ) {
         cancelPendingOpen()
         guard let startIndex = items.firstIndex(where: { $0.path == selectedPath }) else {
@@ -87,7 +88,7 @@ final class ReaderCoordinator: NSObject {
         let content = ReaderContent.directory(
             items: items,
             fileReader: fileReader,
-            cache: cache,
+            cache: bypassOriginalPool ? nil : cache,
             sourceID: sourceID
         )
         directoryPrefetchItems = items
@@ -102,7 +103,8 @@ final class ReaderCoordinator: NSObject {
         item: ContentItem,
         sourceID: String,
         fileReader: @escaping @Sendable (String) async throws -> Data,
-        isSourceCurrent: @escaping @MainActor () -> Bool
+        isSourceCurrent: @escaping @MainActor () -> Bool,
+        bypassOriginalPool: Bool = false
     ) {
         cancelPendingOpen()
         directoryPrefetchItems = nil
@@ -113,7 +115,7 @@ final class ReaderCoordinator: NSObject {
                 let content = try await ReaderContent.comic(
                     item: item,
                     fileReader: fileReader,
-                    cache: cache,
+                    cache: bypassOriginalPool ? nil : cache,
                     sourceID: sourceID
                 )
                 guard generation == openGeneration, isSourceCurrent() else { return }

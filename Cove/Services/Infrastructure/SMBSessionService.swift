@@ -41,6 +41,13 @@ private final class SMBReadRouter: Sendable {
         }
         return try await source.read(at: path, range: range)
     }
+
+    func list(at path: String) async throws -> [ContentItem] {
+        guard let source = state.withLock({ $0 }) else {
+            throw SourceError.notConnected
+        }
+        return try await source.list(at: path)
+    }
 }
 
 /// Infrastructure service owning the SMB session lifecycle and persisted server list.
@@ -65,7 +72,10 @@ final class SMBSessionService {
     private let store = ServerStore()
 
     private(set) var servers: [ServerConfig]
-    private var source: SMBSource?
+    /// The interactive source: an `SMBSource` for NAS shares, or a
+    /// `LocalFileSource` while browsing the vault. Kept as the protocol so
+    /// the whole downstream pipeline (list/read/sourceID) works unchanged.
+    private var source: (any ContentSource)?
     /// Nonisolated view of `source` for background readers; written only
     /// from the main actor, alongside `source`.
     private let readRouter = SMBReadRouter()
@@ -175,6 +185,25 @@ final class SMBSessionService {
         return try await source.list(at: path)
     }
 
+    /// Connects a local source (the vault's `LocalFileSource`), replacing
+    /// any active session. No password, no preheat connection — local reads
+    /// are cheap and the vault never enters any cache pool.
+    func connectLocal(_ newSource: any ContentSource) async throws {
+        try await newSource.connect()
+        logger.info("Connected local source \(newSource.sourceID)", privacy: .public)
+        // Same swap discipline as `connect(to:share:)`: usable immediately,
+        // old session torn down off the critical path.
+        let old = source
+        source = newSource
+        readRouter.update(newSource)
+        if let old {
+            Task { await old.disconnect() }
+        }
+        preheatConnectTask?.cancel()
+        preheatConnectTask = nil
+        tearDownPreheatConnection()
+    }
+
     /// A whole-file read closure that never touches the main actor: it
     /// snapshots the live source and hops straight onto the SMB actor.
     /// Injected into reader content sources and the thumbnail pipeline so
@@ -193,6 +222,15 @@ final class SMBSessionService {
     func makeRangedFileReader() -> @Sendable (String, Range<Int64>) async throws -> Data {
         { [readRouter] path, range in
             try await readRouter.read(at: path, range: range)
+        }
+    }
+
+    /// A directory-listing closure with the same background routing as the
+    /// readers. Bulk walkers (vault downloads) use it so a recursive
+    /// enumeration never queues on the main actor.
+    func makeLister() -> @Sendable (String) async throws -> [ContentItem] {
+        { [readRouter] path in
+            try await readRouter.list(at: path)
         }
     }
 

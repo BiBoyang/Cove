@@ -9,6 +9,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// preheat service is retained transitively by the library coordinator.
     private var settingsService: SettingsService?
     private var cacheService: CacheService?
+    private var vaultService: VaultService?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         installMainMenu()
@@ -17,16 +18,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let preheatService = PreheatService(settings: settingsService, cacheStore: cacheService.store)
         let sessionService = SMBSessionService()
         let progressStore = PlaybackProgressStore()
+        let vaultService = VaultService(settings: settingsService)
         let readerCoordinator = ReaderCoordinator(cache: cacheService.store, preheatService: preheatService)
         let libraryCoordinator = LibraryCoordinator(
             sessionService: sessionService,
             cache: cacheService.store,
             readerCoordinator: readerCoordinator,
             preheatService: preheatService,
+            vaultService: vaultService,
             progressStore: progressStore
         )
         self.settingsService = settingsService
         self.cacheService = cacheService
+        self.vaultService = vaultService
         let controller = MainWindowController(libraryCoordinator: libraryCoordinator)
         controller.showWindow(nil)
         mainWindowController = controller
@@ -79,10 +83,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @MainActor @objc private func showPreferences(_ sender: Any?) {
         if preferencesWindowController == nil {
-            guard let settingsService, let cacheService else { return }
+            guard let settingsService, let cacheService, let vaultService else { return }
             let viewModel = PreferencesViewModel(
                 settings: settingsService,
-                cache: PreferencesCacheAdapter(store: cacheService.store)
+                cache: PreferencesCacheAdapter(store: cacheService.store),
+                vault: vaultService
             )
             preferencesWindowController = PreferencesWindowController(viewModel: viewModel)
         }

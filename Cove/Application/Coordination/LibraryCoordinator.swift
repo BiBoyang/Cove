@@ -11,6 +11,7 @@ final class LibraryCoordinator {
     private let cache: CacheStore
     private let readerCoordinator: ReaderCoordinator
     private let preheatService: PreheatService
+    private let vaultService: VaultService
 
     private let serverListViewModel = ServerListViewModel()
     private let shareGridViewModel = ShareGridViewModel()
@@ -22,6 +23,12 @@ final class LibraryCoordinator {
 
     private var currentServer: ServerConfig?
     private var currentShare: String?
+    /// True while the browser pane shows the vault (LocalFileSource)
+    /// instead of an SMB share.
+    private var browsingVault = false
+    /// The single in-flight vault download; a second request is refused
+    /// until it finishes or is cancelled.
+    private var downloadTask: Task<Void, Never>?
     private var navigationPath = LibraryNavigationPath()
     private var activeAddServerSheet: AddServerSheetController?
     /// Owns the single v1 player window; a new video replaces it.
@@ -43,12 +50,14 @@ final class LibraryCoordinator {
         cache: CacheStore,
         readerCoordinator: ReaderCoordinator,
         preheatService: PreheatService,
+        vaultService: VaultService,
         progressStore: PlaybackProgressStoring? = nil
     ) {
         self.sessionService = sessionService
         self.cache = cache
         self.readerCoordinator = readerCoordinator
         self.preheatService = preheatService
+        self.vaultService = vaultService
         playerCoordinator = PlayerCoordinator(progressStore: progressStore)
         pdfReaderCoordinator = PdfReaderCoordinator(cache: cache)
         serverListViewController = ServerListViewController(viewModel: serverListViewModel)
@@ -67,12 +76,16 @@ final class LibraryCoordinator {
         serverListViewController.onAddServer = { [weak self] in self?.presentAddServerSheet() }
         serverListViewController.onConnect = { [weak self] in self?.enumerateShares(of: $0) }
         serverListViewController.onRemove = { [weak self] in self?.confirmRemoveServer($0) }
+        serverListViewController.onOpenVault = { [weak self] in self?.openVault() }
         shareGridViewController.onOpenShare = { [weak self] in self?.openShare($0) }
         browserViewController.onOpenDirectory = { [weak self] in self?.navigateInto($0) }
         browserViewController.onOpenImage = { [weak self] in self?.openReader(forImageAt: $0) }
         browserViewController.onOpenComic = { [weak self] in self?.openComicReader(at: $0) }
         browserViewController.onOpenVideo = { [weak self] in self?.openPlayer(at: $0) }
         browserViewController.onOpenPdf = { [weak self] in self?.openPdfReader(at: $0) }
+        browserViewController.onDownloadToVault = { [weak self] in self?.downloadToVault($0) }
+        browserViewController.onDeleteFromVault = { [weak self] in self?.confirmDeleteFromVault($0) }
+        browserViewController.onCancelDownload = { [weak self] in self?.cancelDownload() }
         browserViewController.onUnsupportedFile = { [weak self] in self?.onUnsupportedFile?($0) }
         browserViewController.onGoUp = { [weak self] in self?.goBack() }
         browserViewController.onPreheatTapped = { [weak self] in self?.toggleDirectoryPreheat() }
@@ -170,6 +183,7 @@ final class LibraryCoordinator {
         _ = beginNavigation()
         currentServer = nil
         currentShare = nil
+        browsingVault = false
         navigationPath.reset()
         onTitleChange?("Cove")
         browserViewController.thumbnailProvider = nil
@@ -181,6 +195,7 @@ final class LibraryCoordinator {
     private func enumerateShares(of server: ServerConfig) {
         let generation = beginNavigation()
         currentServer = server
+        browsingVault = false
         // Drop the previous share's thumbnail service so it is not kept
         // alive (or used) while the browser pane is off screen.
         browserViewController.thumbnailProvider = nil
@@ -210,6 +225,8 @@ final class LibraryCoordinator {
                 try await sessionService.connect(to: server, share: share.name)
                 guard generation == navigationGeneration else { return }
                 currentShare = share.name
+                browsingVault = false
+                browserViewController.browseMode = .remote
                 navigationPath.reset()
                 onTitleChange?("\(server.displayName) / \(share.name)")
                 if let sourceID = sessionService.currentSourceID {
@@ -265,6 +282,7 @@ final class LibraryCoordinator {
     private func backToShareGrid() {
         _ = beginNavigation()
         currentShare = nil
+        browsingVault = false
         navigationPath.reset()
         onTitleChange?(currentServer?.displayName ?? "Cove")
         browserViewController.thumbnailProvider = nil
@@ -275,9 +293,128 @@ final class LibraryCoordinator {
     private func loadDirectory(at path: String, generation: Int) async throws {
         let items = try await sessionService.list(at: path)
         guard generation == navigationGeneration else { throw CancellationError() }
-        let title = LibraryNavigationPath.browserTitle(forPath: path, shareName: currentShare)
+        let title = LibraryNavigationPath.browserTitle(
+            forPath: path, shareName: browsingVault ? "本地仓库" : currentShare
+        )
         browserViewModel.display(items: items, path: path, title: title)
     }
+
+    // MARK: - Vault
+
+    /// Opens the vault as a virtual share: the same browser pipeline over a
+    /// LocalFileSource, no network, no preheat, no thumbnails (the
+    /// thumbnail pipeline would copy raw bytes into the original pool,
+    /// which the vault red line forbids).
+    private func openVault() {
+        let generation = beginNavigation()
+        browsingVault = true
+        currentServer = nil
+        currentShare = nil
+        navigationPath.reset()
+        onTitleChange?("本地仓库")
+        browserViewController.thumbnailProvider = nil
+        browserViewController.browseMode = .vault
+        onShowDetail?(browserViewController)
+        activeTask = Task {
+            do {
+                try await sessionService.connectLocal(LocalFileSource(root: vaultService.rootURL))
+                guard generation == navigationGeneration else { return }
+                try await loadDirectory(at: "/", generation: generation)
+                browserViewModel.setPreheatAvailable(false)
+            } catch {
+                if Task.isCancelled || error is CancellationError { return }
+                guard generation == navigationGeneration else { return }
+                onError?(error, "打开本地仓库失败")
+            }
+        }
+    }
+
+    /// Downloads a file or folder (recursive, all types) into the vault.
+    /// Progress goes straight into the browser toolbar via the view model;
+    /// the task is cancellable from the same label.
+    private func downloadToVault(_ item: ContentItem) {
+        guard !browsingVault, let server = currentServer, let share = currentShare else { return }
+        guard downloadTask == nil else {
+            onMessageError?("已有下载任务在进行中，请等待完成或先取消。", "下载到本地仓库")
+            return
+        }
+        let vaultService = self.vaultService
+        let list = sessionService.makeLister()
+        let read = sessionService.makeRangedFileReader()
+        let serverLabel = server.displayName
+        downloadTask = Task { [weak self] in
+            guard let self else { return }
+            do {
+                let result = try await vaultService.download(
+                    item: item,
+                    serverLabel: serverLabel,
+                    share: share,
+                    list: list,
+                    read: read,
+                    progress: { [weak self] progress in
+                        self?.browserViewModel.downloadProgress(
+                            completed: progress.completed,
+                            total: progress.total,
+                            file: progress.currentFile
+                        )
+                    }
+                )
+                downloadTask = nil
+                var summary = "下载完成：\(result.downloaded) 个文件"
+                if result.skipped > 0 { summary += "，跳过 \(result.skipped) 个未变更" }
+                if result.truncated { summary += "（已达数量上限，部分内容未下载）" }
+                browserViewModel.downloadFinished(summary)
+                if !result.failedPaths.isEmpty {
+                    onMessageError?("\(result.failedPaths.count) 个文件下载失败。", "下载到本地仓库")
+                }
+            } catch {
+                downloadTask = nil
+                if Task.isCancelled || error is CancellationError {
+                    browserViewModel.downloadFinished("下载已取消")
+                    return
+                }
+                browserViewModel.downloadFinished("下载中断")
+                onError?(error, "下载到本地仓库失败")
+            }
+        }
+    }
+
+    private func cancelDownload() {
+        downloadTask?.cancel()
+    }
+
+    /// Deletes a vault item after confirmation. The wording must stay
+    /// explicit that the NAS is never touched (task red line).
+    private func confirmDeleteFromVault(_ item: ContentItem) {
+        guard browsingVault, let window = hostWindowProvider?() else { return }
+        let alert = NSAlert()
+        alert.messageText = "从本地仓库删除“\(item.name)”？"
+        alert.informativeText = "仅删除本地仓库中的副本，不会影响 NAS 上的文件。此操作不可撤销。"
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "删除")
+        alert.addButton(withTitle: "取消")
+        alert.beginSheetModal(for: window) { [weak self] response in
+            guard let self, response == .alertFirstButtonReturn else { return }
+            do {
+                try vaultService.delete(vaultRelativePath: item.path)
+            } catch {
+                onError?(error, "从本地仓库删除失败")
+                return
+            }
+            let generation = navigationGeneration
+            let path = navigationPath.currentPath
+            activeTask = Task {
+                do {
+                    try await self.loadDirectory(at: path, generation: generation)
+                } catch {
+                    if Task.isCancelled || error is CancellationError { return }
+                    guard generation == self.navigationGeneration else { return }
+                    self.onError?(error, "刷新目录失败")
+                }
+            }
+        }
+    }
+
 
     private func openReader(forImageAt path: String) {
         guard let sourceID = sessionService.currentSourceID else {
@@ -289,7 +426,9 @@ final class LibraryCoordinator {
             items: browserViewModel.imageItems,
             selectedPath: path,
             sourceID: sourceID,
-            fileReader: makeFileReader()
+            fileReader: makeFileReader(),
+            // Vault red line: local bytes never enter the original pool.
+            bypassOriginalPool: browsingVault
         )
     }
 
@@ -303,7 +442,8 @@ final class LibraryCoordinator {
             item: item,
             sourceID: sourceID,
             fileReader: makeFileReader(),
-            isSourceCurrent: { [weak self] in self?.sessionService.currentSourceID == sourceID }
+            isSourceCurrent: { [weak self] in self?.sessionService.currentSourceID == sourceID },
+            bypassOriginalPool: browsingVault
         )
     }
 
@@ -318,7 +458,8 @@ final class LibraryCoordinator {
         pdfReaderCoordinator.open(
             item: item,
             sourceID: sourceID,
-            fileReader: makeFileReader()
+            fileReader: makeFileReader(),
+            bypassOriginalPool: browsingVault
         )
     }
 

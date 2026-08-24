@@ -24,6 +24,11 @@ final class PreferencesWindowController: NSWindowController {
     private let addFolderButton = NSButton(title: "添加", target: nil, action: nil)
     private let removeFolderButton = NSButton(title: "删除", target: nil, action: nil)
 
+    // Vault section
+    private let vaultPathLabel = NSTextField(labelWithString: "")
+    private let chooseVaultButton = NSButton(title: "更改…", target: nil, action: nil)
+    private let revealVaultButton = NSButton(title: "在 Finder 中打开", target: nil, action: nil)
+
     private let byteFormatter: ByteCountFormatter = {
         let formatter = ByteCountFormatter()
         formatter.countStyle = .file
@@ -33,7 +38,7 @@ final class PreferencesWindowController: NSWindowController {
     init(viewModel: PreferencesViewModel) {
         self.viewModel = viewModel
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 520, height: 520),
+            contentRect: NSRect(x: 0, y: 0, width: 520, height: 620),
             styleMask: [.titled, .closable],
             backing: .buffered,
             defer: false
@@ -89,6 +94,17 @@ final class PreferencesWindowController: NSWindowController {
         removeFolderButton.action = #selector(removeFolder(_:))
         removeFolderButton.bezelStyle = .rounded
 
+        vaultPathLabel.font = .systemFont(ofSize: 11)
+        vaultPathLabel.textColor = .secondaryLabelColor
+        vaultPathLabel.lineBreakMode = .byTruncatingMiddle
+        vaultPathLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        chooseVaultButton.target = self
+        chooseVaultButton.action = #selector(chooseVaultLocation(_:))
+        chooseVaultButton.bezelStyle = .rounded
+        revealVaultButton.target = self
+        revealVaultButton.action = #selector(revealVaultLocation(_:))
+        revealVaultButton.bezelStyle = .rounded
+
         // Return in the input field adds the folder.
         folderField.placeholderString = "公共空间/动漫/xxx"
         folderField.target = self
@@ -141,6 +157,15 @@ final class PreferencesWindowController: NSWindowController {
         inputRow.snp.makeConstraints { make in
             make.width.equalTo(stack)
         }
+
+        stack.setCustomSpacing(16, after: inputRow)
+        stack.addArrangedSubview(makeHeader("本地仓库"))
+        let vaultRow = makeRow(makeLabel("位置"), vaultPathLabel, chooseVaultButton, revealVaultButton)
+        stack.addArrangedSubview(vaultRow)
+        stack.addArrangedSubview(makeLabel("更改位置只影响新下载，旧位置的文件不会迁移。"))
+        vaultRow.snp.makeConstraints { make in
+            make.width.equalTo(stack)
+        }
     }
 
     private func configureNumberField(_ field: NSTextField, allowsFloat: Bool) {
@@ -189,6 +214,7 @@ final class PreferencesWindowController: NSWindowController {
             originalUsageLabel.stringValue = "原始缓存：统计中…"
             displayUsageLabel.stringValue = "显示缓存：统计中…"
         }
+        vaultPathLabel.stringValue = state.vaultPath
         folderTableView.reloadData()
     }
 
@@ -227,6 +253,27 @@ final class PreferencesWindowController: NSWindowController {
             NSSound.beep()
             return
         }
+    }
+
+    /// The panel grants sandbox access to the chosen directory; the VM
+    /// persists it as a security-scoped bookmark.
+    @objc private func chooseVaultLocation(_ sender: Any?) {
+        guard let window else { return }
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.prompt = "选择"
+        panel.beginSheetModal(for: window) { [weak self] response in
+            guard let self, response == .OK, let url = panel.url else { return }
+            if !self.viewModel.chooseVaultRoot(url) { NSSound.beep() }
+        }
+    }
+
+    @objc private func revealVaultLocation(_ sender: Any?) {
+        let root = viewModel.vaultRootURL
+        try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        NSWorkspace.shared.open(root)
     }
 
     private func revert(_ field: NSTextField, to text: String) {

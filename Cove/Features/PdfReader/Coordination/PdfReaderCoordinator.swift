@@ -24,9 +24,10 @@ final class PdfReaderCoordinator: NSObject {
     func open(
         item: ContentItem,
         sourceID: String,
-        fileReader: @escaping @Sendable (String) async throws -> Data
+        fileReader: @escaping @Sendable (String) async throws -> Data,
+        bypassOriginalPool: Bool = false
     ) {
-        let cache = self.cache
+        let cache: CacheStore? = bypassOriginalPool ? nil : self.cache
         let viewModel = PdfReaderViewModel(title: item.name) {
             try await ReaderContent.originalBytes(
                 for: item, fileReader: fileReader, cache: cache, sourceID: sourceID

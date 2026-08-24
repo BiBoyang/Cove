@@ -7,6 +7,7 @@ protocol PreferencesSettingsManaging: AnyObject {
     var preheatEnabled: Bool { get set }
     var preheatRateLimitMBps: Double { get set }
     var preheatFolders: [String] { get set }
+    var vaultRootBookmark: Data? { get set }
 }
 
 extension SettingsService: PreferencesSettingsManaging {}
@@ -21,10 +22,12 @@ final class PreferencesViewModel {
         let folders: [String]
         let originalUsageBytes: Int64?
         let displayUsageBytes: Int64?
+        let vaultPath: String
     }
 
     private let settings: any PreferencesSettingsManaging
     private let cache: any PreferencesCacheManaging
+    private let vault: VaultService
     /// Monotonic token for usage/clear requests. Every new request bumps
     /// it and captures the value; a result may only write state (or clear
     /// `usageTask`) while it still owns the newest generation, so a slow
@@ -51,16 +54,37 @@ final class PreferencesViewModel {
             rateLimitMBps: settings.preheatRateLimitMBps,
             folders: settings.preheatFolders,
             originalUsageBytes: originalUsageBytes,
-            displayUsageBytes: displayUsageBytes
+            displayUsageBytes: displayUsageBytes,
+            vaultPath: vault.displayPath
         )
     }
 
     init(
         settings: any PreferencesSettingsManaging,
-        cache: any PreferencesCacheManaging
+        cache: any PreferencesCacheManaging,
+        vault: VaultService
     ) {
         self.settings = settings
         self.cache = cache
+        self.vault = vault
+    }
+
+    /// The current vault root, for "在 Finder 中打开".
+    var vaultRootURL: URL { vault.rootURL }
+
+    /// Persists a user-chosen vault root as a security-scoped bookmark so
+    /// sandboxed relaunches keep access. Only new downloads go there —
+    /// files at the old location are never migrated (task decision).
+    @discardableResult
+    func chooseVaultRoot(_ url: URL) -> Bool {
+        guard let bookmark = try? url.bookmarkData(
+            options: .withSecurityScope,
+            includingResourceValuesForKeys: nil,
+            relativeTo: nil
+        ) else { return false }
+        settings.vaultRootBookmark = bookmark
+        publish()
+        return true
     }
 
     func reload() {

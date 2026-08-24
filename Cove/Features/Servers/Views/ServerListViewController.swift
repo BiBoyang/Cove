@@ -11,6 +11,7 @@ final class ServerListViewController: NSViewController {
     var onAddServer: (() -> Void)?
     var onConnect: ((ServerConfig) -> Void)?
     var onRemove: ((ServerConfig) -> Void)?
+    var onOpenVault: (() -> Void)?
 
     private let tableView = NSTableView()
     private let scrollView = NSScrollView()
@@ -77,6 +78,10 @@ final class ServerListViewController: NSViewController {
 
     @objc private func handleDoubleClick() {
         let row = tableView.clickedRow
+        if viewModel.isVaultRow(row) {
+            onOpenVault?()
+            return
+        }
         guard let server = viewModel.server(atTableRow: row) else { return }
         onConnect?(server)
     }
@@ -99,24 +104,27 @@ extension ServerListViewController: NSMenuItemValidation {
 
 extension ServerListViewController: NSTableViewDataSource, NSTableViewDelegate {
     func numberOfRows(in tableView: NSTableView) -> Int {
-        viewModel.servers.count + 1
+        viewModel.rowCount
     }
 
     func tableView(_ tableView: NSTableView, isGroupRow row: Int) -> Bool {
-        row == 0
+        viewModel.isGroupRow(row)
     }
 
     func tableView(_ tableView: NSTableView, shouldSelectRow row: Int) -> Bool {
-        row != 0
+        !viewModel.isGroupRow(row)
     }
 
     func tableView(_ tableView: NSTableView, heightOfRow row: Int) -> CGFloat {
-        row == 0 ? 26 : 34
+        viewModel.isGroupRow(row) ? 26 : 34
     }
 
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
         if row == 0 {
             return makeHeaderCell(in: tableView)
+        }
+        if viewModel.isGroupRow(row) {
+            return makeVaultHeaderCell(in: tableView)
         }
         let identifier = NSUserInterfaceItemIdentifier("ServerCell")
         let cell: ServerRowCellView
@@ -126,7 +134,11 @@ extension ServerListViewController: NSTableViewDataSource, NSTableViewDelegate {
             cell = ServerRowCellView()
             cell.identifier = identifier
         }
-        cell.configure(with: viewModel.servers[row - 1])
+        if viewModel.isVaultRow(row) {
+            cell.configure(symbol: "externaldrive.fill", title: "本地仓库", tint: .controlAccentColor)
+        } else if let server = viewModel.server(atTableRow: row) {
+            cell.configure(with: server)
+        }
         return cell
     }
 
@@ -171,6 +183,30 @@ extension ServerListViewController: NSTableViewDataSource, NSTableViewDelegate {
         cell.textField?.stringValue = "服务器"
         return cell
     }
+
+    /// The "本地" group header: same look as the servers header, without
+    /// the add button.
+    private func makeVaultHeaderCell(in tableView: NSTableView) -> NSTableCellView {
+        let identifier = NSUserInterfaceItemIdentifier("VaultHeaderCell")
+        let cell: NSTableCellView
+        if let reused = tableView.makeView(withIdentifier: identifier, owner: self) as? NSTableCellView {
+            cell = reused
+        } else {
+            cell = NSTableCellView()
+            cell.identifier = identifier
+            let textField = NSTextField(labelWithString: "")
+            textField.font = CoveStyle.sectionHeaderFont
+            textField.textColor = .secondaryLabelColor
+            cell.addSubview(textField)
+            cell.textField = textField
+            textField.snp.makeConstraints { make in
+                make.leading.equalToSuperview().inset(4)
+                make.centerY.equalToSuperview()
+            }
+        }
+        cell.textField?.stringValue = "本地"
+        return cell
+    }
 }
 
 /// One server row: a plain accent-tinted symbol and the server name,
@@ -211,6 +247,14 @@ private final class ServerRowCellView: NSTableCellView {
     }
 
     func configure(with server: ServerConfig) {
-        nameLabel.stringValue = server.displayName
+        configure(symbol: "server.rack", title: server.displayName, tint: .controlAccentColor)
+    }
+
+    /// Generic icon + title content (the vault row uses it too).
+    func configure(symbol: String, title: String, tint: NSColor) {
+        iconView.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
+            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 14, weight: .regular))
+        iconView.contentTintColor = tint
+        nameLabel.stringValue = title
     }
 }

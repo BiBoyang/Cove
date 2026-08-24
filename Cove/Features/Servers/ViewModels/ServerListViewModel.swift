@@ -4,6 +4,12 @@ import Foundation
 final class ServerListViewModel {
     private(set) var servers: [ServerConfig] = []
 
+    /// Row layout: row 0 is the "服务器" header, rows 1...N are servers,
+    /// then a "本地" header and the fixed vault row.
+    var rowCount: Int { servers.count + 3 }
+    var vaultHeaderRow: Int { servers.count + 1 }
+    var vaultRow: Int { servers.count + 2 }
+
     var onStateChange: (([ServerConfig]) -> Void)? {
         didSet { onStateChange?(servers) }
     }
@@ -11,6 +17,14 @@ final class ServerListViewModel {
     func update(servers: [ServerConfig]) {
         self.servers = servers
         onStateChange?(servers)
+    }
+
+    func isGroupRow(_ row: Int) -> Bool {
+        row == 0 || row == vaultHeaderRow
+    }
+
+    func isVaultRow(_ row: Int) -> Bool {
+        row == vaultRow
     }
 
     func server(atTableRow row: Int) -> ServerConfig? {

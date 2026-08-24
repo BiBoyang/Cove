@@ -56,6 +56,34 @@ struct BrowserViewModelTests {
         #expect(viewModel.imageItems == [image])
         #expect(viewModel.item(atPath: comic.path) == comic)
     }
+
+    @Test("download progress becomes running, the terminal summary stays, and navigation clears it")
+    func downloadState() {
+        let viewModel = BrowserViewModel()
+        #expect(viewModel.state.download == nil)
+
+        viewModel.downloadProgress(completed: 1, total: 3, file: "a.mkv")
+        #expect(viewModel.state.download == .running(completed: 1, total: 3, file: "a.mkv"))
+
+        viewModel.downloadFinished("下载完成：3 个文件")
+        #expect(viewModel.state.download == .finished("下载完成：3 个文件"))
+
+        viewModel.display(items: [], path: "/", title: "share")
+        #expect(viewModel.state.download == nil)
+    }
+
+    @Test("right-click intent follows the browse mode and rejects invalid rows")
+    func contextMenuIntents() {
+        let file = ContentItem(name: "a.mkv", path: "/a.mkv", isDirectory: false, size: 1, modifiedDate: nil)
+        let items = [file]
+
+        #expect(BrowserViewController.contextMenuIntent(mode: .remote, clickedRow: 0, items: items)
+            == .downloadToVault(file))
+        #expect(BrowserViewController.contextMenuIntent(mode: .vault, clickedRow: 0, items: items)
+            == .deleteFromVault(file))
+        #expect(BrowserViewController.contextMenuIntent(mode: .remote, clickedRow: 5, items: items) == nil)
+        #expect(BrowserViewController.contextMenuIntent(mode: .vault, clickedRow: -1, items: items) == nil)
+    }
 }
 
 @Suite("Browser preheat button")
@@ -204,6 +232,28 @@ struct ServerViewModelTests {
         #expect(viewModel.server(atTableRow: 2) == nil)
     }
 
+    @Test("the fixed vault rows trail the server list")
+    func vaultRows() {
+        let server = ServerConfig(id: UUID(), host: "nas", username: "user")
+        let viewModel = ServerListViewModel()
+
+        // Empty list: header 0, "本地" header 1, vault row 2.
+        #expect(viewModel.rowCount == 3)
+        #expect(viewModel.isGroupRow(0))
+        #expect(viewModel.isGroupRow(1))
+        #expect(!viewModel.isGroupRow(2))
+        #expect(viewModel.isVaultRow(2))
+        #expect(viewModel.server(atTableRow: 2) == nil)
+
+        viewModel.update(servers: [server])
+        #expect(viewModel.rowCount == 4)
+        #expect(viewModel.vaultRow == 3)
+        #expect(viewModel.isVaultRow(3))
+        #expect(!viewModel.isVaultRow(1))
+        #expect(viewModel.server(atTableRow: 1) == server)
+        #expect(viewModel.server(atTableRow: 3) == nil)
+    }
+
     @Test("share placeholders reflect loading, empty, and content states")
     func shareStates() {
         let viewModel = ShareGridViewModel()
@@ -262,7 +312,7 @@ struct PreferencesViewModelTests {
     @Test("validates numeric settings and deduplicates folders")
     func settingsMapping() {
         let settings = MockPreferencesSettings()
-        let viewModel = PreferencesViewModel(settings: settings, cache: EmptyPreferencesCache())
+        let viewModel = PreferencesViewModel(settings: settings, cache: EmptyPreferencesCache(), vault: makeTestVault())
 
         #expect(viewModel.setCapacity(text: "40"))
         #expect(!viewModel.setCapacity(text: "0"))
@@ -283,7 +333,7 @@ struct PreferencesViewModelTests {
     @Test("a stale refresh cannot overwrite the result of a newer clear", .timeLimit(.minutes(1)))
     func staleUsageIsDiscardedAfterClear() async throws {
         let cache = ScriptedUsageCache()
-        let viewModel = PreferencesViewModel(settings: MockPreferencesSettings(), cache: cache)
+        let viewModel = PreferencesViewModel(settings: MockPreferencesSettings(), cache: cache, vault: makeTestVault())
 
         // Old refresh parks inside its first usage() read (a semaphore
         // block that, like real disk IO, ignores task cancellation).
@@ -313,7 +363,7 @@ struct PreferencesViewModelTests {
     func staleClearErrorIsDiscarded() async throws {
         let cache = TwoPhaseClearCache()
         let errors = Mutex<[String]>([])
-        let viewModel = PreferencesViewModel(settings: MockPreferencesSettings(), cache: cache)
+        let viewModel = PreferencesViewModel(settings: MockPreferencesSettings(), cache: cache, vault: makeTestVault())
         viewModel.onClearError = { message in
             errors.withLock { $0.append(message) }
         }
@@ -341,7 +391,7 @@ struct PreferencesViewModelTests {
     @Test("a failed clear reports its error and refreshes usage", .timeLimit(.minutes(1)))
     func clearFailureSurfacesError() async throws {
         let errors = Mutex<[String]>([])
-        let viewModel = PreferencesViewModel(settings: MockPreferencesSettings(), cache: FailingClearCache())
+        let viewModel = PreferencesViewModel(settings: MockPreferencesSettings(), cache: FailingClearCache(), vault: makeTestVault())
         viewModel.onClearError = { message in
             errors.withLock { $0.append(message) }
         }
@@ -446,6 +496,12 @@ private final class MockPreferencesSettings: PreferencesSettingsManaging {
     var preheatEnabled = true
     var preheatRateLimitMBps = 0.0
     var preheatFolders: [String] = []
+    var vaultRootBookmark: Data?
+}
+
+@MainActor
+private func makeTestVault() -> VaultService {
+    VaultService(root: URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("cove-test-vault"))
 }
 
 private struct EmptyPreferencesCache: PreferencesCacheManaging {

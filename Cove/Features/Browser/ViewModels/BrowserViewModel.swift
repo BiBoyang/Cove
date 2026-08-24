@@ -18,15 +18,27 @@ final class BrowserViewModel {
         case finished(failed: Int, truncatedAtCap: Int?)
     }
 
+    /// Toolbar download-to-vault presentation; nil means idle (nothing
+    /// shown).
+    enum DownloadState: Sendable, Equatable {
+        /// Running; `file` is the name currently being downloaded.
+        case running(completed: Int, total: Int, file: String)
+        /// Terminal summary; stays until the next navigation or download.
+        case finished(String)
+    }
+
     struct State: Sendable {
         let items: [ContentItem]
         let path: String
         let title: String
         let canGoUp: Bool
         let preheat: PreheatButtonState
+        let download: DownloadState?
     }
 
-    private(set) var state = State(items: [], path: "", title: "", canGoUp: false, preheat: .unavailable)
+    private(set) var state = State(
+        items: [], path: "", title: "", canGoUp: false, preheat: .unavailable, download: nil
+    )
 
     var onStateChange: ((State) -> Void)? {
         didSet { onStateChange?(state) }
@@ -58,9 +70,44 @@ final class BrowserViewModel {
             path: path,
             title: title,
             canGoUp: true,
-            preheat: .ready
+            preheat: .ready,
+            // Navigation ends any download presentation; the download task
+            // itself is the coordinator's business.
+            download: nil
         )
         onStateChange?(state)
+    }
+
+    // MARK: - Download-to-vault presentation
+
+    /// Reflects one vault-download progress tick (driven directly by
+    /// VaultService callbacks — no polling needed).
+    func downloadProgress(completed: Int, total: Int, file: String) {
+        setDownload(.running(completed: completed, total: total, file: file))
+    }
+
+    /// Terminal download summary ("下载完成：3 个文件" / "下载已取消").
+    func downloadFinished(_ summary: String) {
+        setDownload(.finished(summary))
+    }
+
+    private func setDownload(_ download: DownloadState?) {
+        guard state.download != download else { return }
+        state = State(
+            items: state.items,
+            path: state.path,
+            title: state.title,
+            canGoUp: state.canGoUp,
+            preheat: state.preheat,
+            download: download
+        )
+        onStateChange?(state)
+    }
+
+    /// Vault browsing has no preheat pipeline; the coordinator marks the
+    /// button unavailable there and restores it for SMB shares.
+    func setPreheatAvailable(_ available: Bool) {
+        setPreheat(available ? .ready : .unavailable)
     }
 
     /// Starts polling the preheat progress provider and reflecting it into
@@ -112,7 +159,8 @@ final class BrowserViewModel {
             path: state.path,
             title: state.title,
             canGoUp: state.canGoUp,
-            preheat: preheat
+            preheat: preheat,
+            download: state.download
         )
         onStateChange?(state)
     }

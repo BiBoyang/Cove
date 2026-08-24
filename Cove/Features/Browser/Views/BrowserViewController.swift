@@ -19,6 +19,39 @@ final class BrowserViewController: NSViewController {
     var onUnsupportedFile: ((_ name: String) -> Void)?
     var onGoUp: (() -> Void)?
     var onPreheatTapped: (() -> Void)?
+    /// Right-click intents; the row's item is resolved by the coordinator's
+    /// wiring, both via `contextMenuIntent(mode:clickedRow:items:)`.
+    var onDownloadToVault: ((ContentItem) -> Void)?
+    var onDeleteFromVault: ((ContentItem) -> Void)?
+    var onCancelDownload: (() -> Void)?
+
+    /// Which set of right-click actions the listing offers. Remote
+    /// browsing offers "下载到本地仓库"; vault browsing offers
+    /// "从本地仓库删除". Set by the coordinator.
+    enum BrowseMode: Sendable {
+        case remote
+        case vault
+    }
+
+    var browseMode: BrowseMode = .remote
+
+    /// The single right-click action a row offers in `mode`, if the row is
+    /// valid. Pure and static so the menu wiring is unit-testable.
+    enum ContextMenuIntent: Equatable {
+        case downloadToVault(ContentItem)
+        case deleteFromVault(ContentItem)
+    }
+
+    static func contextMenuIntent(
+        mode: BrowseMode, clickedRow: Int, items: [ContentItem]
+    ) -> ContextMenuIntent? {
+        guard items.indices.contains(clickedRow) else { return nil }
+        let item = items[clickedRow]
+        switch mode {
+        case .remote: return .downloadToVault(item)
+        case .vault: return .deleteFromVault(item)
+        }
+    }
 
     /// Real-thumbnail loader for image rows, injected by the coordinator
     /// once a share is connected; nil means "keep the symbol badges".
@@ -31,6 +64,8 @@ final class BrowserViewController: NSViewController {
     private let preheatButton = NSButton()
     private let preheatProgressLabel = NSTextField(labelWithString: "")
     private let locationLabel = NSTextField(labelWithString: "")
+    private let downloadLabel = NSTextField(labelWithString: "")
+    private let downloadCancelButton = NSButton()
 
     private let byteFormatter: ByteCountFormatter = {
         let formatter = ByteCountFormatter()
@@ -95,10 +130,30 @@ final class BrowserViewController: NSViewController {
         locationLabel.setContentHuggingPriority(.defaultLow, for: .horizontal)
         locationLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
+        // Download-to-vault progress at the trailing edge: a gray label
+        // ("下载到本地仓库 3/12 · name"), plus a stop button while running.
+        downloadLabel.font = .systemFont(ofSize: 11)
+        downloadLabel.textColor = .secondaryLabelColor
+        downloadLabel.lineBreakMode = .byTruncatingMiddle
+        downloadLabel.isHidden = true
+        downloadCancelButton.bezelStyle = .circular
+        downloadCancelButton.image = NSImage(
+            systemSymbolName: "xmark",
+            accessibilityDescription: "取消下载"
+        )?.withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 11, weight: .semibold))
+        downloadCancelButton.imagePosition = .imageOnly
+        downloadCancelButton.title = ""
+        downloadCancelButton.toolTip = "取消下载"
+        downloadCancelButton.target = self
+        downloadCancelButton.action = #selector(handleCancelDownload)
+        downloadCancelButton.isHidden = true
+
         toolbarView.addSubview(backButton)
         toolbarView.addSubview(preheatButton)
         toolbarView.addSubview(preheatProgressLabel)
         toolbarView.addSubview(locationLabel)
+        toolbarView.addSubview(downloadLabel)
+        toolbarView.addSubview(downloadCancelButton)
         backButton.snp.makeConstraints { make in
             make.leading.equalToSuperview().offset(20)
             make.centerY.equalToSuperview()
@@ -116,7 +171,17 @@ final class BrowserViewController: NSViewController {
         locationLabel.snp.makeConstraints { make in
             make.center.equalToSuperview()
             make.leading.greaterThanOrEqualTo(preheatProgressLabel.snp.trailing).offset(8)
-            make.trailing.lessThanOrEqualToSuperview().offset(-20)
+            make.trailing.lessThanOrEqualTo(downloadLabel.snp.leading).offset(-8)
+        }
+        downloadLabel.snp.makeConstraints { make in
+            make.trailing.equalTo(downloadCancelButton.snp.leading).offset(-6)
+            make.centerY.equalToSuperview()
+            make.width.lessThanOrEqualTo(320)
+        }
+        downloadCancelButton.snp.makeConstraints { make in
+            make.trailing.equalToSuperview().offset(-20)
+            make.centerY.equalToSuperview()
+            make.size.equalTo(20)
         }
 
         let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("item"))
@@ -129,6 +194,13 @@ final class BrowserViewController: NSViewController {
         tableView.doubleAction = #selector(handleDoubleClick)
         tableView.intercellSpacing = .zero
         tableView.focusRingType = .none
+
+        // Right-click menu: rebuilt per click by menuNeedsUpdate from
+        // `contextMenuIntent`, so remote rows offer the vault download and
+        // vault rows offer local delete — never both.
+        let contextMenu = NSMenu()
+        contextMenu.delegate = self
+        tableView.menu = contextMenu
 
         scrollView.documentView = tableView
         scrollView.hasVerticalScroller = true
@@ -159,6 +231,7 @@ final class BrowserViewController: NSViewController {
         locationLabel.toolTip = state.path
         backButton.isEnabled = state.canGoUp
         renderPreheat(state.preheat)
+        renderDownload(state.download)
         tableView.reloadData()
     }
 
@@ -187,6 +260,40 @@ final class BrowserViewController: NSViewController {
         }
         text.append(NSAttributedString(string: title, attributes: titleAttributes))
         return text
+    }
+
+    private func renderDownload(_ download: BrowserViewModel.DownloadState?) {
+        switch download {
+        case .none:
+            downloadLabel.isHidden = true
+            downloadCancelButton.isHidden = true
+        case .running(let completed, let total, let file):
+            downloadLabel.isHidden = false
+            downloadCancelButton.isHidden = false
+            downloadLabel.stringValue = total > 0
+                ? "下载到本地仓库 \(completed)/\(total) · \(file)"
+                : "下载到本地仓库…"
+        case .finished(let summary):
+            downloadLabel.isHidden = false
+            downloadCancelButton.isHidden = true
+            downloadLabel.stringValue = summary
+        }
+    }
+
+    @objc private func handleCancelDownload() {
+        onCancelDownload?()
+    }
+
+    @objc private func handleContextMenuAction(_ sender: NSMenuItem) {
+        guard let intent = Self.contextMenuIntent(
+            mode: browseMode, clickedRow: tableView.clickedRow, items: viewModel.state.items
+        ) else { return }
+        switch intent {
+        case .downloadToVault(let item):
+            onDownloadToVault?(item)
+        case .deleteFromVault(let item):
+            onDeleteFromVault?(item)
+        }
     }
 
     private func renderPreheat(_ preheat: BrowserViewModel.PreheatButtonState) {
@@ -455,5 +562,29 @@ private final class RoundedSelectionRowView: NSTableRowView {
             : NSColor.unemphasizedSelectedContentBackgroundColor
         color.setFill()
         NSBezierPath(roundedRect: bounds.insetBy(dx: 12, dy: 2), xRadius: 8, yRadius: 8).fill()
+    }
+}
+
+extension BrowserViewController: NSMenuDelegate {
+    /// Builds the right-click menu on demand: exactly one item, chosen by
+    /// `contextMenuIntent` from the browse mode and clicked row. An empty
+    /// menu (header/empty space) simply does not appear.
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        menu.removeAllItems()
+        guard let intent = Self.contextMenuIntent(
+            mode: browseMode, clickedRow: tableView.clickedRow, items: viewModel.state.items
+        ) else { return }
+        let title: String
+        switch intent {
+        case .downloadToVault:
+            title = "下载到本地仓库"
+        case .deleteFromVault:
+            title = "从本地仓库删除…"
+        }
+        let menuItem = NSMenuItem(
+            title: title, action: #selector(handleContextMenuAction(_:)), keyEquivalent: ""
+        )
+        menuItem.target = self
+        menu.addItem(menuItem)
     }
 }

@@ -37,12 +37,19 @@ extension ReaderContent {
     /// and best-effort stores the payload under the file's "raw" key.
     /// Internal (not private) so the PDF reader reuses the exact same
     /// original-pool policy instead of copying it.
+    ///
+    /// A nil `cache` bypasses the original pool entirely — the vault red
+    /// line: its bytes already live on local disk and must never be copied
+    /// into an evictable pool.
     static func originalBytes(
         for item: ContentItem,
         fileReader: @Sendable (String) async throws -> Data,
-        cache: CacheStore,
+        cache: CacheStore?,
         sourceID: String
     ) async throws -> Data {
+        guard let cache else {
+            return try await fileReader(item.path)
+        }
         let key = CacheKey.sourceFile(
             sourceID: sourceID, path: item.path, fileSize: item.size,
             modified: item.modifiedDate, variant: CacheKey.rawVariant
@@ -58,11 +65,12 @@ extension ReaderContent {
     }
 
     /// Directory mode: `items` are the directory's image files in display
-    /// order; each page's original payload is its own file.
+    /// order; each page's original payload is its own file. A nil `cache`
+    /// bypasses the original pool (vault reads).
     static func directory(
         items: [ContentItem],
         fileReader: @escaping @Sendable (String) async throws -> Data,
-        cache: CacheStore,
+        cache: CacheStore?,
         sourceID: String
     ) -> ReaderContent {
         let cachePages = items.map {
@@ -83,11 +91,12 @@ extension ReaderContent {
 
     /// CBZ mode: the whole archive is fetched once (original pool → NAS),
     /// its image entries become the pages in natural order, and page bytes
-    /// are extracted from the shared in-memory `ComicArchive`.
+    /// are extracted from the shared in-memory `ComicArchive`. A nil
+    /// `cache` bypasses the original pool (vault reads).
     static func comic(
         item: ContentItem,
         fileReader: @escaping @Sendable (String) async throws -> Data,
-        cache: CacheStore,
+        cache: CacheStore?,
         sourceID: String
     ) async throws -> ReaderContent {
         let data = try await originalBytes(
