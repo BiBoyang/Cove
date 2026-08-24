@@ -9,11 +9,10 @@
 
 ## 下一波（候选，未排期）
 
-- [ ] 本地仓库 v1：右键"下载到本地仓库"（文件夹递归/单文件），LocalFileSource 虚拟 share，永不逐出；位置默认+可改（见 plans/TASK-vault.md）
-- [ ] 连续纵向条带阅读器（用户已明确要做；等本地仓库轮次结束后开——相邻页预取 + CBZ 预解码已铺好地基）
+- [ ] 服务器远程地址（家里/远程切换）：Tailscale/WireGuard 远程访问的 Cove 侧方案（见 plans/TASK-remote-address.md；不急，待排期）
+- [ ] 连续纵向条带阅读器剩余打磨项（缩放、跳页条、模式偏好持久化——当前 v1 已落地）
 - [ ] 工程债小包：spike 观测日志降级、libmpv 供应链收敛（上架前必须）、SPM .build 增量缓存问题根治
 - [ ] 播放器悬浮控制条之外的 Step 3 剩余体验项（见 plans/TASK-video-playback.md §Step 3）
-- [ ] 设置页搜索框启用（当前已移除占位）或另立全局搜索 feature
 
 ## 上架前必须
 
@@ -37,4 +36,8 @@
 - A1 单页阅读器 + 模块化架构（v0.2.0）
 - A2 文件夹点击预热 + 递归预热（v0.3.0）
 - 相邻页预取（目录模式）、CBZ 页预解码
-- 视频播放 v1（libmpv + stream_cb，spike + 正式 Player）
+- 视频播放 v1（libmpv + stream_cb，spike + 正式 Player）、悬浮控制条、记忆播放位置（v0.4.0）
+- UI 微调第一波（设计令牌、侧栏、Share 卡片、阅读器控件、浏览器行重做、面包屑）
+- PDF 阅读 v1（整包缓存 + PDFKit）、本地仓库 v1（LocalFileSource + 右键下载/删除 + 位置设置）（v0.5.0）
+- 连续纵向条带阅读器 v1（CBZ 默认条带、模式切换保留当前页）
+- 远程访问教程（README：Tailscale/WireGuard 组网后按 IP 直连）

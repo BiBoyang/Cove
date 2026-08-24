@@ -75,6 +75,24 @@ Everything else comes later.
   share is connected.
 - Connection failures surface as an alert with the concrete error.
 
+## Remote access (Tailscale / WireGuard)
+
+Cove speaks plain SMB over TCP — any VPN that gives your Mac and your NAS a
+shared private network works, no Cove-side setup needed. The easiest option
+is [Tailscale](https://tailscale.com) (a WireGuard-based mesh VPN):
+
+1. Install Tailscale on your Mac and on the NAS (or on another always-on
+   device on the NAS's LAN), and sign them into the same tailnet.
+2. Find the NAS's tailnet IP (a `100.x.x.x` address) in the Tailscale admin
+   console or menu-bar app.
+3. In Cove, add a server with that tailnet IP — the same username and
+   password as on the LAN.
+
+A plain WireGuard tunnel works the same way: connect with any WireGuard
+client, then add the NAS's tunnel-side address as a server in Cove. The
+VPN itself is managed by the system VPN app; Cove just connects to whatever
+IP is reachable.
+
 Logging: interpolated log content defaults to os_log `.auto` privacy
 (redacted in persisted logs); hosts, share names and paths are logged with
 explicit `.private`. Passwords are never logged.
