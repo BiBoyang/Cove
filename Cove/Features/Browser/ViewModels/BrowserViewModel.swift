@@ -58,6 +58,10 @@ final class BrowserViewModel {
         state.items.filter { $0.fileType == .image }
     }
 
+    var videoItems: [ContentItem] {
+        state.items.filter { $0.fileType == .video }
+    }
+
     func item(atPath path: String) -> ContentItem? {
         state.items.first { $0.path == path }
     }

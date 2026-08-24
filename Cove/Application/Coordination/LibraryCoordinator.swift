@@ -472,17 +472,21 @@ final class LibraryCoordinator {
         sessionService.makeFileReader()
     }
 
-    /// Opens the player for a video file. The PlayerCoordinator owns the
-    /// single player window; opening another video tears the previous
-    /// session down first (window close shuts the mpv handle and the
-    /// stream bridge down via `windowWillClose`).
+    /// Opens the player for a video file, carrying the directory's other
+    /// videos as the playlist (prev/next buttons and auto-advance on a
+    /// clean end). The PlayerCoordinator owns the single player window; a
+    /// new open or a track change swaps the session in place — window close
+    /// shuts the live mpv handle and stream bridge down via
+    /// `windowWillClose`.
     private func openPlayer(at path: String) {
-        guard let item = browserViewModel.item(atPath: path) else {
+        let videos = browserViewModel.videoItems
+        guard videos.contains(where: { $0.path == path }) else {
             onMessageError?("无法定位视频文件。", "打开视频失败")
             return
         }
         playerCoordinator.open(
-            item: item,
+            items: videos,
+            selectedPath: path,
             sourceID: sessionService.currentSourceID,
             reader: sessionService.makeRangedFileReader()
         )

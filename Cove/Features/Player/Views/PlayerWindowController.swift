@@ -4,31 +4,42 @@ import SourceKit
 
 /// The v1 player window: the mpv render layer fills the whole window
 /// (title bar hidden, full-size content), a floating frosted capsule
-/// carries play/pause, a draggable progress slider, the time readout, and
-/// volume, and the file name sits as a small overlay label in the top-left
-/// corner. During playback the capsule, title, and cursor hide after a
-/// short idle timeout and come back on any mouse movement. Keyboard
-/// controls: space = pause, arrows = ±10s, up/down = volume, Esc = close.
+/// carries previous/next, play/pause, a draggable progress slider, the
+/// time readout, and volume, and the file name sits as a small overlay
+/// label in the top-left corner. During playback the capsule, title, and
+/// cursor hide after a short idle timeout and come back on any mouse
+/// movement. Keyboard controls: space = pause, arrows = ±10s, up/down =
+/// volume, Esc = exit full screen.
+///
+/// Track changes swap the session in place (`install`): the window, its
+/// full-screen state, and its position survive; only the mpv core, the
+/// view model, and the video layer are replaced.
 ///
 /// This controller only renders `PlayerViewModel` state and forwards input;
 /// playback state and the idle-hide policy live in the view model, the mpv
 /// handle in the core.
 @MainActor
 final class PlayerWindowController: NSWindowController, NSWindowDelegate {
-    private let core: MPVPlayerCore
-    private let viewModel: PlayerViewModel
+    private var core: MPVPlayerCore
+    private var viewModel: PlayerViewModel
     /// Fired exactly once when the window closes; the coordinator uses it
     /// to drop its owning reference.
     var onClose: (() -> Void)?
+    /// Playlist transport intents, wired by the coordinator.
+    var onPreviousTrack: (() -> Void)?
+    var onNextTrack: (() -> Void)?
 
     private let rootView = PlayerRootView()
+    private let previousTrackButton = NSButton()
     private let playPauseButton = NSButton()
+    private let nextTrackButton = NSButton()
     private let progressSlider = NSSlider()
     private let timeLabel = NSTextField(labelWithString: "")
     private let volumeIconView = NSImageView()
     private let volumeSlider = NSSlider()
     private let titleLabel = NSTextField(labelWithString: "")
     private let controlsCapsule = ControlsCapsuleView()
+    private var videoHost: VideoLayerHostView?
     private var renderedControlsVisible = true
 
     init(item: ContentItem, core: MPVPlayerCore, viewModel: PlayerViewModel) {
@@ -51,9 +62,7 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
             self?.handleKeyDown(event) ?? false
         }
         assembleContent(videoLayer: core.videoLayer, title: item.name)
-        viewModel.onChange = { [weak self] in self?.render() }
-        render()
-        core.load()
+        startSession()
     }
 
     @available(*, unavailable)
@@ -76,24 +85,12 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
             self?.viewModel.noteMouseActivity()
         }
 
-        let videoHost = VideoLayerHostView(videoLayer: videoLayer)
-        rootView.addSubview(videoHost)
+        let host = VideoLayerHostView(videoLayer: videoLayer)
+        videoHost = host
+        rootView.addSubview(host)
 
-        // Overlay file name: small white text with a shadow so it stays
-        // readable on bright frames; leading offset clears the traffic
-        // lights.
-        let titleShadow = NSShadow()
-        titleShadow.shadowColor = NSColor.black.withAlphaComponent(0.6)
-        titleShadow.shadowBlurRadius = 3
-        titleShadow.shadowOffset = NSSize(width: 0, height: -1)
-        titleLabel.attributedStringValue = NSAttributedString(
-            string: title,
-            attributes: [
-                .font: NSFont.systemFont(ofSize: 12, weight: .medium),
-                .foregroundColor: NSColor.white.withAlphaComponent(0.8),
-                .shadow: titleShadow,
-            ]
-        )
+        // Leading offset clears the traffic lights.
+        titleLabel.attributedStringValue = Self.makeOverlayTitle(title)
         rootView.addSubview(titleLabel)
 
         // The capsule carries the shadow on its own (unclipped) layer; the
@@ -112,10 +109,23 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
         rootView.addSubview(controlsCapsule)
 
         configureButton(
+            previousTrackButton, symbol: "backward.end.fill",
+            accessibilityDescription: "上一个视频",
+            action: #selector(handlePreviousTrack(_:))
+        )
+        configureButton(
             playPauseButton, symbol: "pause.fill",
             accessibilityDescription: "播放/暂停",
             action: #selector(handlePlayPause(_:))
         )
+        configureButton(
+            nextTrackButton, symbol: "forward.end.fill",
+            accessibilityDescription: "下一个视频",
+            action: #selector(handleNextTrack(_:))
+        )
+        // Disabled until the coordinator reports the playlist position.
+        previousTrackButton.isEnabled = false
+        nextTrackButton.isEnabled = false
         progressSlider.isContinuous = true
         progressSlider.minValue = 0
         progressSlider.maxValue = 1
@@ -136,13 +146,15 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
         volumeSlider.target = self
         volumeSlider.action = #selector(handleVolumeSlider(_:))
 
+        capsuleMaterial.addSubview(previousTrackButton)
         capsuleMaterial.addSubview(playPauseButton)
+        capsuleMaterial.addSubview(nextTrackButton)
         capsuleMaterial.addSubview(progressSlider)
         capsuleMaterial.addSubview(timeLabel)
         capsuleMaterial.addSubview(volumeIconView)
         capsuleMaterial.addSubview(volumeSlider)
 
-        videoHost.snp.makeConstraints { make in
+        host.snp.makeConstraints { make in
             make.edges.equalToSuperview()
         }
         titleLabel.snp.makeConstraints { make in
@@ -157,13 +169,23 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
         capsuleMaterial.snp.makeConstraints { make in
             make.edges.equalToSuperview()
         }
-        playPauseButton.snp.makeConstraints { make in
+        previousTrackButton.snp.makeConstraints { make in
             make.leading.equalToSuperview().offset(16)
             make.centerY.equalToSuperview()
             make.size.equalTo(28)
         }
+        playPauseButton.snp.makeConstraints { make in
+            make.leading.equalTo(previousTrackButton.snp.trailing).offset(6)
+            make.centerY.equalToSuperview()
+            make.size.equalTo(28)
+        }
+        nextTrackButton.snp.makeConstraints { make in
+            make.leading.equalTo(playPauseButton.snp.trailing).offset(6)
+            make.centerY.equalToSuperview()
+            make.size.equalTo(28)
+        }
         progressSlider.snp.makeConstraints { make in
-            make.leading.equalTo(playPauseButton.snp.trailing).offset(10)
+            make.leading.equalTo(nextTrackButton.snp.trailing).offset(10)
             make.centerY.equalToSuperview()
         }
         timeLabel.snp.makeConstraints { make in
@@ -196,6 +218,66 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
         button.imageScaling = .scaleProportionallyUpOrDown
         button.target = self
         button.action = action
+    }
+
+    // MARK: - Track swap
+
+    /// Enables/disables the prev/next transport buttons for the current
+    /// playlist position (wired by the coordinator on open and track change).
+    func setTransportAvailability(canGoPrevious: Bool, canGoNext: Bool) {
+        previousTrackButton.isEnabled = canGoPrevious
+        nextTrackButton.isEnabled = canGoNext
+    }
+
+    /// Swaps the live session for a new track without closing the window:
+    /// full screen and window position survive the change. Order matters —
+    /// persist the outgoing resume point, cut its event feed so a dying mpv
+    /// can never talk to the new session, shut the handle down, only then
+    /// bring the new session up.
+    func install(item: ContentItem, core: MPVPlayerCore, viewModel: PlayerViewModel) {
+        self.viewModel.persistProgressOnClose()
+        self.viewModel.onChange = nil
+        self.core.onEvent = nil
+        self.core.shutdown()
+
+        self.core = core
+        self.viewModel = viewModel
+
+        let host = VideoLayerHostView(videoLayer: core.videoLayer)
+        rootView.addSubview(host, positioned: .below, relativeTo: titleLabel)
+        host.snp.makeConstraints { make in
+            make.edges.equalToSuperview()
+        }
+        videoHost?.removeFromSuperview()
+        videoHost = host
+
+        window?.title = item.name
+        titleLabel.attributedStringValue = Self.makeOverlayTitle(item.name)
+        startSession()
+    }
+
+    /// Binds and boots the current session (initial open and track swap).
+    private func startSession() {
+        viewModel.onChange = { [weak self] in self?.render() }
+        render()
+        core.load()
+    }
+
+    /// The overlay file name: small white text with a shadow so it stays
+    /// readable on bright frames.
+    private static func makeOverlayTitle(_ title: String) -> NSAttributedString {
+        let shadow = NSShadow()
+        shadow.shadowColor = NSColor.black.withAlphaComponent(0.6)
+        shadow.shadowBlurRadius = 3
+        shadow.shadowOffset = NSSize(width: 0, height: -1)
+        return NSAttributedString(
+            string: title,
+            attributes: [
+                .font: NSFont.systemFont(ofSize: 12, weight: .medium),
+                .foregroundColor: NSColor.white.withAlphaComponent(0.8),
+                .shadow: shadow,
+            ]
+        )
     }
 
     // MARK: - Rendering
@@ -249,6 +331,14 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
         viewModel.togglePause()
     }
 
+    @objc private func handlePreviousTrack(_ sender: NSButton) {
+        onPreviousTrack?()
+    }
+
+    @objc private func handleNextTrack(_ sender: NSButton) {
+        onNextTrack?()
+    }
+
     /// NSSlider sends its action on mouse-down, drag steps, and mouse-up;
     /// the current event type distinguishes them so a drag suppresses
     /// time-pos feedback until the user lets go.
@@ -290,11 +380,18 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
             viewModel.adjustVolume(by: -5)
             return true
         case 53: // esc
-            window?.close()
+            handleEscape()
             return true
         default:
             return false
         }
+    }
+
+    /// Esc steps out of full screen; in a windowed session it does nothing
+    /// (close via the window's close button or Cmd+W).
+    private func handleEscape() {
+        guard let window, window.styleMask.contains(.fullScreen) else { return }
+        window.toggleFullScreen(nil)
     }
 
     func windowWillClose(_ notification: Notification) {

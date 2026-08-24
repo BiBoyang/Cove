@@ -85,6 +85,16 @@ struct PlayerViewModelTests {
         #expect(viewModel.state == .error)
     }
 
+    @Test("clean EOF fires the auto-advance hook")
+    func endedFiresHook() {
+        let (viewModel, _) = makeViewModel()
+        var endedCount = 0
+        viewModel.onEnded = { endedCount += 1 }
+
+        viewModel.apply(.ended)
+        #expect(endedCount == 1)
+    }
+
     @Test("progress updates follow time-pos unless scrubbing")
     func progressUpdates() {
         let (viewModel, controller) = makeViewModel()

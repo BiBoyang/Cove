@@ -10,6 +10,7 @@
 ## 下一波（候选，未排期）
 
 - [ ] 服务器远程地址（家里/远程切换）：Tailscale/WireGuard 远程访问的 Cove 侧方案（见 plans/TASK-remote-address.md；不急，待排期）
+- [ ] 播放器"即将播放"倒计时浮层（自动连播的 Infuse 式升级；当前播完立即切换）
 - [ ] 连续纵向条带阅读器剩余打磨项（缩放、跳页条、模式偏好持久化——当前 v1 已落地）
 - [ ] 工程债小包：spike 观测日志降级、libmpv 供应链收敛（上架前必须）、SPM .build 增量缓存问题根治
 - [ ] 播放器悬浮控制条之外的 Step 3 剩余体验项（见 plans/TASK-video-playback.md §Step 3）

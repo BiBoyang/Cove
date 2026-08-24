@@ -64,6 +64,9 @@ final class PlayerViewModel {
     var onChange: (() -> Void)?
     /// Playback failure detail, forwarded to the coordinator's error chain.
     var onError: ((String) -> Void)?
+    /// Clean-EOF hook; the coordinator uses it to auto-advance the
+    /// playlist. Fired after the finished video's resume record is dropped.
+    var onEnded: (() -> Void)?
 
     init(
         controller: PlayerPlaybackControlling,
@@ -101,12 +104,13 @@ final class PlayerViewModel {
         case .bufferingChanged(let buffering):
             isBuffering = buffering
         case .ended:
-            // v1: a clean end leaves the last frame up; the user closes the
-            // window or seeks back manually. A finished video is forgotten
-            // so a replay starts from the top.
+            // A finished video is forgotten so a replay starts from the
+            // top; the coordinator then decides whether to auto-advance
+            // (the last video in the queue keeps the last frame up).
             if let progressStore, let progressKey {
                 progressStore.removePosition(forKey: progressKey)
             }
+            onEnded?()
         case .playbackFailed(let detail):
             hasFailed = true
             onError?(detail)
