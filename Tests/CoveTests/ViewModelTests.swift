@@ -699,7 +699,7 @@ struct ReaderCoordinatorTests {
         coordinator.submitPrefetch = { items in
             submitted.withLock { $0.append(items.map(\.path)) }
         }
-        coordinator.presentContent = { _, _, _ in }
+        coordinator.presentContent = { _, _, _, _ in }
         let items = (1...4).map { comicItem("p\($0).jpg", size: 10) }
 
         coordinator.openDirectory(
@@ -716,7 +716,7 @@ struct ReaderCoordinatorTests {
         coordinator.submitPrefetch = { items in
             submitted.withLock { $0.append(items.map(\.path)) }
         }
-        coordinator.presentContent = { _, _, _ in }
+        coordinator.presentContent = { _, _, _, _ in }
         let items = (1...3).map { comicItem("p\($0).jpg", size: 10) }
 
         // Only one page remains after index 1.
@@ -740,7 +740,7 @@ struct ReaderCoordinatorTests {
         coordinator.submitPrefetch = { items in
             submitted.withLock { $0.append(items.map(\.path)) }
         }
-        coordinator.presentContent = { _, _, _ in presented.withLock { $0 = true } }
+        coordinator.presentContent = { _, _, _, _ in presented.withLock { $0 = true } }
         let bytes = makeTestCBZBytes(pages: ["a1.jpg"])
 
         coordinator.openComic(
@@ -758,7 +758,7 @@ struct ReaderCoordinatorTests {
     func rapidReopenPresentsOnlyNewer() async throws {
         let coordinator = makeReaderCoordinator()
         let presented = Mutex<[[String]]>([])
-        coordinator.presentContent = { content, _, _ in
+        coordinator.presentContent = { content, _, _, _ in
             presented.withLock { $0.append(content.pages.map(\.id)) }
         }
 
@@ -796,7 +796,7 @@ struct ReaderCoordinatorTests {
         let coordinator = makeReaderCoordinator()
         let presented = Mutex<[[String]]>([])
         let errors = Mutex<[String]>([])
-        coordinator.presentContent = { content, _, _ in
+        coordinator.presentContent = { content, _, _, _ in
             presented.withLock { $0.append(content.pages.map(\.id)) }
         }
         coordinator.onError = { _, title in
@@ -828,7 +828,7 @@ struct ReaderCoordinatorTests {
     func comicOpenWarmsNextTwo() async throws {
         let coordinator = makeReaderCoordinator()
         let warmed = Mutex<[[Int]]>([])
-        coordinator.presentContent = { _, _, _ in }
+        coordinator.presentContent = { _, _, _, _ in }
         coordinator.warmPages = { indices in warmed.withLock { $0.append(indices) } }
         let bytes = makeTestCBZBytes(pages: ["a1.jpg", "a2.jpg", "a3.jpg", "a4.jpg"])
 
@@ -847,7 +847,7 @@ struct ReaderCoordinatorTests {
     func comicPageTurnWarmsFollowing() async throws {
         let coordinator = makeReaderCoordinator()
         let warmed = Mutex<[[Int]]>([])
-        coordinator.presentContent = { _, _, _ in }
+        coordinator.presentContent = { _, _, _, _ in }
         coordinator.warmPages = { indices in warmed.withLock { $0.append(indices) } }
         let bytes = makeTestCBZBytes(pages: ["a1.jpg", "a2.jpg", "a3.jpg", "a4.jpg"])
 
@@ -873,7 +873,7 @@ struct ReaderCoordinatorTests {
             submitted.withLock { $0.append(items.map(\.path)) }
         }
         coordinator.warmPages = { indices in warmed.withLock { $0.append(indices) } }
-        coordinator.presentContent = { _, _, _ in }
+        coordinator.presentContent = { _, _, _, _ in }
         let items = (1...4).map { comicItem("p\($0).jpg", size: 10) }
 
         coordinator.openDirectory(
@@ -891,7 +891,7 @@ struct ReaderCoordinatorTests {
     func warmStopsAtEnd() async throws {
         let coordinator = makeReaderCoordinator()
         let warmed = Mutex<[[Int]]>([])
-        coordinator.presentContent = { _, _, _ in }
+        coordinator.presentContent = { _, _, _, _ in }
         coordinator.warmPages = { indices in warmed.withLock { $0.append(indices) } }
         let bytes = makeTestCBZBytes(pages: ["a1.jpg", "a2.jpg", "a3.jpg"])
 
@@ -908,6 +908,38 @@ struct ReaderCoordinatorTests {
 
         // One page remains after 1; nothing remains after the last page.
         #expect(warmed.withLock { $0 } == [[1, 2], [2], []])
+    }
+
+    @Test("a directory open defaults to paged mode")
+    func directoryDefaultsToPaged() {
+        let coordinator = makeReaderCoordinator()
+        let modes = Mutex<[ReaderMode]>([])
+        coordinator.presentContent = { _, _, _, mode in modes.withLock { $0.append(mode) } }
+        let items = (1...4).map { comicItem("p\($0).jpg", size: 10) }
+
+        coordinator.openDirectory(
+            items: items, selectedPath: "/p2.jpg", sourceID: "s", fileReader: { _ in Data() }
+        )
+
+        #expect(modes.withLock { $0 } == [.paged])
+    }
+
+    @Test("a comic open defaults to strip mode", .timeLimit(.minutes(1)))
+    func comicDefaultsToStrip() async throws {
+        let coordinator = makeReaderCoordinator()
+        let modes = Mutex<[ReaderMode]>([])
+        coordinator.presentContent = { _, _, _, mode in modes.withLock { $0.append(mode) } }
+        let bytes = makeTestCBZBytes(pages: ["a1.jpg"])
+
+        coordinator.openComic(
+            item: comicItem("a.cbz", size: Int64(bytes.count)),
+            sourceID: "s",
+            fileReader: { _ in bytes },
+            isSourceCurrent: { true }
+        )
+
+        try await waitUntil { !modes.withLock { $0 }.isEmpty }
+        #expect(modes.withLock { $0 } == [.strip])
     }
 }
 

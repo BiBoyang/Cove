@@ -39,6 +39,10 @@ final class ReaderViewModel {
     /// this seam in the coordinator.
     var onPageChanged: ((Int) -> Void)?
 
+    /// The currently displayed page index; the strip-mode handoff reads it
+    /// so switching modes preserves the page.
+    var currentPageIndex: Int { currentIndex }
+
     var state: State {
         State(
             pageTitle: pages[currentIndex].title,
@@ -75,6 +79,12 @@ final class ReaderViewModel {
 
     func goNext() {
         goToPage(currentIndex + 1)
+    }
+
+    /// Jumps straight to a page (strip-mode handoff). Same clamping and
+    /// no-op-if-current semantics as a manual page turn.
+    func jumpToPage(_ index: Int) {
+        goToPage(index)
     }
 
     func tearDown() {

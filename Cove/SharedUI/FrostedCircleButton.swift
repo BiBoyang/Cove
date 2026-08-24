@@ -8,11 +8,13 @@ import SnapKit
 @MainActor
 final class FrostedCircleButton: NSButton {
     private var trackingAreaRef: NSTrackingArea?
+    private let symbolPointSize: CGFloat
     private var isHovering = false {
         didSet { updateFill() }
     }
 
     init(symbolName: String, pointSize: CGFloat, accessibilityDescription: String) {
+        symbolPointSize = pointSize
         super.init(frame: .zero)
         isBordered = false
         title = ""
@@ -24,6 +26,13 @@ final class FrostedCircleButton: NSButton {
         wantsLayer = true
         layer?.borderWidth = 1
         updateFill()
+    }
+
+    /// Swaps the symbol (e.g. a mode toggle), keeping the configured size
+    /// and weight.
+    func setSymbol(_ symbolName: String, accessibilityDescription: String) {
+        image = NSImage(systemSymbolName: symbolName, accessibilityDescription: accessibilityDescription)?
+            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: symbolPointSize, weight: .semibold))
     }
 
     @available(*, unavailable)

@@ -1,5 +1,6 @@
 import AppKit
 import CacheKit
+import ReaderKit
 import SourceKit
 import TraceKit
 
@@ -27,6 +28,11 @@ final class ReaderCoordinator: NSObject {
     private var comicLoader: ReaderImageLoader?
     /// The current comic-mode page count, for computing warm ranges.
     private var comicPageCount: Int?
+    /// Session state of the presented reader, used by mode switching.
+    private var sessionPages: [ReaderPage]?
+    private var sessionLoader: ReaderImageLoader?
+    private var pagedViewModel: ReaderViewModel?
+    private var stripViewModel: ContinuousReaderViewModel?
 
     var onError: ((_ error: Error, _ title: String) -> Void)?
     var onMessageError: ((_ message: String, _ title: String) -> Void)?
@@ -35,8 +41,8 @@ final class ReaderCoordinator: NSObject {
     /// substitute a recorder to observe what an open intent would present.
     /// Its two consumers are the production default and tests, nothing else.
     /// (Lazy so the default may weakly capture the fully-initialized self.)
-    lazy var presentContent: @MainActor (ReaderContent, Int, String) -> Void = { [weak self] content, startIndex, sourceID in
-        self?.present(content: content, startIndex: startIndex, sourceID: sourceID)
+    lazy var presentContent: @MainActor (ReaderContent, Int, String, ReaderMode) -> Void = { [weak self] content, startIndex, sourceID, mode in
+        self?.present(content: content, startIndex: startIndex, sourceID: sourceID, mode: mode)
     }
 
     /// Prefetch seam, same pattern as `presentContent`: production forwards
@@ -93,7 +99,7 @@ final class ReaderCoordinator: NSObject {
         )
         directoryPrefetchItems = items
         comicPageCount = nil
-        presentContent(content, startIndex, sourceID)
+        presentContent(content, startIndex, sourceID, .paged)
         // Open trigger: warm the two pages after the start page, so the
         // first page turn hits the cache.
         prefetchFollowing(from: startIndex)
@@ -120,7 +126,7 @@ final class ReaderCoordinator: NSObject {
                 )
                 guard generation == openGeneration, isSourceCurrent() else { return }
                 openTask = nil
-                presentContent(content, 0, sourceID)
+                presentContent(content, 0, sourceID, .strip)
                 comicPageCount = content.cachePages.count
                 // Open trigger: warm the two pages after the first page.
                 warmPages(upcomingWarmIndices(from: 0))
@@ -133,7 +139,7 @@ final class ReaderCoordinator: NSObject {
         }
     }
 
-    private func present(content: ReaderContent, startIndex: Int, sourceID: String) {
+    private func present(content: ReaderContent, startIndex: Int, sourceID: String, mode: ReaderMode) {
         readerController?.close()
         let targetWidth = ScreenGeometry.mainScreenPixelWidth
         let loader = ReaderImageLoader(
@@ -152,12 +158,18 @@ final class ReaderCoordinator: NSObject {
         // Comic mode keeps the loader for `warmPages`; directory mode's
         // display variants are the prefetch path's business.
         comicLoader = (directoryPrefetchItems == nil) ? loader : nil
+        sessionPages = content.pages
+        sessionLoader = loader
+        pagedViewModel = viewModel
         // Page-turn trigger: the only seam between the reader and
         // prefetching/warming — the view model never learns why we listen.
         viewModel.onPageChanged = { [weak self] index in
             self?.pageDidChange(at: index)
         }
-        let reader = PagedReaderWindowController(viewModel: viewModel)
+        let reader = PagedReaderWindowController(viewModel: viewModel, initialMode: mode)
+        reader.onModeSwitch = { [weak self] in
+            self?.toggleReaderMode()
+        }
         readerController = reader
         NotificationCenter.default.addObserver(
             self,
@@ -165,7 +177,51 @@ final class ReaderCoordinator: NSObject {
             name: NSWindow.willCloseNotification,
             object: reader.window
         )
+        if mode == .strip {
+            presentStrip(startIndex: startIndex)
+        }
         reader.showWindow(nil)
+    }
+
+    /// Builds and embeds the strip surface for the current session,
+    /// starting at the given page (mode switches preserve the page).
+    private func presentStrip(startIndex: Int) {
+        guard let reader = readerController,
+              let pages = sessionPages,
+              let loader = sessionLoader else { return }
+        let strip = ContinuousReaderViewModel(
+            pages: pages,
+            startIndex: startIndex,
+            loader: loader,
+            logger: logger
+        )
+        // Strip warm window (one screen ahead): comic pages pre-decode,
+        // directory pages prefetch original bytes — the same pipelines the
+        // paged mode drives through page turns.
+        strip.onWarmWindow = { [weak self] indices in
+            guard let self else { return }
+            if directoryPrefetchItems != nil {
+                prefetchIndices(indices)
+            } else {
+                warmPages(indices)
+            }
+        }
+        stripViewModel = strip
+        reader.showStrip(ContinuousReaderView(viewModel: strip))
+    }
+
+    private func toggleReaderMode() {
+        guard let reader = readerController, let paged = pagedViewModel else { return }
+        switch reader.mode {
+        case .paged:
+            presentStrip(startIndex: paged.currentPageIndex)
+        case .strip:
+            let index = stripViewModel?.currentPage ?? paged.currentPageIndex
+            stripViewModel?.tearDown()
+            stripViewModel = nil
+            reader.showPaged()
+            paged.jumpToPage(index)
+        }
     }
 
     /// Page-turn dispatch, wired to `onPageChanged`: directory mode
@@ -196,6 +252,13 @@ final class ReaderCoordinator: NSObject {
         submitPrefetch(Array(upcoming))
     }
 
+    /// Prefetches original bytes for the strip's warm window. Directory
+    /// mode only; same dedupe/skipping as `prefetchFollowing`.
+    private func prefetchIndices(_ indices: [Int]) {
+        guard let items = directoryPrefetchItems, !indices.isEmpty else { return }
+        submitPrefetch(indices.map { items[$0] })
+    }
+
     @objc private func readerWindowWillClose(_ notification: Notification) {
         NotificationCenter.default.removeObserver(
             self,
@@ -203,6 +266,11 @@ final class ReaderCoordinator: NSObject {
             object: notification.object as? NSWindow
         )
         if readerController?.window === (notification.object as? NSWindow) {
+            stripViewModel?.tearDown()
+            stripViewModel = nil
+            pagedViewModel = nil
+            sessionPages = nil
+            sessionLoader = nil
             readerController = nil
             // Drop the comic loader with the window: it pins the whole
             // in-memory archive.

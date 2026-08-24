@@ -7,6 +7,11 @@ import SnapKit
 /// arrow/Page keys; there is no continuous scrolling, no slot topology,
 /// no retention, and no prefetch.
 ///
+/// The same window can swap to the continuous strip surface
+/// (`ContinuousReaderView`) via the mode button; the paged chrome is then
+/// hidden, not torn down, so switching back is instant. Paged-mode behavior
+/// is unchanged from A1.
+///
 /// Paging, loading, cancellation, and stale-result rejection belong to the
 /// injected `ReaderViewModel`; this controller only renders AppKit state and
 /// forwards user input.
@@ -28,10 +33,21 @@ final class PagedReaderWindowController: NSWindowController {
     private let exitButton = FrostedCircleButton(
         symbolName: "xmark", pointSize: 12, accessibilityDescription: "退出阅读器"
     )
+    private let modeButton = FrostedCircleButton(
+        symbolName: "scroll", pointSize: 13, accessibilityDescription: "切换到条带模式"
+    )
     private let progressLabel = NSTextField(labelWithString: "")
 
-    init(viewModel: ReaderViewModel) {
+    /// The active surface. The coordinator owns the switch (it builds the
+    /// strip session); this controller only hosts views.
+    private(set) var mode: ReaderMode = .paged
+    private var stripView: ContinuousReaderView?
+    /// User tapped the mode button; the coordinator performs the switch.
+    var onModeSwitch: (() -> Void)?
+
+    init(viewModel: ReaderViewModel, initialMode: ReaderMode = .paged) {
         self.viewModel = viewModel
+        mode = initialMode
         let screen = NSScreen.main
         let window = NSWindow(
             contentRect: screen?.frame ?? NSRect(x: 0, y: 0, width: 1440, height: 900),
@@ -51,7 +67,13 @@ final class PagedReaderWindowController: NSWindowController {
         assembleContent()
         registerObservers()
         bindViewModel()
-        viewModel.start()
+        applyInitialMode()
+        // In strip-default sessions the paged model starts lazily on the
+        // first switch back, so opening a comic never loads a page the
+        // user may never see.
+        if mode == .paged {
+            viewModel.start()
+        }
     }
 
     @available(*, unavailable)
@@ -100,6 +122,8 @@ final class PagedReaderWindowController: NSWindowController {
         nextButton.action = #selector(handleNext(_:))
         exitButton.target = self
         exitButton.action = #selector(handleExit(_:))
+        modeButton.target = self
+        modeButton.action = #selector(handleModeSwitch(_:))
 
         progressLabel.font = .monospacedDigitSystemFont(ofSize: 12, weight: .medium)
         progressLabel.textColor = .white
@@ -109,6 +133,7 @@ final class PagedReaderWindowController: NSWindowController {
         rootView.addSubview(previousButton)
         rootView.addSubview(nextButton)
         rootView.addSubview(exitButton)
+        rootView.addSubview(modeButton)
         rootView.addSubview(progressLabel)
 
         // Centered, aspect-preserving, never larger than the window. The
@@ -134,6 +159,11 @@ final class PagedReaderWindowController: NSWindowController {
         }
         exitButton.snp.makeConstraints { make in
             make.leading.equalToSuperview().offset(16)
+            make.top.equalToSuperview().offset(16)
+            make.size.equalTo(32)
+        }
+        modeButton.snp.makeConstraints { make in
+            make.trailing.equalToSuperview().offset(-16)
             make.top.equalToSuperview().offset(16)
             make.size.equalTo(32)
         }
@@ -186,13 +216,72 @@ final class PagedReaderWindowController: NSWindowController {
         close()
     }
 
+    @objc private func handleModeSwitch(_ sender: NSButton) {
+        onModeSwitch?()
+        window?.makeFirstResponder(rootView)
+    }
+
+    // MARK: - Mode switching
+
+    /// Swaps the single-page chrome for the strip surface. The paged view
+    /// model stays alive (just hidden), so switching back is instant.
+    func showStrip(_ view: ContinuousReaderView) {
+        stripView?.removeFromSuperview()
+        stripView = view
+        mode = .strip
+        // Below the whole chrome: the exit/mode buttons must stay on top.
+        rootView.addSubview(view, positioned: .below, relativeTo: imageView)
+        view.snp.makeConstraints { make in
+            make.edges.equalToSuperview()
+        }
+        setPagedChromeVisible(false)
+        modeButton.setSymbol("rectangle.portrait", accessibilityDescription: "切换到单页模式")
+        window?.makeFirstResponder(rootView)
+    }
+
+    /// Back to single-page mode. The coordinator tears the strip session
+    /// down before this call; the strip view is destroyed here.
+    func showPaged() {
+        stripView?.removeFromSuperview()
+        stripView = nil
+        mode = .paged
+        setPagedChromeVisible(true)
+        modeButton.setSymbol("scroll", accessibilityDescription: "切换到条带模式")
+        // Idempotent: starts the paged session on the first switch-back of
+        // a strip-default (comic) session.
+        viewModel.start()
+        window?.makeFirstResponder(rootView)
+    }
+
+    private func applyInitialMode() {
+        guard mode == .strip else { return }
+        setPagedChromeVisible(false)
+        modeButton.setSymbol("rectangle.portrait", accessibilityDescription: "切换到单页模式")
+    }
+
+    private func setPagedChromeVisible(_ visible: Bool) {
+        imageView.isHidden = !visible
+        statusLabel.isHidden = !visible || viewModel.state.errorMessage == nil
+        previousButton.isHidden = !visible
+        nextButton.isHidden = !visible
+        progressLabel.isHidden = !visible
+    }
+
     // MARK: - Keyboard
 
     /// Returns true when the key was consumed. Works in full screen because
-    /// the root view is the window's first responder.
+    /// the root view is the window's first responder. In strip mode scroll
+    /// keys go to the strip view; Esc still closes the window.
     private func handleKey(_ event: NSEvent) -> Bool {
         // Leave menu commands (Cmd+W, Cmd+Q, …) to the responder chain.
         guard !event.modifierFlags.contains(.command) else { return false }
+        if mode == .strip {
+            if event.keyCode == 53 { // Esc
+                close()
+                return true
+            }
+            return stripView?.handleKey(event) ?? false
+        }
         switch event.keyCode {
         case 123, 116: // ←, PageUp
             viewModel.goPrevious()
