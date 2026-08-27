@@ -210,3 +210,17 @@ Vendor 现状：
 4. 体积与供应链预算：Vendor 现为 IINA 森林 117MB（universal）。正式发布前
    建议二选一收敛：brew 源码重编 mpv（`-Dgl=enabled`，可控且新版）或装配
    MPVKit 静态依赖；两者都比"借用 IINA"更适合上架。
+
+## 供应链收敛调研（2026-08-27 追加）
+
+工程债小包期间对两条收敛路线做了现状核实，结论：**维持 IINA 森林，收敛仍排在上架前**。
+
+- **brew 路线未被环境封死**：`HOMEBREW_FAKE_MACOS=26.0`（结论一环境坑节的正解）
+  实测可用，`brew install --dry-run mpv` 正常返回。此前一次 dry-run 挂起是
+  brew auto-update 走 GitHub 遇网络故障，加 `HOMEBREW_NO_AUTO_UPDATE=1` 即避开，
+  与 `:dunno` 识别 bug 无关。真正的剩余工作是源码重编（`-Dgl=enabled`）——
+  brew formula 无 options，需要本地改 formula 或手写 meson 构建链，工作量未变。
+- **MPVKit 无进展**：最新 release 仍为 1.0.0（2026-07-25），即结论一核实过的
+  同一批资产（libmpv.a 静态库、外部依赖链不随包），放弃理由不变。
+- 切换 Vendor 后的回归成本（格式覆盖、字幕、seek、渲染）仍在，因此收敛动作
+  本身不塞进日常工程债，保持"上架前必须"档位。

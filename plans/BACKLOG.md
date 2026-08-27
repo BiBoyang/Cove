@@ -12,14 +12,12 @@
 - [ ] 服务器远程地址（家里/远程切换）：Tailscale/WireGuard 远程访问的 Cove 侧方案（见 plans/TASK-remote-address.md；不急，待排期）
 - [ ] 播放器"即将播放"倒计时浮层（自动连播的 Infuse 式升级；当前播完立即切换）
 - [ ] 连续纵向条带阅读器剩余打磨项（缩放、跳页条、模式偏好持久化——当前 v1 已落地）
-- [ ] 工程债小包：spike 观测日志降级、libmpv 供应链收敛（上架前必须）、SPM .build 增量缓存问题根治
 - [ ] 播放器悬浮控制条之外的 Step 3 剩余体验项（见 plans/TASK-video-playback.md §Step 3）
 
 ## 上架前必须
 
-- [ ] libmpv 供应链收敛：brew 源码重编（-Dgl=enabled）或装配 MPVKit 静态依赖；IINA 森林的 GPL 合规审计（见 plans/SPIKE-video-playback.md §结论一）
+- [ ] libmpv 供应链收敛：brew 源码重编（-Dgl=enabled）或装配 MPVKit 静态依赖；IINA 森林的 GPL 合规审计（见 plans/SPIKE-video-playback.md §结论一 + 2026-08-27 调研追加）
 - [ ] project.yml 填 DEVELOPMENT_TEAM + 替换占位 bundle id（AGENTS.md 已记）
-- [ ] spike 观测日志降级（VideoStream 心跳 / Player 里程碑链，v1 稳定后降为 debug）
 
 ## 远期（North Star：Mac 上的 SenPlayer）
 
@@ -42,3 +40,4 @@
 - PDF 阅读 v1（整包缓存 + PDFKit）、本地仓库 v1（LocalFileSource + 右键下载/删除 + 位置设置）（v0.5.0）
 - 连续纵向条带阅读器 v1（CBZ 默认条带、模式切换保留当前页）
 - 远程访问教程（README：Tailscale/WireGuard 组网后按 IP 直连）
+- 工程债小包：spike 观测日志降级（warn+ 按 mpv 级别映射，里程碑链/心跳降 debug）、SPM 共享 scratch-path（make test 共享依赖只编一次，.build 总量 1.8GB→388MB）
