@@ -112,10 +112,10 @@ final class VideoStreamBridge {
     /// scheme and installs the per-open stream state as the cookie.
     fileprivate func openStream(uri: String, info: UnsafeMutablePointer<mpv_stream_cb_info>) -> CInt {
         guard uri.hasPrefix("\(Self.scheme)://") else { return -1 }
-        // Spike observability: an open with no follow-up reads means mpv
+        // Debug-level milestone: an open with no follow-up reads means mpv
         // stalled before demuxing; reads with no app-side playback events
         // mean the stall is downstream (decode/render).
-        logger.info("stream opened, size \(self.size)")
+        logger.debug("stream opened, size \(self.size)")
         let context = StreamContext(path: path, size: size, reader: reader)
         liveContexts.withLock { boxes in
             boxes.removeAll { $0.context == nil }
@@ -233,11 +233,11 @@ final class StreamContext: Sendable {
                     state.readCount += 1
                     return (state.position, state.readCount)
                 }
-                // Spike observability: first read plus a low-frequency
-                // heartbeat, so "reads flowing" is distinguishable from
-                // "mpv never called us" in the logs.
+                // Debug-level heartbeat (first read, then every 128): kept
+                // so "reads flowing" stays distinguishable from "mpv never
+                // called us" without spamming persisted logs.
                 if reads == 1 || reads % 128 == 0 {
-                    logger.info("read #\(reads): \(count) bytes at offset \(range.lowerBound) (position now \(position))")
+                    logger.debug("read #\(reads): \(count) bytes at offset \(range.lowerBound) (position now \(position))")
                 }
                 return count
             }
@@ -309,9 +309,9 @@ final class StreamContext: Sendable {
             state.position = max(0, min(offset, size))
             return state.position
         }
-        // Spike observability: moov-at-end MP4s show up here as a seek to
-        // ~EOF right after open, before any demux reads.
-        logger.info("seek to \(offset)")
+        // Debug-level: moov-at-end MP4s show up here as a seek to ~EOF
+        // right after open, before any demux reads.
+        logger.debug("seek to \(offset)")
         return newPosition
     }
 

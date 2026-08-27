@@ -127,9 +127,9 @@ final class MPVPlayerCore {
 
     /// Starts playback of the bridge's stream.
     func load() {
-        // Spike observability: pairs with the FILE_LOADED / PLAYBACK_RESTART
-        // events in drainEvents to show how far startup got.
-        logger.info("loadfile issued")
+        // Debug-level milestone: pairs with the FILE_LOADED /
+        // PLAYBACK_RESTART events in drainEvents to show how far startup got.
+        logger.debug("loadfile issued")
         command(["loadfile", bridge.uri])
     }
 
@@ -234,21 +234,32 @@ final class MPVPlayerCore {
             case MPV_EVENT_LOG_MESSAGE:
                 if let data = event.pointee.data {
                     let message = data.assumingMemoryBound(to: mpv_event_log_message.self).pointee
-                    logger.info("mpv: \(String(cString: message.text))", privacy: .private)
+                    // Only warn+ is subscribed (mpv_request_log_messages), so
+                    // map mpv's severity onto TraceKit instead of flattening
+                    // everything to info: real problems stay visible.
+                    let text = String(cString: message.text)
+                    switch message.log_level {
+                    case MPV_LOG_LEVEL_FATAL:
+                        logger.fault("mpv: \(text)", privacy: .private)
+                    case MPV_LOG_LEVEL_ERROR:
+                        logger.error("mpv: \(text)", privacy: .private)
+                    default:
+                        logger.notice("mpv: \(text)", privacy: .private)
+                    }
                 }
-            // Spike observability: the startup milestone chain. A black
-            // window with FILE_LOADED but no PLAYBACK_RESTART means mpv is
-            // stuck buffering/decoding; no FILE_LOADED at all means the
-            // demuxer never got far enough (see VideoStream logs).
+            // Startup milestone chain, kept at debug now that playback is
+            // stable. A black window with FILE_LOADED but no PLAYBACK_RESTART
+            // means mpv is stuck buffering/decoding; no FILE_LOADED at all
+            // means the demuxer never got far enough (see VideoStream logs).
             case MPV_EVENT_FILE_LOADED:
-                logger.info("mpv event: file loaded")
+                logger.debug("mpv event: file loaded")
                 onEvent?(.fileLoaded)
             case MPV_EVENT_VIDEO_RECONFIG:
-                logger.info("mpv event: video reconfig")
+                logger.debug("mpv event: video reconfig")
             case MPV_EVENT_AUDIO_RECONFIG:
-                logger.info("mpv event: audio reconfig")
+                logger.debug("mpv event: audio reconfig")
             case MPV_EVENT_PLAYBACK_RESTART:
-                logger.info("mpv event: playback restart")
+                logger.debug("mpv event: playback restart")
             case MPV_EVENT_PROPERTY_CHANGE:
                 if let data = event.pointee.data {
                     handlePropertyChange(
@@ -264,7 +275,7 @@ final class MPVPlayerCore {
                         logger.error("Playback ended with error: \(detail)", privacy: .private)
                         onEvent?(.playbackFailed(detail))
                     } else {
-                        logger.info("mpv event: end of file (clean)")
+                        logger.debug("mpv event: end of file (clean)")
                         onEvent?(.ended)
                     }
                 }
