@@ -31,6 +31,9 @@ final class ShareGridViewController: NSViewController {
 
     override func loadView() {
         let root = NSView()
+        // Same warm dark content background as the browser pane.
+        root.wantsLayer = true
+        root.layer?.backgroundColor = CoveStyle.libraryBackground.cgColor
 
         let layout = NSCollectionViewFlowLayout()
         layout.itemSize = NSSize(width: 160, height: 130)
@@ -53,6 +56,8 @@ final class ShareGridViewController: NSViewController {
 
         scrollView.documentView = collectionView
         scrollView.hasVerticalScroller = true
+        scrollView.drawsBackground = false
+        scrollView.backgroundColor = CoveStyle.libraryBackground
 
         placeholderIcon.image = NSImage(
             systemSymbolName: "externaldrive", accessibilityDescription: nil

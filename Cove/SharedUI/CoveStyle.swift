@@ -32,4 +32,19 @@ enum CoveStyle {
     static var cardBorderColor: NSColor {
         NSColor.labelColor.withAlphaComponent(0.08)
     }
+
+    // MARK: Library palette (SenPlayer-style warm dark grays)
+
+    /// Library content background (list area behind rows and cards).
+    static let libraryBackground = NSColor(
+        srgbRed: 0x2c / 255.0, green: 0x29 / 255.0, blue: 0x29 / 255.0, alpha: 1
+    )
+    /// Library toolbar strip above the content area.
+    static let libraryToolbarBackground = NSColor(
+        srgbRed: 0x33 / 255.0, green: 0x31 / 255.0, blue: 0x31 / 255.0, alpha: 1
+    )
+    /// Small gold accent sampled from SenPlayer (selected/active hints).
+    static let accentGold = NSColor(
+        srgbRed: 0xe0 / 255.0, green: 0xc0 / 255.0, blue: 0x20 / 255.0, alpha: 1
+    )
 }

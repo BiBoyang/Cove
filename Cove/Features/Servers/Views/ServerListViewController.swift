@@ -116,7 +116,8 @@ extension ServerListViewController: NSTableViewDataSource, NSTableViewDelegate {
     }
 
     func tableView(_ tableView: NSTableView, heightOfRow row: Int) -> CGFloat {
-        viewModel.isGroupRow(row) ? 26 : 34
+        // SenPlayer sidebar rhythm: tight 20pt group headers, 32pt rows.
+        viewModel.isGroupRow(row) ? 20 : 32
     }
 
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
@@ -135,7 +136,7 @@ extension ServerListViewController: NSTableViewDataSource, NSTableViewDelegate {
             cell.identifier = identifier
         }
         if viewModel.isVaultRow(row) {
-            cell.configure(symbol: "externaldrive.fill", title: "本地仓库", tint: .labelColor)
+            cell.configure(symbol: "externaldrive.fill", title: "本地仓库", tint: CoveStyle.accentGold)
         } else if let server = viewModel.server(atTableRow: row) {
             cell.configure(with: server)
         }

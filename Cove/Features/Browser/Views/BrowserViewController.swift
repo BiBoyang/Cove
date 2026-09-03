@@ -103,6 +103,12 @@ final class BrowserViewController: NSViewController {
 
     override func loadView() {
         let root = NSView()
+        // SenPlayer-style library chrome: warm dark toolbar strip over an
+        // equally warm dark content area.
+        root.wantsLayer = true
+        root.layer?.backgroundColor = CoveStyle.libraryBackground.cgColor
+        toolbarView.wantsLayer = true
+        toolbarView.layer?.backgroundColor = CoveStyle.libraryToolbarBackground.cgColor
 
         // Toolbar: pill back button, the full path in small gray text,
         // the current directory name centered, and a disabled search field
@@ -196,12 +202,17 @@ final class BrowserViewController: NSViewController {
 
         scrollView.documentView = tableView
         scrollView.hasVerticalScroller = true
+        // The table paints the content background itself so the scroller
+        // gutter matches the warm dark chrome.
+        scrollView.drawsBackground = false
+        tableView.backgroundColor = CoveStyle.libraryBackground
 
         root.addSubview(toolbarView)
         root.addSubview(scrollView)
         toolbarView.snp.makeConstraints { make in
             make.top.leading.trailing.equalToSuperview()
-            make.height.equalTo(44)
+            // SenPlayer toolbar rhythm: a 52pt strip over the content list.
+            make.height.equalTo(52)
         }
         scrollView.snp.makeConstraints { make in
             make.top.equalTo(toolbarView.snp.bottom)
@@ -366,8 +377,8 @@ extension BrowserViewController: NSTableViewDataSource, NSTableViewDelegate {
     }
 
     func tableView(_ tableView: NSTableView, heightOfRow row: Int) -> CGFloat {
-        // 48-pt thumbnail + 8 pt of breathing room above and below.
-        64
+        // 40-pt thumbnail + 8 pt of breathing room above and below.
+        56
     }
 
     func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? {
@@ -392,17 +403,22 @@ extension BrowserViewController: NSTableViewDataSource, NSTableViewDelegate {
         return cell
     }
 
-    /// Row subtitle: files show "size · modified date", directories just
-    /// "文件夹". A file without a modification date shows only its size.
+    /// Row subtitle, in SenPlayer's spirit of one quiet metadata line:
+    /// directories show their date, videos their size (Cove has no probe for
+    /// resolution/fps/duration yet), everything else size · date.
     private func subtitleText(for item: ContentItem) -> String {
-        if item.isDirectory { return "文件夹" }
+        if item.isDirectory {
+            guard let modifiedDate = item.modifiedDate else { return "文件夹" }
+            return dateFormatter.string(from: modifiedDate)
+        }
         let size = byteFormatter.string(fromByteCount: item.size)
+        if item.fileType == .video { return size }
         guard let modifiedDate = item.modifiedDate else { return size }
         return "\(size) · \(dateFormatter.string(from: modifiedDate))"
     }
 }
 
-/// One directory-entry row: a 48-pt rounded thumbnail (or a monochrome
+/// One directory-entry row: a 40-pt rounded thumbnail (or a monochrome
 /// symbol placeholder) on the leading edge, and two text lines — the file
 /// name (tail-truncated) over a metadata subtitle.
 ///
@@ -453,7 +469,7 @@ private final class BrowserRowCellView: NSTableCellView {
         badgeView.snp.makeConstraints { make in
             make.leading.equalToSuperview().offset(20)
             make.centerY.equalToSuperview()
-            make.width.height.equalTo(48)
+            make.width.height.equalTo(40)
         }
         badgeImageView.snp.makeConstraints { make in
             make.center.equalToSuperview()
@@ -494,7 +510,7 @@ private final class BrowserRowCellView: NSTableCellView {
         // Placeholders stay monochrome so the loaded thumbnail is the only
         // saturated element on the row.
         badgeImageView.image = NSImage(systemSymbolName: Self.placeholderSymbol(for: item), accessibilityDescription: nil)?
-            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 22, weight: .regular))
+            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 18, weight: .regular))
         badgeImageView.contentTintColor = .tertiaryLabelColor
         badgeImageView.isHidden = false
         thumbnailImageView.image = nil
