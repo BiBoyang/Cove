@@ -10,6 +10,7 @@
 ## 下一波（候选，未排期）
 
 - [ ] 服务器远程地址（家里/远程切换）：Tailscale/WireGuard 远程访问的 Cove 侧方案（见 plans/TASK-remote-address.md；不急，待排期）
+- [ ] 单页模式缩放：⌘ 档位放大 + 拖拽平移（见 plans/TASK-reader-paged-zoom.md，可派 agent）
 
 ## 上架前必须
 
