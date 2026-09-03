@@ -3,7 +3,7 @@ import SnapKit
 
 /// AppKit single-page manual-paging reader (route A1): shows exactly one page at
 /// a time over a near-black background, centered and fit to the window
-/// (SenPlayer-style). Navigation is manual only — previous/next buttons,
+/// Navigation is manual only — previous/next buttons,
 /// arrow/Page keys; there is no continuous scrolling, no slot topology,
 /// no retention, and no prefetch.
 ///

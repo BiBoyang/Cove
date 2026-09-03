@@ -12,7 +12,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var vaultService: VaultService?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // SenPlayer-style presentation: the app is dark regardless of the
+        // Dark-only presentation: the app is dark regardless of the
         // system appearance, so every window (library, player, readers)
         // speaks the same dark palette.
         NSApplication.shared.appearance = NSAppearance(named: .darkAqua)

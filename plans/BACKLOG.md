@@ -17,7 +17,7 @@
 - [ ] libmpv 供应链收敛：brew 源码重编（-Dgl=enabled）或装配 MPVKit 静态依赖；IINA 森林的 GPL 合规审计（见 plans/SPIKE-video-playback.md §结论一 + 2026-08-27 调研追加）
 - [ ] project.yml 填 DEVELOPMENT_TEAM + 替换占位 bundle id（AGENTS.md 已记）
 
-## 远期（North Star：Mac 上的 SenPlayer）
+## 远期（North Star：Mac 上的一流 NAS 媒体中心）
 
 - [ ] PDF 阅读
 - [ ] 连续纵向条带阅读器（A1 决策搁置，A2 稳定后再议）
@@ -42,5 +42,5 @@
 - 真机验收收尾：递归预热三态与自动取消、相邻页预取连翻（2026-08-27 真机通过）
 - App 图标与 logo：D1 层叠浪线方向，appiconset 全尺寸 + design/logo 矢量源
 - 播放器传输包：Up Next 倒计时、五种播放模式、倍速（跨集记忆）、播放列表面板、mpv keep-open 停最后一帧（2026-09-04）
-- SenPlayer 风格库界面：全局深色、暖黑调色板、行高收紧、金色 accent（2026-09-04）
-- 条带阅读器打磨：模式偏好按内容类型持久化、条带缩放（⌘ 四档 + 倍数闪现 + 横向滚动）、跳页 scrubber（见 plans/TASK-reader-strip-polish.md，2026-09-04）
+- 暖黑风格库界面：全局深色、暖黑调色板、行高收紧、金色 accent（2026-09-04）
+- 条带阅读器打磨：模式偏好按内容类型持久化、条带缩放（⌘ 四档 + 倍数闪现 + 横向滚动）、跳页 scrubber（见 plans/archive/TASK-reader-strip-polish.md，2026-09-04）

@@ -1,6 +1,6 @@
 # SPIKE: 视频播放 Step 1 — libmpv 集成验证报告
 
-日期：2026-08-23 ｜ 对应任务单：plans/TASK-video-playback.md ｜ Step 1（spike）
+日期：2026-08-23 ｜ 对应任务单：plans/archive/TASK-video-playback.md ｜ Step 1（spike）
 
 本报告回答任务单列出的三条关键点，作为 Step 2 的输入。
 

@@ -1,8 +1,7 @@
 # Cove
 
 A native macOS NAS media player. Long-term goal: video playback, image/comic/PDF
-reading, warm-up caching and a local vault, all directly off your NAS — in the
-spirit of SenPlayer, but for the Mac. The whole UI is dark-only (warm dark
+reading, warm-up caching and a local vault, all directly off your NAS. The whole UI is dark-only (warm dark
 library chrome, dark player) regardless of the system appearance.
 
 **v0 scope**: built-in SMB client (direct NAS connection) + file browsing.

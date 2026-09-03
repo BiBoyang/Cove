@@ -2,7 +2,7 @@ import AppKit
 import SnapKit
 import SourceKit
 
-/// The player window, styled after SenPlayer: the mpv render layer fills
+/// The player window: the mpv render layer fills
 /// the whole window under a transparent title bar, with the file name as a
 /// centered overlay title at the top (long names truncate from the middle
 /// so they stay centered). A floating frosted capsule at the bottom

@@ -116,7 +116,7 @@ extension ServerListViewController: NSTableViewDataSource, NSTableViewDelegate {
     }
 
     func tableView(_ tableView: NSTableView, heightOfRow row: Int) -> CGFloat {
-        // SenPlayer sidebar rhythm: tight 20pt group headers, 32pt rows.
+        // Sidebar rhythm: tight 20pt group headers, 32pt rows.
         viewModel.isGroupRow(row) ? 20 : 32
     }
 
@@ -211,7 +211,7 @@ extension ServerListViewController: NSTableViewDataSource, NSTableViewDelegate {
 }
 
 /// One server row: a plain monochrome symbol and the server name, in the
-/// spirit of SenPlayer's clean sidebar (no badge chrome).
+/// clean sidebar (no badge chrome).
 @MainActor
 private final class ServerRowCellView: NSTableCellView {
     private let iconView = NSImageView()

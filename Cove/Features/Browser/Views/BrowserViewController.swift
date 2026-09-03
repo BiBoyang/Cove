@@ -103,7 +103,7 @@ final class BrowserViewController: NSViewController {
 
     override func loadView() {
         let root = NSView()
-        // SenPlayer-style library chrome: warm dark toolbar strip over an
+        // Warm dark library chrome: a toolbar strip over an
         // equally warm dark content area.
         root.wantsLayer = true
         root.layer?.backgroundColor = CoveStyle.libraryBackground.cgColor
@@ -211,7 +211,7 @@ final class BrowserViewController: NSViewController {
         root.addSubview(scrollView)
         toolbarView.snp.makeConstraints { make in
             make.top.leading.trailing.equalToSuperview()
-            // SenPlayer toolbar rhythm: a 52pt strip over the content list.
+            // Toolbar rhythm: a 52pt strip over the content list.
             make.height.equalTo(52)
         }
         scrollView.snp.makeConstraints { make in
@@ -403,7 +403,7 @@ extension BrowserViewController: NSTableViewDataSource, NSTableViewDelegate {
         return cell
     }
 
-    /// Row subtitle, in SenPlayer's spirit of one quiet metadata line:
+    /// Row subtitle, one quiet metadata line:
     /// directories show their date, videos their size (Cove has no probe for
     /// resolution/fps/duration yet), everything else size · date.
     private func subtitleText(for item: ContentItem) -> String {
