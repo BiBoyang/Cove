@@ -1,4 +1,5 @@
 import AppKit
+import QuartzCore
 import SnapKit
 
 /// AppKit continuous vertical strip reader surface: pages stacked at full
@@ -14,7 +15,7 @@ import SnapKit
 @MainActor
 final class ContinuousReaderView: NSView {
     private let viewModel: ContinuousReaderViewModel
-    private let scrollView = NSScrollView()
+    private let scrollView = StripScrollView()
     private let documentView = StripDocumentView()
     /// Bottom-center scrubber pill: drag the slider to preview a page
     /// number, release to jump. Replaces the passive progress label.
@@ -31,6 +32,24 @@ final class ContinuousReaderView: NSView {
     /// instead of yanking the slider under the user's thumb.
     private var isScrubbing = false
 
+    /// Auto-scroll (自动滚屏): a pure view-layer, fixed-speed downward
+    /// drive. Created lazily on play and invalidated on every stop or
+    /// teardown path — the link (which retains its target) must never
+    /// outlive this view or keep firing while paused.
+    private var isAutoScrolling = false
+    private var autoScrollDisplayLink: CADisplayLink?
+    /// Timestamp of the previous display-link beat; nil until the first
+    /// beat after a start records its baseline (no movement on beat one).
+    private var autoScrollLastTick: CFTimeInterval?
+    /// Play/pause toggle at the scrubber pill's leading edge.
+    private let autoScrollButton = NSButton()
+    /// Fixed drive speed in pt/s (ratified: single speed, ~10 s per screen).
+    private static let autoScrollSpeed: CGFloat = 110
+    /// Frame-delta ceiling: after an occlusion/hidden pause the display
+    /// link reports one huge dt, which would teleport the strip instead
+    /// of gliding.
+    private static let autoScrollMaxFrameInterval: CFTimeInterval = 0.1
+
     init(viewModel: ContinuousReaderViewModel) {
         self.viewModel = viewModel
         super.init(frame: .zero)
@@ -43,8 +62,23 @@ final class ContinuousReaderView: NSView {
         fatalError("init(coder:) is not supported")
     }
 
-    deinit {
+    // Isolated deinit: the display-link cleanup needs main-actor access to
+    // the (non-Sendable) link — normally every stop/teardown path already
+    // invalidated it (a live link retains its target, so it would also
+    // leak this view), this is the last-resort net. Isolation keeps that
+    // access legal under strict concurrency.
+    isolated deinit {
         NotificationCenter.default.removeObserver(self)
+        autoScrollDisplayLink?.invalidate()
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        // Leaving a window (mode switch back to paged, coordinator teardown)
+        // must kill the drive — the link may never outlive the view.
+        if window == nil {
+            stopAutoScroll()
+        }
     }
 
     override func layout() {
@@ -73,6 +107,23 @@ final class ContinuousReaderView: NSView {
         scrollView.scrollerStyle = .overlay
         scrollView.contentView.postsBoundsChangedNotifications = true
         scrollView.documentView = documentView
+        // Any user wheel/trackpad gesture on the strip yields the
+        // auto-scroll (see StripScrollView for why this hook only fires
+        // for user gestures).
+        scrollView.onUserScroll = { [weak self] in
+            self?.stopAutoScroll()
+        }
+
+        // Play/pause toggle inside the scrubber pill: a bare white SF
+        // Symbol that reads as part of the HUD capsule chrome.
+        autoScrollButton.isBordered = false
+        autoScrollButton.focusRingType = .none
+        autoScrollButton.refusesFirstResponder = true
+        autoScrollButton.contentTintColor = .white
+        autoScrollButton.imageScaling = .scaleProportionallyUpOrDown
+        autoScrollButton.target = self
+        autoScrollButton.action = #selector(toggleAutoScroll)
+        setAutoScrollSymbol(paused: true)
 
         progressLabel.font = .monospacedDigitSystemFont(ofSize: 12, weight: .medium)
         progressLabel.textColor = .white
@@ -91,6 +142,7 @@ final class ContinuousReaderView: NSView {
         scrubberSlider.target = self
         scrubberSlider.action = #selector(handleScrub(_:))
 
+        scrubberPill.addSubview(autoScrollButton)
         scrubberPill.addSubview(scrubberSlider)
         scrubberPill.addSubview(progressLabel)
         // The zoom flash reads over bright pages thanks to the shadow.
@@ -113,8 +165,13 @@ final class ContinuousReaderView: NSView {
             make.bottom.equalToSuperview().offset(-16)
             make.height.equalTo(32)
         }
+        autoScrollButton.snp.makeConstraints { make in
+            make.leading.equalToSuperview().offset(8)
+            make.centerY.equalToSuperview()
+            make.size.equalTo(24)
+        }
         scrubberSlider.snp.makeConstraints { make in
-            make.leading.equalToSuperview().offset(14)
+            make.leading.equalTo(autoScrollButton.snp.trailing).offset(6)
             make.centerY.equalToSuperview()
             make.width.equalTo(220)
         }
@@ -132,6 +189,15 @@ final class ContinuousReaderView: NSView {
             selector: #selector(clipBoundsDidChange(_:)),
             name: NSView.boundsDidChangeNotification,
             object: scrollView.contentView
+        )
+        // Closing the reader window does not remove the view from the
+        // window's hierarchy, so viewDidMoveToWindow alone would leave a
+        // firing (and self-retaining) link behind.
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(readerWindowWillClose(_:)),
+            name: NSWindow.willCloseNotification,
+            object: nil
         )
     }
 
@@ -169,8 +235,11 @@ final class ContinuousReaderView: NSView {
 
     /// Slider beats: mouseDown/drag only previews the page number, the jump
     /// commits on mouseUp so a slow drag never fires a load storm. Keyboard
-    /// steps (no mouse events) commit immediately.
+    /// steps (no mouse events) commit immediately. Any scrubber interaction
+    /// is manual positioning and yields the auto-scroll (chosen behavior;
+    /// see the review notes).
     @objc private func handleScrub(_ sender: NSSlider) {
+        stopAutoScroll()
         let page = Int(sender.doubleValue.rounded())
         switch NSApp.currentEvent?.type {
         case .leftMouseDown, .leftMouseDragged:
@@ -224,9 +293,82 @@ final class ContinuousReaderView: NSView {
 
     // MARK: - Zoom forwarding (keyboard arrives via the window controller)
 
-    func zoomIn() { viewModel.zoomIn() }
-    func zoomOut() { viewModel.zoomOut() }
-    func zoomReset() { viewModel.resetZoom() }
+    // Zooming triggers an anchored relayout; letting the drive continue
+    // afterwards would fight the new offset, so every zoom entry point
+    // yields first.
+    func zoomIn() { stopAutoScroll(); viewModel.zoomIn() }
+    func zoomOut() { stopAutoScroll(); viewModel.zoomOut() }
+    func zoomReset() { stopAutoScroll(); viewModel.resetZoom() }
+
+    // MARK: - Auto-scroll (自动滚屏)
+
+    /// Play/pause toggle (scrubber button and Space key).
+    @objc private func toggleAutoScroll() {
+        if isAutoScrolling {
+            stopAutoScroll()
+        } else {
+            startAutoScroll()
+        }
+    }
+
+    /// Play at (or within a hair of) the document bottom is a no-op: the
+    /// strip stays paused instead of jumping the position back to the top
+    /// — losing the reading spot to an accidental tap reads worse than a
+    /// momentarily dead tap (chosen behavior; see the review notes).
+    private func startAutoScroll() {
+        let maxOffset = max(0, viewModel.contentHeight - scrollView.contentView.bounds.height)
+        guard window != nil, scrollView.contentView.bounds.origin.y < maxOffset - 0.5 else { return }
+        isAutoScrolling = true
+        autoScrollLastTick = nil
+        autoScrollDisplayLink?.invalidate()
+        let link = displayLink(target: self, selector: #selector(autoScrollTick(_:)))
+        // The factory does NOT schedule the link — without an explicit
+        // add(to:forMode:) it never fires (verified by probe). .common keeps
+        // the beats flowing while menus/event tracking hold the default mode.
+        link.add(to: .main, forMode: .common)
+        autoScrollDisplayLink = link
+        setAutoScrollSymbol(paused: false)
+    }
+
+    /// Stops the drive, resets the toggle icon, and always drops the
+    /// display link (also when called while already paused, e.g. from
+    /// teardown paths) so no callback can fire while idle.
+    private func stopAutoScroll() {
+        autoScrollDisplayLink?.invalidate()
+        autoScrollDisplayLink = nil
+        autoScrollLastTick = nil
+        guard isAutoScrolling else { return }
+        isAutoScrolling = false
+        setAutoScrollSymbol(paused: true)
+    }
+
+    /// One display-link beat: advance the offset by 110 pt/s × dt through
+    /// the existing clamping `scroll(to:)` (slot sync, page reporting, and
+    /// warm window all ride its bounds-change notification chain), then
+    /// stop on reaching the document bottom.
+    @objc private func autoScrollTick(_ link: CADisplayLink) {
+        guard isAutoScrolling else { return }
+        let timestamp = link.targetTimestamp
+        defer { autoScrollLastTick = timestamp }
+        // First beat after a start only records the timing baseline.
+        guard let last = autoScrollLastTick else { return }
+        let dt = min(max(timestamp - last, 0), Self.autoScrollMaxFrameInterval)
+        guard dt > 0 else { return }
+        scroll(to: scrollView.contentView.bounds.origin.y + Self.autoScrollSpeed * CGFloat(dt))
+        let maxOffset = max(0, viewModel.contentHeight - scrollView.contentView.bounds.height)
+        if scrollView.contentView.bounds.origin.y >= maxOffset {
+            stopAutoScroll()
+        }
+    }
+
+    private func setAutoScrollSymbol(paused: Bool) {
+        autoScrollButton.image = NSImage(
+            systemSymbolName: paused ? "play.fill" : "pause.fill",
+            accessibilityDescription: "自动滚屏"
+        )?.withSymbolConfiguration(
+            NSImage.SymbolConfiguration(pointSize: 12, weight: .semibold)
+        )
+    }
 
     /// Briefly flashes the zoom factor at the window center, then fades it
     /// out; rapid repeated zooms retrigger instead of stacking fades.
@@ -259,18 +401,26 @@ final class ContinuousReaderView: NSView {
         viewModel.updateScrollOffset(scrollView.contentView.bounds.origin.y)
     }
 
+    @objc private func readerWindowWillClose(_ notification: Notification) {
+        guard notification.object as? NSWindow === window else { return }
+        stopAutoScroll()
+    }
+
     // MARK: - Keyboard
 
     /// Handles scroll keys while strip mode owns the window. Returns true
-    /// when the key was consumed. Left/right are consumed as no-ops —
-    /// paging keys have no meaning in the strip.
+    /// when the key was consumed. Space toggles the auto-scroll; the
+    /// scroll keys first yield a running auto-scroll (manual scroll beats
+    /// the drive). Left/right are consumed as no-ops — paging keys have no
+    /// meaning in the strip.
     func handleKey(_ event: NSEvent) -> Bool {
         let offset = scrollView.contentView.bounds.origin.y
         switch event.keyCode {
-        case 126: scroll(to: offset - 80) // ↑
-        case 125: scroll(to: offset + 80) // ↓
-        case 116: scroll(to: offset - scrollView.contentView.bounds.height) // PageUp
-        case 121: scroll(to: offset + scrollView.contentView.bounds.height) // PageDown
+        case 49: if !event.isARepeat { toggleAutoScroll() } // Space (hold-to-repeat must not flicker)
+        case 126: stopAutoScroll(); scroll(to: offset - 80) // ↑
+        case 125: stopAutoScroll(); scroll(to: offset + 80) // ↓
+        case 116: stopAutoScroll(); scroll(to: offset - scrollView.contentView.bounds.height) // PageUp
+        case 121: stopAutoScroll(); scroll(to: offset + scrollView.contentView.bounds.height) // PageDown
         case 123, 124: break // ←/→
         default: return false
         }
@@ -283,6 +433,21 @@ final class ContinuousReaderView: NSView {
 @MainActor
 private final class StripDocumentView: NSView {
     override var isFlipped: Bool { true }
+}
+
+/// The strip's scroll view. `scrollWheel` is the one funnel through which
+/// every user wheel/trackpad gesture passes — the view's own programmatic
+/// scrolling via `contentView.scroll(to:)` (auto-scroll beats, key
+/// scrolling, relayouts) never does — so the hook cleanly separates "the
+/// user touched the strip" from the view driving itself, without flags.
+@MainActor
+private final class StripScrollView: NSScrollView {
+    var onUserScroll: (() -> Void)?
+
+    override func scrollWheel(with event: NSEvent) {
+        onUserScroll?()
+        super.scrollWheel(with: event)
+    }
 }
 
 /// One page slot. The page index is pinned at creation and never changes;

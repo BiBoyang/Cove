@@ -4,13 +4,12 @@
 
 ## 进行中 / 待验收
 
-（无）
+- [ ] 阅读位置记忆（已实现待真机验收，见 plans/TASK-reader-position-memory.md）
+- [ ] 条带自动滚屏（已实现待真机验收，见 plans/TASK-strip-autoscroll.md）
 
 ## 下一波（候选，未排期）
 
 - [ ] 服务器远程地址（家里/远程切换）：Tailscale/WireGuard 远程访问的 Cove 侧方案（见 plans/TASK-remote-address.md；不急，待排期）
-- [ ] 阅读位置记忆：阅读器（cbz/图片目录）记住最后看到的页码，重开直接回到该页，看完的从头开始（对齐视频"看完即删"语义；可复用 PlaybackProgressStore 模式）
-- [ ] 条带自动滚屏（条带模式自动向下滑动阅读；手动滑动打磨稳定后再做）
 
 ## 上架前必须
 
