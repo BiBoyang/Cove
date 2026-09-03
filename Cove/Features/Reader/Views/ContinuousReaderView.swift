@@ -15,7 +15,7 @@ import SnapKit
 @MainActor
 final class ContinuousReaderView: NSView {
     private let viewModel: ContinuousReaderViewModel
-    private let scrollView = StripScrollView()
+    private let scrollView = NSScrollView()
     private let documentView = StripDocumentView()
     /// Bottom-center scrubber pill: drag the slider to preview a page
     /// number, release to jump. Replaces the passive progress label.
@@ -107,12 +107,6 @@ final class ContinuousReaderView: NSView {
         scrollView.scrollerStyle = .overlay
         scrollView.contentView.postsBoundsChangedNotifications = true
         scrollView.documentView = documentView
-        // Any user wheel/trackpad gesture on the strip yields the
-        // auto-scroll (see StripScrollView for why this hook only fires
-        // for user gestures).
-        scrollView.onUserScroll = { [weak self] in
-            self?.stopAutoScroll()
-        }
 
         // Play/pause toggle inside the scrubber pill: a bare white SF
         // Symbol that reads as part of the HUD capsule chrome.
@@ -235,11 +229,11 @@ final class ContinuousReaderView: NSView {
 
     /// Slider beats: mouseDown/drag only previews the page number, the jump
     /// commits on mouseUp so a slow drag never fires a load storm. Keyboard
-    /// steps (no mouse events) commit immediately. Any scrubber interaction
-    /// is manual positioning and yields the auto-scroll (chosen behavior;
-    /// see the review notes).
+    /// steps (no mouse events) commit immediately. Scrubbing is a manual
+    /// reposition: the auto-scroll (if running) just continues from the new
+    /// spot — only zoom, an explicit toggle, the bottom edge, and teardown
+    /// stop it.
     @objc private func handleScrub(_ sender: NSSlider) {
-        stopAutoScroll()
         let page = Int(sender.doubleValue.rounded())
         switch NSApp.currentEvent?.type {
         case .leftMouseDown, .leftMouseDragged:
@@ -409,18 +403,18 @@ final class ContinuousReaderView: NSView {
     // MARK: - Keyboard
 
     /// Handles scroll keys while strip mode owns the window. Returns true
-    /// when the key was consumed. Space toggles the auto-scroll; the
-    /// scroll keys first yield a running auto-scroll (manual scroll beats
-    /// the drive). Left/right are consumed as no-ops — paging keys have no
-    /// meaning in the strip.
+    /// when the key was consumed. Space toggles the auto-scroll; scroll keys
+    /// are manual repositions and never interrupt a running auto-scroll —
+    /// the drive simply continues from the new spot. Left/right are consumed
+    /// as no-ops — paging keys have no meaning in the strip.
     func handleKey(_ event: NSEvent) -> Bool {
         let offset = scrollView.contentView.bounds.origin.y
         switch event.keyCode {
         case 49: if !event.isARepeat { toggleAutoScroll() } // Space (hold-to-repeat must not flicker)
-        case 126: stopAutoScroll(); scroll(to: offset - 80) // ↑
-        case 125: stopAutoScroll(); scroll(to: offset + 80) // ↓
-        case 116: stopAutoScroll(); scroll(to: offset - scrollView.contentView.bounds.height) // PageUp
-        case 121: stopAutoScroll(); scroll(to: offset + scrollView.contentView.bounds.height) // PageDown
+        case 126: scroll(to: offset - 80) // ↑
+        case 125: scroll(to: offset + 80) // ↓
+        case 116: scroll(to: offset - scrollView.contentView.bounds.height) // PageUp
+        case 121: scroll(to: offset + scrollView.contentView.bounds.height) // PageDown
         case 123, 124: break // ←/→
         default: return false
         }
@@ -433,21 +427,6 @@ final class ContinuousReaderView: NSView {
 @MainActor
 private final class StripDocumentView: NSView {
     override var isFlipped: Bool { true }
-}
-
-/// The strip's scroll view. `scrollWheel` is the one funnel through which
-/// every user wheel/trackpad gesture passes — the view's own programmatic
-/// scrolling via `contentView.scroll(to:)` (auto-scroll beats, key
-/// scrolling, relayouts) never does — so the hook cleanly separates "the
-/// user touched the strip" from the view driving itself, without flags.
-@MainActor
-private final class StripScrollView: NSScrollView {
-    var onUserScroll: (() -> Void)?
-
-    override func scrollWheel(with event: NSEvent) {
-        onUserScroll?()
-        super.scrollWheel(with: event)
-    }
 }
 
 /// One page slot. The page index is pinned at creation and never changes;
