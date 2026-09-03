@@ -8,6 +8,7 @@ protocol PlayerPlaybackControlling: AnyObject {
     func seek(bySeconds seconds: Int)
     func seekTo(seconds: Double)
     func setVolume(_ volume: Double)
+    func setSpeed(_ speed: Double)
 }
 
 /// UI-facing playback state for one video session. Raw mpv events
@@ -51,6 +52,8 @@ final class PlayerViewModel {
     /// user is dragging does not fight playback position updates.
     private(set) var isScrubbing = false
     private(set) var volume: Double = 100
+    /// Playback rate multiplier; 1 = normal speed.
+    private(set) var speed: Double = 1
     /// Whether the floating controls (capsule + overlay title) are shown.
     /// Auto-hide only ever engages during smooth playback; see
     /// `updateIdlePolicy`.
@@ -210,6 +213,23 @@ final class PlayerViewModel {
     func adjustVolume(by delta: Double) {
         setVolume(volume + delta)
         noteMouseActivity()
+    }
+
+    /// Playback rate; only the popover's offered values reach here, so no
+    /// clamping beyond sanity.
+    func setSpeed(_ newValue: Double) {
+        speed = min(max(0.25, newValue), 4)
+        controller.setSpeed(speed)
+        onChange?()
+    }
+
+    /// Restarts the current video from the top (repeat-one mode): mpv parks
+    /// paused at EOF under keep-open, so seek back and unpause.
+    func replayFromStart() {
+        controller.seekTo(seconds: 0)
+        if isPaused {
+            controller.togglePause()
+        }
     }
 
     // MARK: - Idle auto-hide

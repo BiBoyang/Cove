@@ -2,22 +2,34 @@ import AppKit
 import SnapKit
 import SourceKit
 
-/// The v1 player window: the mpv render layer fills the whole window
-/// (title bar hidden, full-size content), a floating frosted capsule
-/// carries previous/next, play/pause, a draggable progress slider, the
-/// time readout, and volume, and the file name sits as a small overlay
-/// label in the top-left corner. During playback the capsule, title, and
-/// cursor hide after a short idle timeout and come back on any mouse
-/// movement. Keyboard controls: space = pause, arrows = ±10s, up/down =
-/// volume, Esc = exit full screen.
+/// The player window, styled after SenPlayer: the mpv render layer fills
+/// the whole window under a transparent title bar, with the file name as a
+/// centered overlay title at the top (long names truncate from the middle
+/// so they stay centered). A floating frosted capsule at the bottom
+/// carries, in order: previous / play-pause / next, the playback-rate
+/// button ("1x", popover with speeds), volume icon + slider + live number,
+/// the draggable progress slider, the time readout, and the playlist
+/// button (popover listing the queue; tap a row to jump to it). The play
+/// mode (single / repeat-one / list / list-loop / shuffle) is a capsule
+/// button showing the current mode symbol with a popover picker.
 ///
-/// Track changes swap the session in place (`install`): the window, its
+/// During playback the capsule and cursor hide after a short idle timeout
+/// and come back on any mouse movement; the centered title stays put.
+/// Keyboard controls: space = pause, arrows = ±10s, up/down = volume,
+/// Esc = exit full screen. While the up-next countdown overlay is shown,
+/// Esc = cancel it and Return = play now, taking priority over the keys
+/// above (press Esc again afterwards to exit full screen).
+///
+/// The overlay itself only renders and forwards callbacks; the countdown
+/// lifecycle (timer, firing into a track change, every cancel path) lives
+/// in the coordinator, as do the playlist and play-mode decisions. Track
+/// changes swap the session in place (`install`): the window, its
 /// full-screen state, and its position survive; only the mpv core, the
 /// view model, and the video layer are replaced.
 ///
-/// This controller only renders `PlayerViewModel` state and forwards input;
-/// playback state and the idle-hide policy live in the view model, the mpv
-/// handle in the core.
+/// This controller only renders `PlayerViewModel` state and forwards
+/// input; playback state and the idle-hide policy live in the view model,
+/// the mpv handle in the core.
 @MainActor
 final class PlayerWindowController: NSWindowController, NSWindowDelegate {
     private var core: MPVPlayerCore
@@ -28,19 +40,54 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
     /// Playlist transport intents, wired by the coordinator.
     var onPreviousTrack: (() -> Void)?
     var onNextTrack: (() -> Void)?
+    /// Playlist panel / popovers, wired by the coordinator.
+    var onSelectTrack: ((_ path: String) -> Void)?
+    var onPlayModeSelected: ((_ mode: PlayMode) -> Void)?
+    var onSpeedSelected: ((_ speed: Double) -> Void)?
+    /// Up-next overlay intents, wired by the coordinator.
+    var onUpNextPlayNow: (() -> Void)?
+    var onUpNextCancel: (() -> Void)?
 
     private let rootView = PlayerRootView()
     private let previousTrackButton = NSButton()
     private let playPauseButton = NSButton()
     private let nextTrackButton = NSButton()
+    private let speedButton = NSButton()
     private let progressSlider = NSSlider()
     private let timeLabel = NSTextField(labelWithString: "")
     private let volumeIconView = NSImageView()
     private let volumeSlider = NSSlider()
-    private let titleLabel = NSTextField(labelWithString: "")
+    /// Live volume readout ("65") next to the slider; updates on drags and
+    /// arrow-key nudges alike.
+    private let volumeValueLabel = NSTextField(labelWithString: "")
+    private let playModeButton = NSButton()
+    private let playlistButton = NSButton()
+    private let centerTitleLabel = NSTextField(labelWithString: "")
     private let controlsCapsule = ControlsCapsuleView()
+    private let upNextOverlay = UpNextOverlayView()
     private var videoHost: VideoLayerHostView?
     private var renderedControlsVisible = true
+    /// Mirrors the overlay's visibility for keyboard routing only; the
+    /// countdown decisions stay in the coordinator.
+    private var isUpNextShown = false
+    /// Queue snapshot for the playlist popover (refreshed by the
+    /// coordinator via `setPlaylist`).
+    private var playlistItems: [ContentItem] = []
+    private var playlistCurrentIndex = 0
+    private var currentPlayMode: PlayMode = .list
+    /// Retained while shown; a popover deallocates mid-flight otherwise.
+    private var activePopover: NSPopover?
+
+    /// Playback rates offered by the speed popover.
+    private static let speedOptions: [Double] = [0.5, 0.75, 1, 1.25, 1.5, 2]
+    /// Play modes with their popover labels and capsule symbols.
+    private static let playModeInfo: [(mode: PlayMode, label: String, symbol: String)] = [
+        (.single, "单视频播放", "play.rectangle"),
+        (.repeatOne, "单视频循环", "repeat.1"),
+        (.list, "列表播放", "list.bullet"),
+        (.listLoop, "列表循环", "repeat"),
+        (.shuffle, "随机播放", "shuffle"),
+    ]
 
     init(item: ContentItem, core: MPVPlayerCore, viewModel: PlayerViewModel) {
         self.core = core
@@ -52,6 +99,9 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
             defer: false
         )
         window.title = item.name
+        // The centered overlay title below replaces the system title (long
+        // names lean left in the system title bar; ours truncates from the
+        // middle and stays centered).
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
         window.backgroundColor = .black
@@ -89,9 +139,12 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
         videoHost = host
         rootView.addSubview(host)
 
-        // Leading offset clears the traffic lights.
-        titleLabel.attributedStringValue = Self.makeOverlayTitle(title)
-        rootView.addSubview(titleLabel)
+        // Centered file name across the top: middle-truncating so a long
+        // name stays visually centered, with a shadow for bright frames.
+        centerTitleLabel.attributedStringValue = Self.makeCenterTitle(title)
+        centerTitleLabel.lineBreakMode = .byTruncatingMiddle
+        centerTitleLabel.alignment = .center
+        rootView.addSubview(centerTitleLabel)
 
         // The capsule carries the shadow on its own (unclipped) layer; the
         // material view inside clips to the corner radius.
@@ -123,9 +176,31 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
             accessibilityDescription: "下一个视频",
             action: #selector(handleNextTrack(_:))
         )
+        configureButton(
+            playlistButton, symbol: "list.bullet.rectangle",
+            accessibilityDescription: "播放列表",
+            action: #selector(handlePlaylistTapped(_:))
+        )
         // Disabled until the coordinator reports the playlist position.
         previousTrackButton.isEnabled = false
         nextTrackButton.isEnabled = false
+
+        // Playback rate: text button ("1x"), popover with fixed rates.
+        speedButton.isBordered = false
+        speedButton.title = "1x"
+        speedButton.font = .monospacedDigitSystemFont(ofSize: 12, weight: .medium)
+        speedButton.contentTintColor = NSColor.white.withAlphaComponent(0.8)
+        speedButton.target = self
+        speedButton.action = #selector(handleSpeedTapped(_:))
+
+        // Play mode: symbol button reflecting the current mode.
+        playModeButton.isBordered = false
+        playModeButton.image = NSImage(systemSymbolName: "list.bullet", accessibilityDescription: "播放模式")?
+            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 14, weight: .medium))
+        playModeButton.contentTintColor = NSColor.white.withAlphaComponent(0.8)
+        playModeButton.target = self
+        playModeButton.action = #selector(handlePlayModeTapped(_:))
+
         progressSlider.isContinuous = true
         progressSlider.minValue = 0
         progressSlider.maxValue = 1
@@ -146,20 +221,32 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
         volumeSlider.target = self
         volumeSlider.action = #selector(handleVolumeSlider(_:))
 
+        volumeValueLabel.font = .monospacedDigitSystemFont(ofSize: 11, weight: .medium)
+        volumeValueLabel.textColor = NSColor.white.withAlphaComponent(0.7)
+        volumeValueLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
+        volumeValueLabel.setContentHuggingPriority(.required, for: .horizontal)
+
         capsuleMaterial.addSubview(previousTrackButton)
         capsuleMaterial.addSubview(playPauseButton)
         capsuleMaterial.addSubview(nextTrackButton)
-        capsuleMaterial.addSubview(progressSlider)
-        capsuleMaterial.addSubview(timeLabel)
+        capsuleMaterial.addSubview(speedButton)
         capsuleMaterial.addSubview(volumeIconView)
         capsuleMaterial.addSubview(volumeSlider)
+        capsuleMaterial.addSubview(volumeValueLabel)
+        capsuleMaterial.addSubview(progressSlider)
+        capsuleMaterial.addSubview(timeLabel)
+        capsuleMaterial.addSubview(playlistButton)
+        capsuleMaterial.addSubview(playModeButton)
 
         host.snp.makeConstraints { make in
             make.edges.equalToSuperview()
         }
-        titleLabel.snp.makeConstraints { make in
-            make.leading.equalToSuperview().offset(72)
-            make.top.equalToSuperview().offset(10)
+        centerTitleLabel.snp.makeConstraints { make in
+            make.centerX.equalToSuperview()
+            make.top.equalToSuperview().offset(7)
+            // Clear the traffic lights on both sides.
+            make.leading.greaterThanOrEqualToSuperview().offset(90)
+            make.trailing.lessThanOrEqualToSuperview().offset(-90)
         }
         controlsCapsule.snp.makeConstraints { make in
             make.leading.trailing.equalToSuperview().inset(16)
@@ -184,24 +271,58 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
             make.centerY.equalToSuperview()
             make.size.equalTo(28)
         }
+        speedButton.snp.makeConstraints { make in
+            make.leading.equalTo(nextTrackButton.snp.trailing).offset(12)
+            make.centerY.equalToSuperview()
+            make.width.equalTo(38)
+        }
+        volumeIconView.snp.makeConstraints { make in
+            make.leading.equalTo(speedButton.snp.trailing).offset(8)
+            make.centerY.equalToSuperview()
+            make.size.equalTo(16)
+        }
+        volumeSlider.snp.makeConstraints { make in
+            make.leading.equalTo(volumeIconView.snp.trailing).offset(4)
+            make.centerY.equalToSuperview()
+            make.width.equalTo(64)
+        }
+        volumeValueLabel.snp.makeConstraints { make in
+            make.leading.equalTo(volumeSlider.snp.trailing).offset(4)
+            make.centerY.equalToSuperview()
+        }
+        // The progress bar is the flexible element between volume and time.
         progressSlider.snp.makeConstraints { make in
-            make.leading.equalTo(nextTrackButton.snp.trailing).offset(10)
+            make.leading.equalTo(volumeValueLabel.snp.trailing).offset(12)
             make.centerY.equalToSuperview()
         }
         timeLabel.snp.makeConstraints { make in
             make.leading.equalTo(progressSlider.snp.trailing).offset(10)
             make.centerY.equalToSuperview()
         }
-        volumeIconView.snp.makeConstraints { make in
+        playModeButton.snp.makeConstraints { make in
             make.leading.equalTo(timeLabel.snp.trailing).offset(10)
             make.centerY.equalToSuperview()
-            make.size.equalTo(16)
+            make.size.equalTo(28)
         }
-        volumeSlider.snp.makeConstraints { make in
-            make.leading.equalTo(volumeIconView.snp.trailing).offset(6)
+        playlistButton.snp.makeConstraints { make in
+            make.leading.equalTo(playModeButton.snp.trailing).offset(4)
             make.trailing.equalToSuperview().offset(-16)
             make.centerY.equalToSuperview()
-            make.width.equalTo(80)
+            make.size.equalTo(28)
+        }
+
+        // Up-next pill: same shadow/material recipe as the controls capsule,
+        // parked above it in the bottom-right corner. Added last so it sits
+        // on top of everything (including future video host swaps, which are
+        // always positioned below the centered title).
+        upNextOverlay.onPlayNow = { [weak self] in self?.onUpNextPlayNow?() }
+        upNextOverlay.onCancel = { [weak self] in self?.onUpNextCancel?() }
+        rootView.addSubview(upNextOverlay)
+        upNextOverlay.snp.makeConstraints { make in
+            make.trailing.equalToSuperview().offset(-16)
+            // Above the 48pt capsule (bottom -16): 16 + 48 + 12 gap = 76.
+            make.bottom.equalToSuperview().offset(-76)
+            make.width.lessThanOrEqualTo(340)
         }
     }
 
@@ -229,6 +350,38 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
         nextTrackButton.isEnabled = canGoNext
     }
 
+    /// Refreshes the queue snapshot behind the playlist popover and the
+    /// highlighted row (called by the coordinator on open and track change).
+    func setPlaylist(items: [ContentItem], currentIndex: Int, playMode: PlayMode) {
+        playlistItems = items
+        playlistCurrentIndex = currentIndex
+        setPlayMode(playMode)
+        // The old panel's highlight is stale the moment the queue moves.
+        if activePopover?.contentViewController is PlaylistPopoverController {
+            activePopover?.close()
+        }
+    }
+
+    /// Updates the play-mode button's symbol to `mode`.
+    func setPlayMode(_ mode: PlayMode) {
+        currentPlayMode = mode
+        guard let info = Self.playModeInfo.first(where: { $0.mode == mode }) else { return }
+        playModeButton.image = NSImage(
+            systemSymbolName: info.symbol, accessibilityDescription: "播放模式"
+        )?.withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 14, weight: .medium))
+        playModeButton.toolTip = info.label
+    }
+
+    /// Applies a rate chosen in the speed popover to the live session.
+    func applySpeed(_ speed: Double) {
+        viewModel.setSpeed(speed)
+    }
+
+    /// Repeat-one replay of the live session (coordinator-driven).
+    func replayCurrentTrack() {
+        viewModel.replayFromStart()
+    }
+
     /// Swaps the live session for a new track without closing the window:
     /// full screen and window position survive the change. Order matters —
     /// persist the outgoing resume point, cut its event feed so a dying mpv
@@ -244,7 +397,7 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
         self.viewModel = viewModel
 
         let host = VideoLayerHostView(videoLayer: core.videoLayer)
-        rootView.addSubview(host, positioned: .below, relativeTo: titleLabel)
+        rootView.addSubview(host, positioned: .below, relativeTo: centerTitleLabel)
         host.snp.makeConstraints { make in
             make.edges.equalToSuperview()
         }
@@ -252,7 +405,7 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
         videoHost = host
 
         window?.title = item.name
-        titleLabel.attributedStringValue = Self.makeOverlayTitle(item.name)
+        centerTitleLabel.attributedStringValue = Self.makeCenterTitle(item.name)
         startSession()
     }
 
@@ -263,9 +416,9 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
         core.load()
     }
 
-    /// The overlay file name: small white text with a shadow so it stays
+    /// The centered file name: white text with a shadow so it stays
     /// readable on bright frames.
-    private static func makeOverlayTitle(_ title: String) -> NSAttributedString {
+    private static func makeCenterTitle(_ title: String) -> NSAttributedString {
         let shadow = NSShadow()
         shadow.shadowColor = NSColor.black.withAlphaComponent(0.6)
         shadow.shadowBlurRadius = 3
@@ -273,11 +426,101 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
         return NSAttributedString(
             string: title,
             attributes: [
-                .font: NSFont.systemFont(ofSize: 12, weight: .medium),
-                .foregroundColor: NSColor.white.withAlphaComponent(0.8),
+                .font: NSFont.systemFont(ofSize: 13, weight: .medium),
+                .foregroundColor: NSColor.white.withAlphaComponent(0.9),
                 .shadow: shadow,
             ]
         )
+    }
+
+    /// Capsule text for a rate: "1x", "1.5x".
+    private static func speedLabel(_ speed: Double) -> String {
+        speed == speed.rounded() ? "\(Int(speed))x" : "\(speed)x"
+    }
+
+    // MARK: - Popovers
+
+    /// Presents `controller` in a transient dark popover above `anchor`.
+    private func presentPopover(_ controller: NSViewController, from anchor: NSView) {
+        let popover = NSPopover()
+        popover.contentViewController = controller
+        popover.behavior = .transient
+        popover.appearance = NSAppearance(named: .darkAqua)
+        activePopover = popover
+        popover.delegate = self
+        popover.show(relativeTo: anchor.bounds, of: anchor, preferredEdge: .maxY)
+    }
+
+    @objc private func handleSpeedTapped(_ sender: NSButton) {
+        let options = Self.speedOptions.map {
+            (label: Self.speedLabel($0), value: String($0), checked: $0 == viewModel.speed)
+        }
+        let controller = OptionListPopoverController(
+            header: "播放速度",
+            options: options
+        ) { [weak self] value in
+            self?.activePopover?.close()
+            if let speed = Double(value) {
+                self?.onSpeedSelected?(speed)
+            }
+        }
+        presentPopover(controller, from: sender)
+    }
+
+    @objc private func handlePlayModeTapped(_ sender: NSButton) {
+        let options = Self.playModeInfo.map {
+            (label: $0.label, value: "\($0.mode)", checked: $0.mode == currentPlayMode)
+        }
+        let controller = OptionListPopoverController(
+            header: "播放模式",
+            options: options
+        ) { [weak self] value in
+            self?.activePopover?.close()
+            guard let mode = Self.playModeInfo.first(where: { "\($0.mode)" == value })?.mode else { return }
+            self?.onPlayModeSelected?(mode)
+        }
+        presentPopover(controller, from: sender)
+    }
+
+    @objc private func handlePlaylistTapped(_ sender: NSButton) {
+        let controller = PlaylistPopoverController(
+            items: playlistItems,
+            currentIndex: playlistCurrentIndex
+        ) { [weak self] path in
+            self?.activePopover?.close()
+            self?.onSelectTrack?(path)
+        }
+        presentPopover(controller, from: sender)
+    }
+
+    // MARK: - Up Next overlay
+
+    /// Shows the countdown pill for `title` with the given remaining
+    /// seconds. Pure rendering: the coordinator drives timing and firing.
+    func showUpNext(title: String, seconds: Int) {
+        upNextOverlay.configure(title: title, seconds: seconds)
+        guard !isUpNextShown else { return }
+        isUpNextShown = true
+        upNextOverlay.isHidden = false
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.15
+            upNextOverlay.animator().alphaValue = 1
+        }
+    }
+
+    /// Refreshes the countdown readout ("N 秒后播放").
+    func updateUpNext(seconds: Int) {
+        upNextOverlay.update(seconds: seconds)
+    }
+
+    /// Hides the pill. Instant rather than faded: by the time this runs the
+    /// countdown has ended (fired into a track change or cancelled), so a
+    /// lingering overlay would only obscure the new frame.
+    func hideUpNext() {
+        guard isUpNextShown else { return }
+        isUpNextShown = false
+        upNextOverlay.isHidden = true
+        upNextOverlay.alphaValue = 0
     }
 
     // MARK: - Rendering
@@ -291,13 +534,19 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
         if !viewModel.isScrubbing {
             progressSlider.doubleValue = viewModel.currentTime
         }
+        // Volume slider + readout follow every change source (arrow keys
+        // included) — the slider itself only reflects drags through its
+        // own action, so the keyboard path used to leave it behind.
+        volumeSlider.doubleValue = viewModel.volume
+        volumeValueLabel.stringValue = "\(Int(viewModel.volume.rounded()))"
+        speedButton.title = Self.speedLabel(viewModel.speed)
         timeLabel.stringValue = viewModel.statusText ?? viewModel.timeText
         renderControlsVisibility()
     }
 
-    /// Fades the capsule and overlay title in/out and hides the cursor
-    /// alongside them. Hit-testing on the capsule is cut while hidden so
-    /// the invisible controls cannot catch clicks.
+    /// Fades the capsule in/out and hides the cursor alongside it.
+    /// Hit-testing on the capsule is cut while hidden so the invisible
+    /// controls cannot catch clicks.
     private func renderControlsVisibility() {
         let visible = viewModel.controlsVisible
         guard visible != renderedControlsVisible else { return }
@@ -306,7 +555,6 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
         NSAnimationContext.runAnimationGroup { context in
             context.duration = 0.15
             controlsCapsule.animator().alphaValue = visible ? 1 : 0
-            titleLabel.animator().alphaValue = visible ? 1 : 0
         }
         if !visible {
             hideCursorIfInsideWindow()
@@ -363,6 +611,21 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
 
     /// Returns true when the key was consumed.
     private func handleKeyDown(_ event: NSEvent) -> Bool {
+        // The up-next overlay takes priority while shown: Esc cancels the
+        // countdown (a second Esc then exits full screen as usual) and
+        // Return plays the next track immediately.
+        if isUpNextShown {
+            switch event.keyCode {
+            case 53: // esc
+                onUpNextCancel?()
+                return true
+            case 36: // return
+                onUpNextPlayNow?()
+                return true
+            default:
+                break
+            }
+        }
         switch event.keyCode {
         case 49: // space
             viewModel.togglePause()
@@ -400,6 +663,14 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
         core.shutdown()
         onClose?()
         onClose = nil
+    }
+}
+
+extension PlayerWindowController: NSPopoverDelegate {
+    /// Drops the retention once the popover dismissed (transient tap-out or
+    /// an explicit close after selection).
+    func popoverDidClose(_ notification: Notification) {
+        activePopover = nil
     }
 }
 
@@ -495,6 +766,371 @@ private final class ControlsCapsuleView: NSView {
 
     override func mouseEntered(with event: NSEvent) { onHoverChanged?(true) }
     override func mouseExited(with event: NSEvent) { onHoverChanged?(false) }
+}
+
+/// The "Up Next" countdown pill: next-episode file name (truncated), the
+/// seconds readout, and the play-now / cancel actions. Same visual recipe
+/// as the controls capsule — drop shadow on its own unclipped layer, the
+/// HUD material inside clips itself to the corner radius. Pure rendering:
+/// no timer, no countdown decisions, callbacks are forwarded to the
+/// window controller which relays them to the coordinator.
+private final class UpNextOverlayView: NSView {
+    var onPlayNow: (() -> Void)?
+    var onCancel: (() -> Void)?
+
+    private let titleLabel = NSTextField(labelWithString: "")
+    private let countdownLabel = NSTextField(labelWithString: "")
+    private let playNowButton = NSButton(title: "立即播放", target: nil, action: nil)
+    private let cancelButton = NSButton(title: "取消", target: nil, action: nil)
+
+    init() {
+        super.init(frame: .zero)
+        // Starts hidden: showUpNext fades the alpha in from zero.
+        isHidden = true
+        alphaValue = 0
+        wantsLayer = true
+        let shadow = NSShadow()
+        shadow.shadowColor = NSColor.black.withAlphaComponent(0.35)
+        shadow.shadowBlurRadius = 10
+        shadow.shadowOffset = NSSize(width: 0, height: -2)
+        self.shadow = shadow
+
+        let material = NSVisualEffectView()
+        material.material = .hudWindow
+        material.blendingMode = .withinWindow
+        material.state = .active
+        material.wantsLayer = true
+        material.layer?.cornerRadius = CoveStyle.radiusLarge
+        material.layer?.masksToBounds = true
+        addSubview(material)
+
+        titleLabel.lineBreakMode = .byTruncatingTail
+        titleLabel.attributedStringValue = NSAttributedString(
+            string: "",
+            attributes: [
+                .font: NSFont.systemFont(ofSize: 13, weight: .medium),
+                .foregroundColor: NSColor.white.withAlphaComponent(0.9),
+            ]
+        )
+        // The file name yields and truncates; the pill never grows past its
+        // width cap because of a long name.
+        titleLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+
+        countdownLabel.font = .systemFont(ofSize: 12)
+        countdownLabel.textColor = NSColor.white.withAlphaComponent(0.7)
+
+        styleButton(playNowButton, emphasized: true)
+        styleButton(cancelButton, emphasized: false)
+        playNowButton.target = self
+        playNowButton.action = #selector(handlePlayNow)
+        cancelButton.target = self
+        cancelButton.action = #selector(handleCancel)
+
+        material.addSubview(titleLabel)
+        material.addSubview(countdownLabel)
+        material.addSubview(playNowButton)
+        material.addSubview(cancelButton)
+
+        material.snp.makeConstraints { make in
+            make.edges.equalToSuperview()
+        }
+        titleLabel.snp.makeConstraints { make in
+            make.leading.equalToSuperview().offset(16)
+            make.top.equalToSuperview().offset(10)
+            make.width.lessThanOrEqualTo(220)
+        }
+        countdownLabel.snp.makeConstraints { make in
+            make.leading.equalToSuperview().offset(16)
+            make.top.equalTo(titleLabel.snp.bottom).offset(3)
+            make.bottom.equalToSuperview().offset(-10)
+        }
+        playNowButton.snp.makeConstraints { make in
+            make.leading.greaterThanOrEqualTo(titleLabel.snp.trailing).offset(12)
+            make.leading.greaterThanOrEqualTo(countdownLabel.snp.trailing).offset(12)
+            make.centerY.equalToSuperview()
+        }
+        cancelButton.snp.makeConstraints { make in
+            make.leading.equalTo(playNowButton.snp.trailing).offset(2)
+            make.trailing.equalToSuperview().offset(-16)
+            make.centerY.equalToSuperview()
+        }
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) is not supported")
+    }
+
+    override func layout() {
+        super.layout()
+        layer?.shadowPath = CGPath(
+            roundedRect: bounds,
+            cornerWidth: CoveStyle.radiusLarge,
+            cornerHeight: CoveStyle.radiusLarge,
+            transform: nil
+        )
+    }
+
+    func configure(title: String, seconds: Int) {
+        titleLabel.attributedStringValue = NSAttributedString(
+            string: title,
+            attributes: [
+                .font: NSFont.systemFont(ofSize: 13, weight: .medium),
+                .foregroundColor: NSColor.white.withAlphaComponent(0.9),
+            ]
+        )
+        update(seconds: seconds)
+    }
+
+    func update(seconds: Int) {
+        countdownLabel.stringValue = "\(seconds) 秒后播放"
+    }
+
+    private func styleButton(_ button: NSButton, emphasized: Bool) {
+        button.isBordered = false
+        button.font = .systemFont(ofSize: 13, weight: emphasized ? .semibold : .regular)
+        button.contentTintColor = emphasized ? .white : NSColor.white.withAlphaComponent(0.65)
+    }
+
+    @objc private func handlePlayNow() { onPlayNow?() }
+    @objc private func handleCancel() { onCancel?() }
+}
+
+/// Shared chrome for the capsule's picker popovers (speed, play mode):
+/// a small header over a vertical list of full-width rows; the selected
+/// row carries a checkmark. Rows are plain buttons so hover and keyboard
+/// activation work for free. The value is a string to keep the picker
+/// generic; call sites convert back.
+@MainActor
+private final class OptionListPopoverController: NSViewController {
+    typealias Option = (label: String, value: String, checked: Bool)
+
+    private let header: String
+    private let options: [Option]
+    private let onSelect: ((String) -> Void)?
+
+    init(header: String, options: [Option], onSelect: ((String) -> Void)?) {
+        self.header = header
+        self.options = options
+        self.onSelect = onSelect
+        super.init(nibName: nil, bundle: nil)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) is not supported")
+    }
+
+    override func loadView() {
+        let root = NSView()
+        root.wantsLayer = true
+        root.layer?.backgroundColor = CoveStyle.libraryBackground.cgColor
+
+        let headerLabel = NSTextField(labelWithString: header)
+        headerLabel.font = CoveStyle.sectionHeaderFont
+        headerLabel.textColor = .secondaryLabelColor
+
+        let stack = NSStackView()
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 2
+        for option in options {
+            let row = makeRow(option)
+            stack.addArrangedSubview(row)
+            row.snp.makeConstraints { make in
+                make.width.equalTo(stack)
+            }
+        }
+
+        root.addSubview(headerLabel)
+        root.addSubview(stack)
+        headerLabel.snp.makeConstraints { make in
+            make.leading.top.equalToSuperview().inset(14)
+        }
+        stack.snp.makeConstraints { make in
+            make.leading.trailing.equalToSuperview().inset(8)
+            make.top.equalTo(headerLabel.snp.bottom).offset(6)
+            make.bottom.equalToSuperview().offset(-8)
+        }
+        // Same as the playlist panel: the popover sizes from
+        // preferredContentSize, and a zero size renders as nothing.
+        let height = CGFloat(options.count) * 26 + 54
+        preferredContentSize = NSSize(width: 190, height: height)
+        root.setFrameSize(preferredContentSize)
+        view = root
+    }
+
+    private func makeRow(_ option: Option) -> NSButton {
+        let row = NSButton(title: option.label, target: self, action: #selector(handleSelect(_:)))
+        row.isBordered = false
+        row.font = .systemFont(ofSize: 13)
+        row.alignment = .left
+        row.contentTintColor = .white
+        row.identifier = NSUserInterfaceItemIdentifier(option.value)
+        if option.checked {
+            row.image = NSImage(
+                systemSymbolName: "checkmark", accessibilityDescription: nil
+            )?.withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 12, weight: .semibold))
+            row.imagePosition = .imageTrailing
+        }
+        return row
+    }
+
+    @objc private func handleSelect(_ sender: NSButton) {
+        guard let value = sender.identifier?.rawValue else { return }
+        onSelect?(value)
+    }
+}
+
+/// The queue panel (playlist button): every video in the sibling queue as
+/// a scrollable row; the current one is gold-tinted with a speaker symbol.
+/// Tapping a row jumps to that video via the coordinator.
+///
+/// Built on NSTableView: an NSStackView as a scroll view's documentView
+/// keeps a zero frame (nothing renders), which showed up as an empty list.
+@MainActor
+private final class PlaylistPopoverController: NSViewController {
+    private let items: [ContentItem]
+    private let currentIndex: Int
+    private let onSelect: ((String) -> Void)?
+
+    private let tableView = NSTableView()
+
+    init(items: [ContentItem], currentIndex: Int, onSelect: ((String) -> Void)?) {
+        self.items = items
+        self.currentIndex = currentIndex
+        self.onSelect = onSelect
+        super.init(nibName: nil, bundle: nil)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) is not supported")
+    }
+
+    override func loadView() {
+        let root = NSView()
+        root.wantsLayer = true
+        root.layer?.backgroundColor = CoveStyle.libraryBackground.cgColor
+
+        let headerLabel = NSTextField(labelWithString: "播放列表")
+        headerLabel.font = CoveStyle.sectionHeaderFont
+        headerLabel.textColor = .secondaryLabelColor
+
+        let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("name"))
+        tableView.addTableColumn(column)
+        tableView.headerView = nil
+        tableView.rowHeight = 32
+        tableView.intercellSpacing = .zero
+        tableView.backgroundColor = .clear
+        tableView.focusRingType = .none
+        // The current row is styled gold by the cell; the system highlight
+        // would fight that, so the table stays selectionless.
+        tableView.selectionHighlightStyle = .none
+        tableView.style = .plain
+        tableView.dataSource = self
+        tableView.delegate = self
+        tableView.target = self
+        tableView.action = #selector(handleRowClick(_:))
+
+        let scrollView = NSScrollView()
+        scrollView.documentView = tableView
+        scrollView.hasVerticalScroller = true
+        scrollView.drawsBackground = false
+        scrollView.borderType = .noBorder
+        // Elastic bounce makes the wheel feel laggy in a short panel; a
+        // hard stop at the ends scrolls much more directly.
+        scrollView.verticalScrollElasticity = .none
+        scrollView.horizontalScrollElasticity = .none
+
+        root.addSubview(headerLabel)
+        root.addSubview(scrollView)
+        headerLabel.snp.makeConstraints { make in
+            make.leading.top.equalToSuperview().inset(14)
+        }
+        scrollView.snp.makeConstraints { make in
+            make.leading.equalToSuperview().offset(8)
+            make.trailing.equalToSuperview().offset(-8)
+            make.top.equalTo(headerLabel.snp.bottom).offset(6)
+            make.bottom.equalToSuperview().offset(-8)
+        }
+
+        // NSPopover sizes from preferredContentSize; without it the panel
+        // collapses to zero. Natural height up to a generous cap so a long
+        // queue still fits on screen; the table scrolls past it.
+        let naturalHeight = CGFloat(items.count) * 32 + 62
+        preferredContentSize = NSSize(width: 320, height: min(naturalHeight, 480))
+        root.setFrameSize(preferredContentSize)
+        view = root
+    }
+
+    @objc private func handleRowClick(_ sender: NSTableView) {
+        let row = sender.clickedRow
+        guard items.indices.contains(row) else { return }
+        onSelect?(items[row].path)
+    }
+}
+
+extension PlaylistPopoverController: NSTableViewDataSource, NSTableViewDelegate {
+    func numberOfRows(in tableView: NSTableView) -> Int { items.count }
+
+    func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
+        let identifier = NSUserInterfaceItemIdentifier("PlaylistRowCell")
+        let cell: PlaylistRowCellView
+        if let reused = tableView.makeView(withIdentifier: identifier, owner: self) as? PlaylistRowCellView {
+            cell = reused
+        } else {
+            cell = PlaylistRowCellView()
+            cell.identifier = identifier
+        }
+        cell.configure(name: items[row].name, isCurrent: row == currentIndex)
+        return cell
+    }
+}
+
+/// One queue row: the file name, gold + speaker when it is the current
+/// video.
+@MainActor
+private final class PlaylistRowCellView: NSTableCellView {
+    private let iconView = NSImageView()
+    private let nameLabel = NSTextField(labelWithString: "")
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        iconView.image = NSImage(systemSymbolName: "speaker.wave.2.fill", accessibilityDescription: nil)?
+            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 11, weight: .semibold))
+        iconView.contentTintColor = CoveStyle.accentGold
+        iconView.isHidden = true
+
+        nameLabel.font = .systemFont(ofSize: 13)
+        nameLabel.lineBreakMode = .byTruncatingTail
+        nameLabel.textColor = .white
+
+        addSubview(iconView)
+        addSubview(nameLabel)
+        iconView.snp.makeConstraints { make in
+            make.leading.equalToSuperview().offset(8)
+            make.centerY.equalToSuperview()
+            make.size.equalTo(14)
+        }
+        nameLabel.snp.makeConstraints { make in
+            make.leading.equalTo(iconView.snp.trailing).offset(6)
+            make.trailing.equalToSuperview().offset(-8)
+            make.centerY.equalToSuperview()
+        }
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) is not supported")
+    }
+
+    func configure(name: String, isCurrent: Bool) {
+        nameLabel.stringValue = name
+        nameLabel.textColor = isCurrent ? CoveStyle.accentGold : .white
+        nameLabel.font = .systemFont(ofSize: 13, weight: isCurrent ? .semibold : .regular)
+        iconView.isHidden = !isCurrent
+    }
 }
 
 /// Layer-hosting view for the mpv render layer: keeps the layer fitted to

@@ -12,6 +12,7 @@ struct PlayerViewModelTests {
             case seekBy(Int)
             case seekTo(Double)
             case setVolume(Double)
+            case setSpeed(Double)
         }
 
         private(set) var commands: [Command] = []
@@ -20,6 +21,7 @@ struct PlayerViewModelTests {
         func seek(bySeconds seconds: Int) { commands.append(.seekBy(seconds)) }
         func seekTo(seconds: Double) { commands.append(.seekTo(seconds)) }
         func setVolume(_ volume: Double) { commands.append(.setVolume(volume)) }
+        func setSpeed(_ speed: Double) { commands.append(.setSpeed(speed)) }
     }
 
     private func makeViewModel(
@@ -133,6 +135,33 @@ struct PlayerViewModelTests {
         viewModel.setVolume(150)
         #expect(controller.commands == [.togglePause, .seekBy(10), .setVolume(100)])
         #expect(viewModel.volume == 100)
+    }
+
+    @Test("speed changes forward to the controller and clamp to sanity")
+    func speedIntents() {
+        let (viewModel, controller) = makeViewModel()
+        viewModel.setSpeed(1.5)
+        viewModel.setSpeed(99)
+        #expect(controller.commands == [.setSpeed(1.5), .setSpeed(4)])
+        #expect(viewModel.speed == 4)
+    }
+
+    @Test("replay seeks to zero and clears a parked pause")
+    func replayFromStart() {
+        let (viewModel, controller) = makeViewModel()
+        // Parked at EOF: paused with the position at the end.
+        viewModel.apply(.fileLoaded)
+        viewModel.apply(.durationChanged(120))
+        viewModel.apply(.timePosChanged(120))
+        viewModel.apply(.pauseChanged(true))
+
+        viewModel.replayFromStart()
+        #expect(controller.commands == [.seekTo(0), .togglePause])
+
+        // While playing (not paused) a replay only seeks.
+        viewModel.apply(.pauseChanged(false))
+        viewModel.replayFromStart()
+        #expect(controller.commands.last == .seekTo(0))
     }
 
     @Test("time formatting")

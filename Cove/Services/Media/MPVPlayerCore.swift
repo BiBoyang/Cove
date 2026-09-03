@@ -57,6 +57,9 @@ final class MPVPlayerCore {
     /// Hop target for mpv's wakeup callback; see below.
     private let wakeupBox = MPVWakeupBox()
     private var isShutdown = false
+    /// Previous `eof-reached` value, for rising-edge detection of the
+    /// clean-EOF signal (see `handlePropertyChange`).
+    private var wasAtEOF = false
 
     /// Property-observation reply IDs, matched against `reply_userdata` in
     /// the drain loop.
@@ -65,6 +68,7 @@ final class MPVPlayerCore {
         static let duration: UInt64 = 2
         static let pause: UInt64 = 3
         static let pausedForCache: UInt64 = 4
+        static let eofReached: UInt64 = 5
     }
 
     /// Receives playback events on the main actor; wired to the view model
@@ -97,6 +101,13 @@ final class MPVPlayerCore {
         // Buffering lives entirely in mpv's own cache (videos never enter
         // CacheKit); network streams get it explicitly.
         mpv_set_option_string(handle, "cache", "yes")
+        // Park on the last frame at clean EOF instead of unloading the
+        // file. Without this, EOF leaves mpv idle and every later seek
+        // command (the user dragging the slider back after cancelling the
+        // up-next countdown) fails with "nothing loaded". Cost: a clean
+        // EOF no longer fires MPV_EVENT_END_FILE — the eof signal comes
+        // from the observed eof-reached property instead.
+        mpv_set_option_string(handle, "keep-open", "yes")
 
         let initResult = mpv_initialize(handle)
         guard initResult >= 0 else {
@@ -157,6 +168,11 @@ final class MPVPlayerCore {
         command(["set", "volume", String(volume)])
     }
 
+    /// Playback rate multiplier (1 = normal).
+    func setSpeed(_ speed: Double) {
+        command(["set", "speed", String(speed)])
+    }
+
     /// Observes the properties the player UI reads. Replies (including each
     /// property's initial value) arrive as MPV_EVENT_PROPERTY_CHANGE in the
     /// drain loop, distinguished by `reply_userdata`.
@@ -166,6 +182,7 @@ final class MPVPlayerCore {
         mpv_observe_property(handle, ObservedProperty.duration, "duration", MPV_FORMAT_DOUBLE)
         mpv_observe_property(handle, ObservedProperty.pause, "pause", MPV_FORMAT_FLAG)
         mpv_observe_property(handle, ObservedProperty.pausedForCache, "paused-for-cache", MPV_FORMAT_FLAG)
+        mpv_observe_property(handle, ObservedProperty.eofReached, "eof-reached", MPV_FORMAT_FLAG)
     }
 
     /// Reads one property-change event and forwards it. The observation ID
@@ -179,11 +196,25 @@ final class MPVPlayerCore {
             let value = data.assumingMemoryBound(to: Double.self).pointee
             onEvent?(replyUserdata == ObservedProperty.timePos
                 ? .timePosChanged(value) : .durationChanged(value))
-        case ObservedProperty.pause, ObservedProperty.pausedForCache:
+        case ObservedProperty.pause, ObservedProperty.pausedForCache, ObservedProperty.eofReached:
             guard property.format == MPV_FORMAT_FLAG, let data = property.data else { return }
             let value = data.assumingMemoryBound(to: Int32.self).pointee != 0
-            onEvent?(replyUserdata == ObservedProperty.pause
-                ? .pauseChanged(value) : .bufferingChanged(value))
+            switch replyUserdata {
+            case ObservedProperty.pause:
+                onEvent?(.pauseChanged(value))
+            case ObservedProperty.pausedForCache:
+                onEvent?(.bufferingChanged(value))
+            default:
+                // Clean-EOF signal: under keep-open the file stays loaded at
+                // EOF, so MPV_EVENT_END_FILE never fires for it. Rising edge
+                // only — seeking back clears the flag, and replaying to the
+                // end raises it again, so a replayed video can end (and
+                // re-trigger the up-next countdown) just like a fresh one.
+                if value, !wasAtEOF {
+                    onEvent?(.ended)
+                }
+                wasAtEOF = value
+            }
         default:
             break
         }
@@ -274,7 +305,12 @@ final class MPVPlayerCore {
                         let detail = String(cString: mpv_error_string(endFile.error))
                         logger.error("Playback ended with error: \(detail)", privacy: .private)
                         onEvent?(.playbackFailed(detail))
-                    } else {
+                    } else if !wasAtEOF {
+                        // Defensive only: under keep-open a clean EOF keeps
+                        // the file loaded and arrives as an eof-reached edge
+                        // instead. A clean unload that slipped through still
+                        // counts as ended, but never double-fires after the
+                        // property edge.
                         logger.debug("mpv event: end of file (clean)")
                         onEvent?(.ended)
                     }
