@@ -269,6 +269,16 @@ final class PagedReaderWindowController: NSWindowController {
     /// keys go to the strip view; Esc steps out of full screen and is
     /// otherwise ignored.
     private func handleKey(_ event: NSEvent) -> Bool {
+        // Strip zoom shortcuts (⌘=/⌘−/⌘0) are consumed here; every other
+        // Cmd combination still falls through to the menu commands.
+        if mode == .strip, event.modifierFlags.contains(.command) {
+            switch event.keyCode {
+            case 24: stripView?.zoomIn(); return true // ⌘=
+            case 27: stripView?.zoomOut(); return true // ⌘−
+            case 29: stripView?.zoomReset(); return true // ⌘0
+            default: return false
+            }
+        }
         // Leave menu commands (Cmd+W, Cmd+Q, …) to the responder chain.
         guard !event.modifierFlags.contains(.command) else { return false }
         if mode == .strip {

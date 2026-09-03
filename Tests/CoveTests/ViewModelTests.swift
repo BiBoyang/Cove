@@ -680,15 +680,18 @@ struct ReaderCoordinatorTests {
     }
 
     /// Coordinator with an isolated (connection-less) preheat service; the
-    /// `submitPrefetch` seam is what tests actually observe.
-    private func makeReaderCoordinator() -> ReaderCoordinator {
+    /// `submitPrefetch` seam is what tests actually observe. Pass `settings`
+    /// to exercise the reader-mode preference.
+    private func makeReaderCoordinator(settings: SettingsService? = nil) -> ReaderCoordinator {
         let defaults = UserDefaults(suiteName: "ReaderCoordinatorTests-\(UUID().uuidString)")!
+        let settings = settings ?? SettingsService(defaults: defaults)
         return ReaderCoordinator(
             cache: makeTestCache(),
             preheatService: PreheatService(
-                settings: SettingsService(defaults: defaults),
+                settings: settings,
                 cacheStore: makeTestCache()
-            )
+            ),
+            settings: settings
         )
     }
 
@@ -733,8 +736,7 @@ struct ReaderCoordinatorTests {
     }
 
     @Test("opening a comic does not prefetch", .timeLimit(.minutes(1)))
-    func comicOpenDoesNotPrefetch() async throws {
-        let coordinator = makeReaderCoordinator()
+    func comicOpenDoesNotPrefetch() async throws {        let coordinator = makeReaderCoordinator()
         let submitted = Mutex<[[String]]>([])
         let presented = Mutex(false)
         coordinator.submitPrefetch = { items in
@@ -752,6 +754,61 @@ struct ReaderCoordinatorTests {
 
         try await waitUntil { presented.withLock { $0 } }
         #expect(submitted.withLock { $0 }.isEmpty)
+    }
+
+    @Test("a saved strip preference makes a directory open in strip mode")
+    func directoryOpenHonorsStripPreference() {
+        let defaults = UserDefaults(suiteName: "ReaderCoordinatorTests-\(UUID().uuidString)")!
+        let settings = SettingsService(defaults: defaults)
+        settings.setReaderModeRawValue(ReaderMode.strip.rawValue, forComic: false)
+        let coordinator = makeReaderCoordinator(settings: settings)
+        let modes = Mutex<[ReaderMode]>([])
+        coordinator.presentContent = { _, _, _, mode in modes.withLock { $0.append(mode) } }
+
+        let items = (1...2).map { comicItem("p\($0).jpg", size: 10) }
+        coordinator.openDirectory(
+            items: items, selectedPath: "/p1.jpg", sourceID: "s", fileReader: { _ in Data() }
+        )
+
+        #expect(modes.withLock { $0 } == [.strip])
+    }
+
+    @Test("a saved paged preference makes a comic open in paged mode", .timeLimit(.minutes(1)))
+    func comicOpenHonorsPagedPreference() async throws {
+        let defaults = UserDefaults(suiteName: "ReaderCoordinatorTests-\(UUID().uuidString)")!
+        let settings = SettingsService(defaults: defaults)
+        settings.setReaderModeRawValue(ReaderMode.paged.rawValue, forComic: true)
+        let coordinator = makeReaderCoordinator(settings: settings)
+        let modes = Mutex<[ReaderMode]>([])
+        coordinator.presentContent = { _, _, _, mode in modes.withLock { $0.append(mode) } }
+        let bytes = makeTestCBZBytes(pages: ["a1.jpg"])
+
+        coordinator.openComic(
+            item: comicItem("a.cbz", size: Int64(bytes.count)),
+            sourceID: "s",
+            fileReader: { _ in bytes },
+            isSourceCurrent: { true }
+        )
+
+        try await waitUntil { !modes.withLock { $0 }.isEmpty }
+        #expect(modes.withLock { $0 } == [.paged])
+    }
+
+    @Test("an unknown saved mode falls back to the kind's default")
+    func unknownPreferenceFallsBack() {
+        let defaults = UserDefaults(suiteName: "ReaderCoordinatorTests-\(UUID().uuidString)")!
+        let settings = SettingsService(defaults: defaults)
+        settings.setReaderModeRawValue("mosaic", forComic: false)
+        let coordinator = makeReaderCoordinator(settings: settings)
+        let modes = Mutex<[ReaderMode]>([])
+        coordinator.presentContent = { _, _, _, mode in modes.withLock { $0.append(mode) } }
+
+        let items = (1...2).map { comicItem("p\($0).jpg", size: 10) }
+        coordinator.openDirectory(
+            items: items, selectedPath: "/p1.jpg", sourceID: "s", fileReader: { _ in Data() }
+        )
+
+        #expect(modes.withLock { $0 } == [.paged])
     }
 
     @Test("a rapid re-open presents only the newer comic", .timeLimit(.minutes(1)))
@@ -940,6 +997,26 @@ struct ReaderCoordinatorTests {
 
         try await waitUntil { !modes.withLock { $0 }.isEmpty }
         #expect(modes.withLock { $0 } == [.strip])
+    }
+}
+
+@Suite("SettingsService reader mode preference")
+@MainActor
+struct SettingsReaderModeTests {
+    @Test("reader mode raw values round-trip per content kind")
+    func roundTrip() {
+        let defaults = UserDefaults(suiteName: "SettingsReaderModeTests-\(UUID().uuidString)")!
+        let settings = SettingsService(defaults: defaults)
+
+        #expect(settings.readerModeRawValue(forComic: true) == nil)
+        #expect(settings.readerModeRawValue(forComic: false) == nil)
+
+        settings.setReaderModeRawValue("strip", forComic: false)
+        settings.setReaderModeRawValue("paged", forComic: true)
+
+        // The two kinds are independent keys.
+        #expect(settings.readerModeRawValue(forComic: false) == "strip")
+        #expect(settings.readerModeRawValue(forComic: true) == "paged")
     }
 }
 

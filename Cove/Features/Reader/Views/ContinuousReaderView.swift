@@ -16,9 +16,20 @@ final class ContinuousReaderView: NSView {
     private let viewModel: ContinuousReaderViewModel
     private let scrollView = NSScrollView()
     private let documentView = StripDocumentView()
+    /// Bottom-center scrubber pill: drag the slider to preview a page
+    /// number, release to jump. Replaces the passive progress label.
+    private let scrubberPill = NSVisualEffectView()
+    private let scrubberSlider = NSSlider()
     private let progressLabel = NSTextField(labelWithString: "")
+    /// Center flash showing the zoom factor ("150%") on every zoom change;
+    /// fades out shortly after. No zoom UI persists otherwise.
+    private let zoomLabel = NSTextField(labelWithString: "")
+    private var zoomHideGeneration = 0
     private var slotViews: [Int: StripSlotView] = [:]
     private var didApplyInitialOffset = false
+    /// True while the scrubber knob is held; state updates then preview
+    /// instead of yanking the slider under the user's thumb.
+    private var isScrubbing = false
 
     init(viewModel: ContinuousReaderViewModel) {
         self.viewModel = viewModel
@@ -66,14 +77,54 @@ final class ContinuousReaderView: NSView {
         progressLabel.font = .monospacedDigitSystemFont(ofSize: 12, weight: .medium)
         progressLabel.textColor = .white
 
+        // The scrubber pill speaks the player's HUD-capsule language.
+        scrubberPill.material = .hudWindow
+        scrubberPill.blendingMode = .withinWindow
+        scrubberPill.state = .active
+        scrubberPill.wantsLayer = true
+        scrubberPill.layer?.cornerRadius = CoveStyle.radiusLarge
+        scrubberPill.layer?.masksToBounds = true
+
+        scrubberSlider.controlSize = .small
+        scrubberSlider.minValue = 1
+        scrubberSlider.isContinuous = true
+        scrubberSlider.target = self
+        scrubberSlider.action = #selector(handleScrub(_:))
+
+        scrubberPill.addSubview(scrubberSlider)
+        scrubberPill.addSubview(progressLabel)
+        // The zoom flash reads over bright pages thanks to the shadow.
+        zoomLabel.font = .systemFont(ofSize: 15, weight: .semibold)
+        zoomLabel.textColor = NSColor.white.withAlphaComponent(0.9)
+        zoomLabel.alphaValue = 0
+        let zoomShadow = NSShadow()
+        zoomShadow.shadowColor = NSColor.black.withAlphaComponent(0.6)
+        zoomShadow.shadowBlurRadius = 3
+        zoomShadow.shadowOffset = NSSize(width: 0, height: -1)
+        zoomLabel.shadow = zoomShadow
         addSubview(scrollView)
-        addSubview(progressLabel)
+        addSubview(scrubberPill)
+        addSubview(zoomLabel)
         scrollView.snp.makeConstraints { make in
             make.edges.equalToSuperview()
         }
-        progressLabel.snp.makeConstraints { make in
+        scrubberPill.snp.makeConstraints { make in
             make.centerX.equalToSuperview()
             make.bottom.equalToSuperview().offset(-16)
+            make.height.equalTo(32)
+        }
+        scrubberSlider.snp.makeConstraints { make in
+            make.leading.equalToSuperview().offset(14)
+            make.centerY.equalToSuperview()
+            make.width.equalTo(220)
+        }
+        progressLabel.snp.makeConstraints { make in
+            make.leading.equalTo(scrubberSlider.snp.trailing).offset(10)
+            make.trailing.equalToSuperview().offset(-14)
+            make.centerY.equalToSuperview()
+        }
+        zoomLabel.snp.makeConstraints { make in
+            make.center.equalToSuperview()
         }
 
         NotificationCenter.default.addObserver(
@@ -94,9 +145,40 @@ final class ContinuousReaderView: NSView {
         viewModel.onRelayout = { [weak self] newOffset in
             self?.relayout(to: newOffset)
         }
+        viewModel.onZoomChange = { [weak self] scale in
+            // Horizontal scrolling only exists while zoomed in; at 100% the
+            // strip is exactly viewport-wide and the scroller would be a
+            // dead affordance.
+            self?.scrollView.hasHorizontalScroller = scale > 1
+            self?.flashZoomLabel(scale)
+        }
         viewModel.onStateChange = { [weak self] state in
-            self?.progressLabel.stringValue = state.progressText
-            self?.window?.title = state.pageTitle
+            guard let self else { return }
+            scrubberSlider.maxValue = Double(max(state.pageCount, 1))
+            scrubberSlider.isEnabled = state.pageCount > 1
+            if !isScrubbing {
+                scrubberSlider.doubleValue = Double(state.currentPage + 1)
+                progressLabel.stringValue = state.progressText
+            }
+            window?.title = state.pageTitle
+        }
+        viewModel.onScrollTo = { [weak self] offset in
+            self?.scroll(to: offset)
+        }
+    }
+
+    /// Slider beats: mouseDown/drag only previews the page number, the jump
+    /// commits on mouseUp so a slow drag never fires a load storm. Keyboard
+    /// steps (no mouse events) commit immediately.
+    @objc private func handleScrub(_ sender: NSSlider) {
+        let page = Int(sender.doubleValue.rounded())
+        switch NSApp.currentEvent?.type {
+        case .leftMouseDown, .leftMouseDragged:
+            isScrubbing = true
+            progressLabel.stringValue = "\(page)/\(Int(sender.maxValue))"
+        default:
+            isScrubbing = false
+            viewModel.scrollToPage(page - 1)
         }
     }
 
@@ -116,9 +198,10 @@ final class ContinuousReaderView: NSView {
     }
 
     /// Applies a batch reflow: new document height, resident slot frames,
-    /// then the anchor-preserving content offset from the view model.
+    /// then the anchor-preserving content offset from the view model. The
+    /// document width is the effective (zoomed) width, not the viewport's.
     private func relayout(to newOffset: CGFloat) {
-        let width = scrollView.contentView.bounds.width
+        let width = viewModel.contentWidth
         documentView.frame = NSRect(x: 0, y: 0, width: width, height: viewModel.contentHeight)
         for (index, slot) in slotViews {
             slot.frame = frame(forPage: index)
@@ -134,9 +217,35 @@ final class ContinuousReaderView: NSView {
         NSRect(
             x: 0,
             y: viewModel.yOffset(forPage: index),
-            width: scrollView.contentView.bounds.width,
+            width: viewModel.contentWidth,
             height: viewModel.height(forPage: index)
         )
+    }
+
+    // MARK: - Zoom forwarding (keyboard arrives via the window controller)
+
+    func zoomIn() { viewModel.zoomIn() }
+    func zoomOut() { viewModel.zoomOut() }
+    func zoomReset() { viewModel.resetZoom() }
+
+    /// Briefly flashes the zoom factor at the window center, then fades it
+    /// out; rapid repeated zooms retrigger instead of stacking fades.
+    private func flashZoomLabel(_ scale: CGFloat) {
+        zoomLabel.stringValue = "\(Int((scale * 100).rounded()))%"
+        zoomHideGeneration += 1
+        let generation = zoomHideGeneration
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.1
+            zoomLabel.animator().alphaValue = 1
+        }
+        Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(800))
+            guard let self, self.zoomHideGeneration == generation else { return }
+            NSAnimationContext.beginGrouping()
+            NSAnimationContext.current.duration = 0.3
+            self.zoomLabel.animator().alphaValue = 0
+            NSAnimationContext.endGrouping()
+        }
     }
 
     private func scroll(to y: CGFloat) {

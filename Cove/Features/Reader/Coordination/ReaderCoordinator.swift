@@ -13,6 +13,7 @@ import TraceKit
 final class ReaderCoordinator: NSObject {
     private let cache: CacheStore
     private let preheatService: PreheatService
+    private let settings: SettingsService
     private let logger = TraceLogger(category: "Reader")
 
     private var readerController: PagedReaderWindowController?
@@ -65,9 +66,10 @@ final class ReaderCoordinator: NSObject {
         }
     }
 
-    init(cache: CacheStore, preheatService: PreheatService) {
+    init(cache: CacheStore, preheatService: PreheatService, settings: SettingsService) {
         self.cache = cache
         self.preheatService = preheatService
+        self.settings = settings
         super.init()
     }
 
@@ -99,7 +101,7 @@ final class ReaderCoordinator: NSObject {
         )
         directoryPrefetchItems = items
         comicPageCount = nil
-        presentContent(content, startIndex, sourceID, .paged)
+        presentContent(content, startIndex, sourceID, preferredMode(forComic: false))
         // Open trigger: warm the two pages after the start page, so the
         // first page turn hits the cache.
         prefetchFollowing(from: startIndex)
@@ -126,7 +128,7 @@ final class ReaderCoordinator: NSObject {
                 )
                 guard generation == openGeneration, isSourceCurrent() else { return }
                 openTask = nil
-                presentContent(content, 0, sourceID, .strip)
+                presentContent(content, 0, sourceID, preferredMode(forComic: true))
                 comicPageCount = content.cachePages.count
                 // Open trigger: warm the two pages after the first page.
                 warmPages(upcomingWarmIndices(from: 0))
@@ -212,16 +214,31 @@ final class ReaderCoordinator: NSObject {
 
     private func toggleReaderMode() {
         guard let reader = readerController, let paged = pagedViewModel else { return }
+        // Persist the choice per content kind; the next open of the same
+        // kind starts there instead of at the kind's default.
+        let isComic = directoryPrefetchItems == nil
         switch reader.mode {
         case .paged:
             presentStrip(startIndex: paged.currentPageIndex)
+            settings.setReaderModeRawValue(ReaderMode.strip.rawValue, forComic: isComic)
         case .strip:
             let index = stripViewModel?.currentPage ?? paged.currentPageIndex
             stripViewModel?.tearDown()
             stripViewModel = nil
             reader.showPaged()
             paged.jumpToPage(index)
+            settings.setReaderModeRawValue(ReaderMode.paged.rawValue, forComic: isComic)
         }
+    }
+
+    /// The open-time mode for one content kind: the user's saved preference
+    /// wins; otherwise the kind's default (comic → strip, directory → paged).
+    private func preferredMode(forComic comic: Bool) -> ReaderMode {
+        if let raw = settings.readerModeRawValue(forComic: comic),
+           let mode = ReaderMode(rawValue: raw) {
+            return mode
+        }
+        return comic ? .strip : .paged
     }
 
     /// Page-turn dispatch, wired to `onPageChanged`: directory mode

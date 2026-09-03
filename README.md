@@ -72,6 +72,13 @@ Everything else comes later.
   archive cached whole in the original pool, image entries sorted
   naturally (`1, 2, …, 10`), pages decoded into the display pool, and the
   next pages pre-decoded ahead. (`.cbr`/`.cbt` are not supported yet.)
+  - **Strip zoom**: `⌘=` / `⌘−` / `⌘0` step the strip between 100% / 125% /
+    150% / 200% of the window width; beyond 100% the strip scrolls
+    horizontally too. Zoom is per session (reopens at 100%).
+  - **Page scrubber**: the bottom pill in strip mode is a slider — drag to
+    preview a page number, release to jump straight to that page.
+  - **Mode preference**: the paged/strip choice is remembered per content
+    kind (comics vs image folders) and applies to the next open.
 - Preheating downloads originals into the local cache ahead of reading. The
   browser toolbar has a "preheat this folder" button that warms the current
   folder including its subfolders (breadth-first, capped at 5000 files / 1000

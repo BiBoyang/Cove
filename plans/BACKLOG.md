@@ -9,9 +9,8 @@
 ## 下一波（候选，未排期）
 
 - [ ] 服务器远程地址（家里/远程切换）：Tailscale/WireGuard 远程访问的 Cove 侧方案（见 plans/TASK-remote-address.md；不急，待排期）
-- [ ] 播放器"即将播放"倒计时浮层（自动连播的 Infuse 式升级；当前播完立即切换）
-- [ ] 连续纵向条带阅读器剩余打磨项（缩放、跳页条、模式偏好持久化——当前 v1 已落地）
-- [ ] 播放器悬浮控制条之外的 Step 3 剩余体验项（见 plans/TASK-video-playback.md §Step 3）
+- [ ] 阅读位置记忆：阅读器（cbz/图片目录）记住最后看到的页码，重开直接回到该页，看完的从头开始（对齐视频"看完即删"语义；可复用 PlaybackProgressStore 模式）
+- [ ] 条带自动滚屏（条带模式自动向下滑动阅读；手动滑动打磨稳定后再做）
 
 ## 上架前必须
 
@@ -42,3 +41,6 @@
 - 工程债小包：spike 观测日志降级（warn+ 按 mpv 级别映射，里程碑链/心跳降 debug）、SPM 共享 scratch-path（make test 共享依赖只编一次，.build 总量 1.8GB→388MB）
 - 真机验收收尾：递归预热三态与自动取消、相邻页预取连翻（2026-08-27 真机通过）
 - App 图标与 logo：D1 层叠浪线方向，appiconset 全尺寸 + design/logo 矢量源
+- 播放器传输包：Up Next 倒计时、五种播放模式、倍速（跨集记忆）、播放列表面板、mpv keep-open 停最后一帧（2026-09-04）
+- SenPlayer 风格库界面：全局深色、暖黑调色板、行高收紧、金色 accent（2026-09-04）
+- 条带阅读器打磨：模式偏好按内容类型持久化、条带缩放（⌘ 四档 + 倍数闪现 + 横向滚动）、跳页 scrubber（见 plans/TASK-reader-strip-polish.md，2026-09-04）

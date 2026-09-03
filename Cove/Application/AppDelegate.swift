@@ -23,7 +23,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let sessionService = SMBSessionService()
         let progressStore = PlaybackProgressStore()
         let vaultService = VaultService(settings: settingsService)
-        let readerCoordinator = ReaderCoordinator(cache: cacheService.store, preheatService: preheatService)
+        let readerCoordinator = ReaderCoordinator(
+            cache: cacheService.store,
+            preheatService: preheatService,
+            settings: settingsService
+        )
         let libraryCoordinator = LibraryCoordinator(
             sessionService: sessionService,
             cache: cacheService.store,

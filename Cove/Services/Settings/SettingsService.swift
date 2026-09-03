@@ -17,6 +17,8 @@ final class SettingsService {
         static let preheatRateLimitMBps = "cove.settings.preheatRateLimitMBps"
         static let preheatFolders = "cove.settings.preheatFolders"
         static let vaultRootBookmark = "cove.settings.vaultRootBookmark"
+        static let readerModeComic = "cove.settings.readerMode.comic"
+        static let readerModeDirectory = "cove.settings.readerMode.directory"
     }
 
     private let defaults: UserDefaults
@@ -69,6 +71,19 @@ final class SettingsService {
     var vaultRootBookmark: Data? {
         get { defaults.data(forKey: Keys.vaultRootBookmark) }
         set { defaults.set(newValue, forKey: Keys.vaultRootBookmark); post() }
+    }
+
+    /// The user's last-chosen reader mode ("paged"/"strip") for one content
+    /// kind; nil means no override and the kind's default applies. Raw
+    /// strings only — mapping to `ReaderMode` stays at the coordinator so
+    /// Services never depends on a Features type (dependency direction).
+    func readerModeRawValue(forComic comic: Bool) -> String? {
+        defaults.string(forKey: comic ? Keys.readerModeComic : Keys.readerModeDirectory)
+    }
+
+    func setReaderModeRawValue(_ rawValue: String, forComic comic: Bool) {
+        defaults.set(rawValue, forKey: comic ? Keys.readerModeComic : Keys.readerModeDirectory)
+        post()
     }
 
     var cacheCapacityBytes: Int64 { Int64(cacheCapacityGB) * 1024 * 1024 * 1024 }

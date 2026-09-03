@@ -17,6 +17,10 @@ final class ContinuousReaderViewModel {
     struct State: Sendable {
         let pageTitle: String
         let progressText: String
+        /// Zero-based page at the viewport top, and the total page count;
+        /// the scrubber renders/follows these.
+        let currentPage: Int
+        let pageCount: Int
     }
 
     private let pages: [ReaderPage]
@@ -24,8 +28,14 @@ final class ContinuousReaderViewModel {
     private let logger: TraceLogger
 
     private var layout: StripLayoutModel?
+    private var viewportWidth: CGFloat = 0
     private var viewportHeight: CGFloat = 0
     private var contentOffset: CGFloat = 0
+    /// Discrete layout-zoom levels: pages lay out at viewport width × scale
+    /// (a zoomed-in strip scrolls horizontally). Session-only, resets on open.
+    static let zoomScales: [CGFloat] = [1, 1.25, 1.5, 2]
+    private var zoomIndex = 0
+    private(set) var zoomScale: CGFloat = 1
     /// First visible page at the latest scroll report; doubles as the
     /// reflow anchor.
     private(set) var currentPage: Int
@@ -68,10 +78,19 @@ final class ContinuousReaderViewModel {
     /// applies the given anchor-preserving content offset.
     var onRelayout: ((CGFloat) -> Void)?
 
+    /// Zoom factor changed; the view toggles its horizontal scroller.
+    var onZoomChange: ((CGFloat) -> Void)?
+
+    /// Jump request: scroll so the document position lands at the viewport
+    /// top (the scrubber commits through `scrollToPage`).
+    var onScrollTo: ((CGFloat) -> Void)?
+
     var state: State {
         State(
             pageTitle: pages[currentPage].title,
-            progressText: "\(currentPage + 1)/\(pages.count)"
+            progressText: "\(currentPage + 1)/\(pages.count)",
+            currentPage: currentPage,
+            pageCount: pages.count
         )
     }
 
@@ -101,11 +120,18 @@ final class ContinuousReaderViewModel {
         onSlotsChanged = nil
         onSlotImage = nil
         onRelayout = nil
+        onZoomChange = nil
+        onScrollTo = nil
     }
 
     // MARK: - Layout reads for the view
 
     var contentHeight: CGFloat { layout?.contentHeight ?? 0 }
+
+    /// Laid-out page strip width: the viewport width under the current zoom.
+    /// The view sizes its document and slot frames with it (wider than the
+    /// viewport while zoomed in, which is what engages horizontal scrolling).
+    var contentWidth: CGFloat { viewportWidth * zoomScale }
 
     func yOffset(forPage index: Int) -> CGFloat { layout?.yOffset(forPage: index) ?? 0 }
 
@@ -121,12 +147,15 @@ final class ContinuousReaderViewModel {
 
     /// The view reports its visible size. Creates the layout model on first
     /// call; a width change rebases all heights under the viewport anchor
-    /// (window resize, fullscreen transitions).
+    /// (window resize, fullscreen transitions). The model always works in
+    /// effective width (viewport × zoom), so a resize keeps the zoom level.
     func updateViewport(width: CGFloat, height: CGFloat) {
         guard !isTornDown, width > 0, height > 0 else { return }
+        viewportWidth = width
         viewportHeight = height
+        let effectiveWidth = width * zoomScale
         guard var model = layout else {
-            let created = StripLayoutModel(pageCount: pages.count, viewportWidth: width)
+            let created = StripLayoutModel(pageCount: pages.count, viewportWidth: effectiveWidth)
             layout = created
             // Adopt the start page's offset as the initial scroll position;
             // otherwise the first sync would snap a mid-document session
@@ -136,7 +165,7 @@ final class ContinuousReaderViewModel {
             publishWarmWindow()
             return
         }
-        guard abs(width - model.viewportWidth) > 0.5 else {
+        guard abs(effectiveWidth - model.viewportWidth) > 0.5 else {
             // A height-only change can still move the residency window.
             syncWindow()
             publishWarmWindow()
@@ -144,7 +173,38 @@ final class ContinuousReaderViewModel {
         }
         let anchor = anchorForReflow(using: model)
         let newOffset = model.updateViewportWidth(
-            width, anchorPage: anchor.page, offsetWithinAnchorPage: anchor.offsetWithin
+            effectiveWidth, anchorPage: anchor.page, offsetWithinAnchorPage: anchor.offsetWithin
+        )
+        layout = model
+        contentOffset = newOffset
+        onRelayout?(newOffset)
+        syncWindow()
+        publishWarmWindow()
+    }
+
+    // MARK: - Zoom
+
+    /// Steps the layout zoom in/out; `resetZoom` returns to fit-width.
+    /// The rebase reuses the viewport-width anchoring rule, so the page at
+    /// the top edge stays visually stationary across a zoom change.
+    func zoomIn() { stepZoom(by: 1) }
+    func zoomOut() { stepZoom(by: -1) }
+    func resetZoom() { applyZoom(index: 0) }
+
+    private func stepZoom(by delta: Int) { applyZoom(index: zoomIndex + delta) }
+
+    private func applyZoom(index: Int) {
+        let clamped = min(max(index, 0), Self.zoomScales.count - 1)
+        guard clamped != zoomIndex, !isTornDown else { return }
+        zoomIndex = clamped
+        zoomScale = Self.zoomScales[clamped]
+        onZoomChange?(zoomScale)
+        // Before the first viewport report there is no layout to rebase;
+        // the recorded index applies at creation time instead.
+        guard var model = layout else { return }
+        let anchor = anchorForReflow(using: model)
+        let newOffset = model.updateViewportWidth(
+            viewportWidth * zoomScale, anchorPage: anchor.page, offsetWithinAnchorPage: anchor.offsetWithin
         )
         layout = model
         contentOffset = newOffset
@@ -158,6 +218,20 @@ final class ContinuousReaderViewModel {
     func updateScrollOffset(_ offset: CGFloat) {
         guard !isTornDown, layout != nil else { return }
         contentOffset = offset
+        syncWindow()
+        publishWarmWindow()
+    }
+
+    /// Jumps the strip so `index`'s top edge lands at the viewport top
+    /// (out-of-range indices clamp to the queue ends). The scrubber commits
+    /// here; the usual window sync and current-page publish follow inline,
+    /// so the jump works even without a view observing the scroll request.
+    func scrollToPage(_ index: Int) {
+        guard !isTornDown, let model = layout else { return }
+        let clamped = min(max(index, 0), pages.count - 1)
+        let target = model.yOffset(forPage: clamped)
+        contentOffset = target
+        onScrollTo?(target)
         syncWindow()
         publishWarmWindow()
     }

@@ -150,6 +150,77 @@ struct ContinuousReaderViewModelTests {
         #expect(vm.currentPage == 2)
     }
 
+    @Test("zooming rebases the layout width under the same viewport anchor")
+    func zoomKeepsAnchor() {
+        let vm = makeViewModel(loader: RecordingStripLoader())
+        var relayouts: [CGFloat] = []
+        var zooms: [CGFloat] = []
+        vm.onRelayout = { relayouts.append($0) }
+        vm.onZoomChange = { zooms.append($0) }
+        vm.updateViewport(width: 300, height: 550)
+        vm.updateScrollOffset(810) // page 2, 10pt below its top
+
+        vm.zoomIn() // 1 → 1.25: effective width 375, estimated height 500
+
+        // Page 2's top moves to 1000; the 10pt within-page offset holds.
+        #expect(zooms == [1.25])
+        #expect(relayouts.count == 1)
+        #expect(abs((relayouts.first ?? -1) - 1010) < 0.01)
+        #expect(abs(vm.contentWidth - 375) < 0.01)
+        #expect(abs(vm.height(forPage: 0) - 500) < 0.01)
+        #expect(vm.currentPage == 2)
+    }
+
+    @Test("zoom steps clamp at both ends and reset returns to fit-width")
+    func zoomClampsAndResets() {
+        let vm = makeViewModel(loader: RecordingStripLoader())
+        var zooms: [CGFloat] = []
+        vm.onZoomChange = { zooms.append($0) }
+        vm.updateViewport(width: 300, height: 550)
+
+        vm.zoomOut() // already at the floor: no-op
+        for _ in 0 ..< 5 { vm.zoomIn() } // 1.25, 1.5, 2, then clamped
+        #expect(zooms == [1.25, 1.5, 2])
+        #expect(vm.zoomScale == 2)
+        #expect(abs(vm.height(forPage: 0) - 800) < 0.01)
+
+        vm.resetZoom()
+        #expect(zooms.last == 1)
+        #expect(abs(vm.height(forPage: 0) - 400) < 0.01)
+    }
+
+    @Test("a zoom set before the first layout applies at creation time")
+    func zoomBeforeViewport() {
+        let vm = makeViewModel(loader: RecordingStripLoader())
+        vm.zoomIn()
+
+        vm.updateViewport(width: 300, height: 550)
+
+        #expect(abs(vm.contentWidth - 375) < 0.01)
+        #expect(abs(vm.height(forPage: 0) - 500) < 0.01)
+    }
+
+    @Test("scrollToPage jumps to the page's top edge and clamps out-of-range indices")
+    func scrollToPageJumpsAndClamps() {
+        let vm = makeViewModel(loader: RecordingStripLoader())
+        var scrolls: [CGFloat] = []
+        vm.onScrollTo = { scrolls.append($0) }
+        vm.updateViewport(width: 300, height: 550)
+
+        vm.scrollToPage(5)
+        #expect(scrolls == [2000]) // 5 × 400 estimated height
+        #expect(vm.currentPage == 5)
+        #expect(vm.state.progressText == "6/20")
+
+        vm.scrollToPage(99) // clamps to the last page
+        #expect(scrolls.last == 7600)
+        #expect(vm.currentPage == 19)
+
+        vm.scrollToPage(-3) // clamps to the first page
+        #expect(scrolls.last == 0)
+        #expect(vm.currentPage == 0)
+    }
+
     @Test("the start page's offset is exposed under the all-estimated layout")
     func startContentOffsetReflectsStartIndex() {
         let vm = makeViewModel(startIndex: 3, loader: RecordingStripLoader())
