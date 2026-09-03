@@ -34,6 +34,12 @@ final class ReaderCoordinator: NSObject {
     private var sessionLoader: ReaderImageLoader?
     private var pagedViewModel: ReaderViewModel?
     private var stripViewModel: ContinuousReaderViewModel?
+    /// Optional progress persistence boundary (nil = no memory, e.g. tests
+    /// that do not care); injected so tests can substitute a recorder.
+    private let readingProgress: ReadingProgressStoring?
+    /// Progress key of the presented session ("sourceID|path"), set when a
+    /// presentation actually happens and cleared when the window closes.
+    private var sessionProgressKey: String?
 
     var onError: ((_ error: Error, _ title: String) -> Void)?
     var onMessageError: ((_ message: String, _ title: String) -> Void)?
@@ -66,10 +72,16 @@ final class ReaderCoordinator: NSObject {
         }
     }
 
-    init(cache: CacheStore, preheatService: PreheatService, settings: SettingsService) {
+    init(
+        cache: CacheStore,
+        preheatService: PreheatService,
+        settings: SettingsService,
+        readingProgress: ReadingProgressStoring? = nil
+    ) {
         self.cache = cache
         self.preheatService = preheatService
         self.settings = settings
+        self.readingProgress = readingProgress
         super.init()
     }
 
@@ -89,7 +101,7 @@ final class ReaderCoordinator: NSObject {
         bypassOriginalPool: Bool = false
     ) {
         cancelPendingOpen()
-        guard let startIndex = items.firstIndex(where: { $0.path == selectedPath }) else {
+        guard let tappedIndex = items.firstIndex(where: { $0.path == selectedPath }) else {
             onMessageError?("无法定位图片。", "打开阅读器失败")
             return
         }
@@ -101,7 +113,37 @@ final class ReaderCoordinator: NSObject {
         )
         directoryPrefetchItems = items
         comicPageCount = nil
+        // Resume-on-open: the directory's remembered page wins over the
+        // tapped file's index; with the setting off (or no record) the
+        // tapped file opens, which is the old behavior.
+        let key = directoryProgressKey(sourceID: sourceID, selectedPath: selectedPath)
+        let storedPage = readingProgress?.page(forKey: key)
+        let startIndex = resumedStartIndex(
+            stored: storedPage,
+            fallback: tappedIndex,
+            pageCount: items.count
+        )
         presentContent(content, startIndex, sourceID, preferredMode(forComic: false))
+        // Adopt the key only after presenting: `present` closes the previous
+        // reader window first, and that close-time write must still see the
+        // previous session's key and page.
+        sessionProgressKey = key
+        // Undo affordance: when a stored record actually moved the start off
+        // the tapped file, offer the jump back to what the user clicked. The
+        // target resolves by the mode current at click time; a session torn
+        // down by then just no-ops (nils). Jumping back never touches the
+        // stored memory — the close-time write still records wherever the
+        // user actually rests. Comics never show this (single-file resume).
+        if storedPage != nil, startIndex != tappedIndex {
+            readerController?.showResumeHint(page: startIndex) { [weak self] in
+                guard let self else { return }
+                if self.readerController?.mode == .strip {
+                    self.stripViewModel?.scrollToPage(tappedIndex)
+                } else {
+                    self.pagedViewModel?.jumpToPage(tappedIndex)
+                }
+            }
+        }
         // Open trigger: warm the two pages after the start page, so the
         // first page turn hits the cache.
         prefetchFollowing(from: startIndex)
@@ -128,10 +170,25 @@ final class ReaderCoordinator: NSObject {
                 )
                 guard generation == openGeneration, isSourceCurrent() else { return }
                 openTask = nil
-                presentContent(content, 0, sourceID, preferredMode(forComic: true))
+                // Resume-on-open: a stored page (clamped into the page
+                // range) wins; with the setting off (or no record) the
+                // comic starts from the top, which is the old behavior.
+                let key = comicProgressKey(sourceID: sourceID, itemPath: item.path)
+                let startIndex = resumedStartIndex(
+                    stored: readingProgress?.page(forKey: key),
+                    fallback: 0,
+                    pageCount: content.pages.count
+                )
+                presentContent(content, startIndex, sourceID, preferredMode(forComic: true))
+                // Adopt the key only after presenting: `present` closes the
+                // previous reader window first, and that close-time write
+                // must still see the previous session's key and page.
+                sessionProgressKey = key
                 comicPageCount = content.cachePages.count
-                // Open trigger: warm the two pages after the first page.
-                warmPages(upcomingWarmIndices(from: 0))
+                // Open trigger: warm the two pages after the start page
+                // (the restored page when resuming), so the first page
+                // turn hits the cache.
+                warmPages(upcomingWarmIndices(from: startIndex))
             } catch {
                 if Task.isCancelled || error is CancellationError { return }
                 guard generation == openGeneration else { return }
@@ -208,6 +265,11 @@ final class ReaderCoordinator: NSObject {
                 warmPages(indices)
             }
         }
+        // Strip scrolling dismisses the resume hint once the current page
+        // changes (the paged path rides `pageDidChange`).
+        strip.onPageChanged = { [weak self] _ in
+            self?.readerController?.hideResumeHint()
+        }
         stripViewModel = strip
         reader.showStrip(ContinuousReaderView(viewModel: strip))
     }
@@ -241,11 +303,54 @@ final class ReaderCoordinator: NSObject {
         return comic ? .strip : .paged
     }
 
+    // MARK: - Reading progress
+
+    /// Progress keys are "sourceID|path" so same-named items on different
+    /// servers never collide. A comic is keyed by its archive path; a
+    /// directory by the POSIX parent of the tapped file (`/a/b/x.jpg` →
+    /// `/a/b`), so every file in one directory shares one resume point.
+    private func comicProgressKey(sourceID: String, itemPath: String) -> String {
+        "\(sourceID)|\(itemPath)"
+    }
+
+    private func directoryProgressKey(sourceID: String, selectedPath: String) -> String {
+        let parent = (selectedPath as NSString).deletingLastPathComponent
+        return "\(sourceID)|\(parent)"
+    }
+
+    /// Open-time resume decision: when the resume setting is on and a page
+    /// was remembered, it wins — clamped into the valid page range (the
+    /// directory's contents may have changed since). Otherwise `fallback`
+    /// applies (0 for comics, the tapped file's index for directories).
+    private func resumedStartIndex(stored: Int?, fallback: Int, pageCount: Int) -> Int {
+        guard settings.readerResumeOnOpen, let stored else { return fallback }
+        return min(max(0, stored), pageCount - 1)
+    }
+
+    /// Persists the close-time reading position for `key`. Watching to the
+    /// last page (`page == pageCount - 1`) deletes the record — a finished
+    /// comic/directory starts from the top next time — mirroring the video
+    /// PlaybackProgressStore's watched-to-the-end semantics. Any earlier
+    /// page is saved as the resume point. Internal so tests drive it
+    /// directly without opening a window.
+    func persistReadingProgress(page: Int, pageCount: Int, forKey key: String) {
+        guard let readingProgress else { return }
+        if page >= pageCount - 1 {
+            readingProgress.removePage(forKey: key)
+        } else {
+            readingProgress.savePage(page, forKey: key)
+        }
+    }
+
     /// Page-turn dispatch, wired to `onPageChanged`: directory mode
     /// continues original-byte prefetch; comic mode pre-decodes the next
     /// display variants (its bytes are local — the cost is CPU, not the
     /// network).
     func pageDidChange(at index: Int) {
+        // Any page change also dismisses the resume hint early; a no-op
+        // when it is already hidden (including right after the hint's own
+        // return jump, which lands here too).
+        readerController?.hideResumeHint()
         if directoryPrefetchItems != nil {
             prefetchFollowing(from: index)
         } else {
@@ -283,6 +388,19 @@ final class ReaderCoordinator: NSObject {
             object: notification.object as? NSWindow
         )
         if readerController?.window === (notification.object as? NSWindow) {
+            // Write the last-seen page before the session state goes away.
+            // Mode-aware: the strip reports its own current page, falling
+            // back to the paged model when it was never built.
+            let currentPage: Int?
+            switch readerController?.mode {
+            case .strip:
+                currentPage = stripViewModel?.currentPage ?? pagedViewModel?.currentPageIndex
+            default:
+                currentPage = pagedViewModel?.currentPageIndex
+            }
+            if let currentPage, let key = sessionProgressKey {
+                persistReadingProgress(page: currentPage, pageCount: sessionPages?.count ?? 0, forKey: key)
+            }
             stripViewModel?.tearDown()
             stripViewModel = nil
             pagedViewModel = nil
@@ -293,6 +411,7 @@ final class ReaderCoordinator: NSObject {
             // in-memory archive.
             comicLoader = nil
             comicPageCount = nil
+            sessionProgressKey = nil
         }
     }
 }

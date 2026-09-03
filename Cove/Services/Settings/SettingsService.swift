@@ -19,6 +19,7 @@ final class SettingsService {
         static let vaultRootBookmark = "cove.settings.vaultRootBookmark"
         static let readerModeComic = "cove.settings.readerMode.comic"
         static let readerModeDirectory = "cove.settings.readerMode.directory"
+        static let readerResumeOnOpen = "cove.settings.readerResumeOnOpen"
     }
 
     private let defaults: UserDefaults
@@ -31,6 +32,7 @@ final class SettingsService {
             Keys.preheatEnabled: true,
             Keys.preheatRateLimitMBps: 0.0,
             Keys.preheatFolders: [String](),
+            Keys.readerResumeOnOpen: true,
         ])
     }
 
@@ -84,6 +86,14 @@ final class SettingsService {
     func setReaderModeRawValue(_ rawValue: String, forComic comic: Bool) {
         defaults.set(rawValue, forKey: comic ? Keys.readerModeComic : Keys.readerModeDirectory)
         post()
+    }
+
+    /// Whether the reader reopens at the last-remembered page (comics and
+    /// image directories alike); off restores the old behavior (page 0 /
+    /// the tapped file).
+    var readerResumeOnOpen: Bool {
+        get { defaults.bool(forKey: Keys.readerResumeOnOpen) }
+        set { defaults.set(newValue, forKey: Keys.readerResumeOnOpen); post() }
     }
 
     var cacheCapacityBytes: Int64 { Int64(cacheCapacityGB) * 1024 * 1024 * 1024 }

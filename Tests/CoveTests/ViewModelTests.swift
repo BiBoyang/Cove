@@ -497,6 +497,7 @@ private final class MockPreferencesSettings: PreferencesSettingsManaging {
     var preheatRateLimitMBps = 0.0
     var preheatFolders: [String] = []
     var vaultRootBookmark: Data?
+    var readerResumeOnOpen = true
 }
 
 @MainActor
@@ -679,19 +680,56 @@ struct ReaderCoordinatorTests {
         ContentItem(name: name, path: "/\(name)", isDirectory: false, size: size, modifiedDate: nil)
     }
 
+    /// In-memory `ReadingProgressStoring` double: records save/remove calls
+    /// and supports preloading a page, so resume/persist behavior is
+    /// observable without UserDefaults.
+    @MainActor
+    private final class ReadingProgressRecorder: ReadingProgressStoring {
+        private(set) var savedPages: [(page: Int, key: String)] = []
+        private(set) var removedKeys: [String] = []
+        private var pages: [String: Int] = [:]
+
+        func preload(_ page: Int, forKey key: String) {
+            pages[key] = page
+        }
+
+        func page(forKey key: String) -> Int? { pages[key] }
+
+        func savePage(_ page: Int, forKey key: String) {
+            savedPages.append((page, key))
+            pages[key] = page
+        }
+
+        func removePage(forKey key: String) {
+            removedKeys.append(key)
+            pages.removeValue(forKey: key)
+        }
+    }
+
+    /// Fresh defaults with resume-on-open explicitly on, for tests that
+    /// also need to switch it off.
+    private func makeResumeSettings() -> SettingsService {
+        let defaults = UserDefaults(suiteName: "ReaderCoordinatorTests-\(UUID().uuidString)")!
+        return SettingsService(defaults: defaults)
+    }
+
     /// Coordinator with an isolated (connection-less) preheat service; the
     /// `submitPrefetch` seam is what tests actually observe. Pass `settings`
-    /// to exercise the reader-mode preference.
-    private func makeReaderCoordinator(settings: SettingsService? = nil) -> ReaderCoordinator {
-        let defaults = UserDefaults(suiteName: "ReaderCoordinatorTests-\(UUID().uuidString)")!
-        let settings = settings ?? SettingsService(defaults: defaults)
+    /// to exercise the reader-mode preference, `readingProgress` to
+    /// exercise resume-on-open.
+    private func makeReaderCoordinator(
+        settings: SettingsService? = nil,
+        readingProgress: ReadingProgressStoring? = nil
+    ) -> ReaderCoordinator {
+        let settings = settings ?? makeResumeSettings()
         return ReaderCoordinator(
             cache: makeTestCache(),
             preheatService: PreheatService(
                 settings: settings,
                 cacheStore: makeTestCache()
             ),
-            settings: settings
+            settings: settings,
+            readingProgress: readingProgress
         )
     }
 
@@ -997,6 +1035,190 @@ struct ReaderCoordinatorTests {
 
         try await waitUntil { !modes.withLock { $0 }.isEmpty }
         #expect(modes.withLock { $0 } == [.strip])
+    }
+
+    // MARK: Resume-on-open
+
+    @Test("a comic with a stored page reopens at it", .timeLimit(.minutes(1)))
+    func comicRestoreStartsAtStoredPage() async throws {
+        let progress = ReadingProgressRecorder()
+        progress.preload(2, forKey: "s|/a.cbz")
+        let coordinator = makeReaderCoordinator(readingProgress: progress)
+        let starts = Mutex<[Int]>([])
+        coordinator.presentContent = { _, startIndex, _, _ in
+            starts.withLock { $0.append(startIndex) }
+        }
+        let bytes = makeTestCBZBytes(pages: ["a1.jpg", "a2.jpg", "a3.jpg", "a4.jpg"])
+
+        coordinator.openComic(
+            item: comicItem("a.cbz", size: Int64(bytes.count)),
+            sourceID: "s",
+            fileReader: { _ in bytes },
+            isSourceCurrent: { true }
+        )
+
+        try await waitUntil { !starts.withLock { $0 }.isEmpty }
+        #expect(starts.withLock { $0 } == [2])
+    }
+
+    @Test("a comic without a record opens at page 0", .timeLimit(.minutes(1)))
+    func comicWithoutRecordStartsAtZero() async throws {
+        let progress = ReadingProgressRecorder()
+        let coordinator = makeReaderCoordinator(readingProgress: progress)
+        let starts = Mutex<[Int]>([])
+        coordinator.presentContent = { _, startIndex, _, _ in
+            starts.withLock { $0.append(startIndex) }
+        }
+        let bytes = makeTestCBZBytes(pages: ["a1.jpg", "a2.jpg", "a3.jpg"])
+
+        coordinator.openComic(
+            item: comicItem("a.cbz", size: Int64(bytes.count)),
+            sourceID: "s",
+            fileReader: { _ in bytes },
+            isSourceCurrent: { true }
+        )
+
+        try await waitUntil { !starts.withLock { $0 }.isEmpty }
+        #expect(starts.withLock { $0 } == [0])
+    }
+
+    @Test("a stored page beyond the comic's pages clamps to the last page", .timeLimit(.minutes(1)))
+    func comicRestoreClampsOutOfRange() async throws {
+        let progress = ReadingProgressRecorder()
+        progress.preload(99, forKey: "s|/a.cbz")
+        let coordinator = makeReaderCoordinator(readingProgress: progress)
+        let starts = Mutex<[Int]>([])
+        coordinator.presentContent = { _, startIndex, _, _ in
+            starts.withLock { $0.append(startIndex) }
+        }
+        let bytes = makeTestCBZBytes(pages: ["a1.jpg", "a2.jpg", "a3.jpg"])
+
+        coordinator.openComic(
+            item: comicItem("a.cbz", size: Int64(bytes.count)),
+            sourceID: "s",
+            fileReader: { _ in bytes },
+            isSourceCurrent: { true }
+        )
+
+        try await waitUntil { !starts.withLock { $0 }.isEmpty }
+        #expect(starts.withLock { $0 } == [2])
+    }
+
+    @Test("a restored comic warms from the restored page", .timeLimit(.minutes(1)))
+    func comicRestoreWarmsFromRestoredPage() async throws {
+        let progress = ReadingProgressRecorder()
+        progress.preload(2, forKey: "s|/a.cbz")
+        let coordinator = makeReaderCoordinator(readingProgress: progress)
+        let warmed = Mutex<[[Int]]>([])
+        coordinator.presentContent = { _, _, _, _ in }
+        coordinator.warmPages = { indices in warmed.withLock { $0.append(indices) } }
+        let bytes = makeTestCBZBytes(pages: ["a1.jpg", "a2.jpg", "a3.jpg", "a4.jpg", "a5.jpg"])
+
+        coordinator.openComic(
+            item: comicItem("a.cbz", size: Int64(bytes.count)),
+            sourceID: "s",
+            fileReader: { _ in bytes },
+            isSourceCurrent: { true }
+        )
+
+        try await waitUntil { !warmed.withLock { $0 }.isEmpty }
+        // The open-trigger warm follows the restored page 2 — [3, 4], not
+        // the [1, 2] a from-zero open would produce.
+        #expect(warmed.withLock { $0 } == [[3, 4]])
+    }
+
+    @Test("a directory with a stored page reopens at it, overriding the tapped file")
+    func directoryRestoreOverridesTappedIndex() {
+        let progress = ReadingProgressRecorder()
+        // The directory key is the tapped file's parent: "/p2.jpg" → "/".
+        progress.preload(3, forKey: "s|/")
+        let coordinator = makeReaderCoordinator(readingProgress: progress)
+        let starts = Mutex<[Int]>([])
+        coordinator.presentContent = { _, startIndex, _, _ in
+            starts.withLock { $0.append(startIndex) }
+        }
+        let items = (1...5).map { comicItem("p\($0).jpg", size: 10) }
+
+        coordinator.openDirectory(
+            items: items, selectedPath: "/p2.jpg", sourceID: "s", fileReader: { _ in Data() }
+        )
+
+        #expect(starts.withLock { $0 } == [3])
+    }
+
+    @Test("a directory without a record opens the tapped file")
+    func directoryWithoutRecordOpensTappedIndex() {
+        let progress = ReadingProgressRecorder()
+        let coordinator = makeReaderCoordinator(readingProgress: progress)
+        let starts = Mutex<[Int]>([])
+        coordinator.presentContent = { _, startIndex, _, _ in
+            starts.withLock { $0.append(startIndex) }
+        }
+        let items = (1...4).map { comicItem("p\($0).jpg", size: 10) }
+
+        coordinator.openDirectory(
+            items: items, selectedPath: "/p3.jpg", sourceID: "s", fileReader: { _ in Data() }
+        )
+
+        #expect(starts.withLock { $0 } == [2])
+    }
+
+    @Test("resume off keeps the old start behavior", .timeLimit(.minutes(1)))
+    func resumeDisabledKeepsOldBehavior() async throws {
+        let settings = makeResumeSettings()
+        settings.readerResumeOnOpen = false
+        let progress = ReadingProgressRecorder()
+        progress.preload(2, forKey: "s|/a.cbz")
+        progress.preload(3, forKey: "s|/")
+        let coordinator = makeReaderCoordinator(settings: settings, readingProgress: progress)
+        let starts = Mutex<[Int]>([])
+        coordinator.presentContent = { _, startIndex, _, _ in
+            starts.withLock { $0.append(startIndex) }
+        }
+
+        // Directory: the tapped file's index, not the stored page 3.
+        let items = (1...5).map { comicItem("p\($0).jpg", size: 10) }
+        coordinator.openDirectory(
+            items: items, selectedPath: "/p2.jpg", sourceID: "s", fileReader: { _ in Data() }
+        )
+        #expect(starts.withLock { $0 } == [1])
+
+        // Comic: page 0, not the stored page 2.
+        let bytes = makeTestCBZBytes(pages: ["a1.jpg", "a2.jpg", "a3.jpg"])
+        coordinator.openComic(
+            item: comicItem("a.cbz", size: Int64(bytes.count)),
+            sourceID: "s",
+            fileReader: { _ in bytes },
+            isSourceCurrent: { true }
+        )
+        try await waitUntil { starts.withLock { $0 }.count == 2 }
+        #expect(starts.withLock { $0 } == [1, 0])
+    }
+
+    // MARK: Close-time persistence
+
+    @Test("persisting the last page deletes the record instead of saving")
+    func persistLastPageRemovesRecord() {
+        let progress = ReadingProgressRecorder()
+        let coordinator = makeReaderCoordinator(readingProgress: progress)
+
+        // Last page of a 3-page comic (index 2 == pageCount - 1).
+        coordinator.persistReadingProgress(page: 2, pageCount: 3, forKey: "s|/a.cbz")
+
+        #expect(progress.removedKeys == ["s|/a.cbz"])
+        #expect(progress.savedPages.isEmpty)
+    }
+
+    @Test("persisting a non-last page saves it")
+    func persistNonLastPageSaves() {
+        let progress = ReadingProgressRecorder()
+        let coordinator = makeReaderCoordinator(readingProgress: progress)
+
+        coordinator.persistReadingProgress(page: 1, pageCount: 3, forKey: "s|/a.cbz")
+
+        #expect(progress.savedPages.map { $0.page } == [1])
+        #expect(progress.savedPages.map { $0.key } == ["s|/a.cbz"])
+        #expect(progress.removedKeys.isEmpty)
     }
 }
 

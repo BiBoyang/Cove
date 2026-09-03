@@ -1,10 +1,11 @@
 import AppKit
 import SnapKit
 
-/// Preferences feature window (Cmd+,): cache budget/TTL/usage/clear, and
-/// preheat enable/rate-limit/folders. Values persist via `SettingsService`
-/// (UserDefaults); changes apply live through the didChange notification.
-/// Deliberately plain — a single column of labeled rows, no tabs.
+/// Preferences feature window (Cmd+,): cache budget/TTL/usage/clear,
+/// preheat enable/rate-limit/folders, and reader resume-on-open. Values
+/// persist via `SettingsService` (UserDefaults); changes apply live through
+/// the didChange notification. Deliberately plain — a single column of
+/// labeled rows, no tabs.
 @MainActor
 final class PreferencesWindowController: NSWindowController {
     private let viewModel: PreferencesViewModel
@@ -24,6 +25,11 @@ final class PreferencesWindowController: NSWindowController {
     private let addFolderButton = NSButton(title: "添加", target: nil, action: nil)
     private let removeFolderButton = NSButton(title: "删除", target: nil, action: nil)
 
+    // Reader section
+    private let readerResumeCheckbox = NSButton(
+        checkboxWithTitle: "阅读器打开时恢复上次位置", target: nil, action: nil
+    )
+
     // Vault section
     private let vaultPathLabel = NSTextField(labelWithString: "")
     private let chooseVaultButton = NSButton(title: "更改…", target: nil, action: nil)
@@ -38,7 +44,7 @@ final class PreferencesWindowController: NSWindowController {
     init(viewModel: PreferencesViewModel) {
         self.viewModel = viewModel
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 520, height: 620),
+            contentRect: NSRect(x: 0, y: 0, width: 520, height: 680),
             styleMask: [.titled, .closable],
             backing: .buffered,
             defer: false
@@ -84,6 +90,8 @@ final class PreferencesWindowController: NSWindowController {
 
         preheatCheckbox.target = self
         preheatCheckbox.action = #selector(preheatToggled(_:))
+        readerResumeCheckbox.target = self
+        readerResumeCheckbox.action = #selector(readerResumeToggled(_:))
         clearButton.target = self
         clearButton.action = #selector(clearCache(_:))
         clearButton.bezelStyle = .rounded
@@ -159,6 +167,10 @@ final class PreferencesWindowController: NSWindowController {
         }
 
         stack.setCustomSpacing(16, after: inputRow)
+        stack.addArrangedSubview(makeHeader("阅读器"))
+        stack.addArrangedSubview(readerResumeCheckbox)
+
+        stack.setCustomSpacing(16, after: readerResumeCheckbox)
         stack.addArrangedSubview(makeHeader("本地仓库"))
         let vaultRow = makeRow(makeLabel("位置"), vaultPathLabel, chooseVaultButton, revealVaultButton)
         stack.addArrangedSubview(vaultRow)
@@ -207,6 +219,7 @@ final class PreferencesWindowController: NSWindowController {
         let rate = state.rateLimitMBps
         rateLimitField.stringValue = rate == rate.rounded() ? String(Int(rate)) : String(rate)
         preheatCheckbox.state = state.preheatEnabled ? .on : .off
+        readerResumeCheckbox.state = state.readerResumeOnOpen ? .on : .off
         if let original = state.originalUsageBytes, let display = state.displayUsageBytes {
             originalUsageLabel.stringValue = "原始缓存：\(byteFormatter.string(fromByteCount: original))"
             displayUsageLabel.stringValue = "显示缓存：\(byteFormatter.string(fromByteCount: display))"
@@ -222,6 +235,10 @@ final class PreferencesWindowController: NSWindowController {
 
     @objc private func preheatToggled(_ sender: NSButton) {
         viewModel.setPreheatEnabled(sender.state == .on)
+    }
+
+    @objc private func readerResumeToggled(_ sender: NSButton) {
+        viewModel.setReaderResumeOnOpen(sender.state == .on)
     }
 
     @objc private func clearCache(_ sender: NSButton) {

@@ -36,6 +36,18 @@ final class PagedReaderWindowController: NSWindowController {
         symbolName: "scroll", pointSize: 13, accessibilityDescription: "切换到条带模式"
     )
     private let progressLabel = NSTextField(labelWithString: "")
+    // Resume hint: a window-level HUD capsule shown after a
+    // resume-from-memory open moved the start off the tapped file. It is a
+    // pure rendering surface — the coordinator decides when to show it and
+    // what the return button does.
+    private let resumeHintPill = ResumeHintPill()
+    private let resumeHintLabel = NSTextField(labelWithString: "")
+    private let resumeReturnButton = PillButton(title: "返回选中的图", style: .secondary)
+    /// Fires once per show; cleared by every dismiss path so a double click
+    /// cannot re-trigger the jump.
+    private var resumeHintReturnHandler: (() -> Void)?
+    /// Pending ~4 s auto-dismiss; cancelled by hide, re-show, and teardown.
+    private var resumeHintDismissTask: Task<Void, Never>?
 
     /// The active surface. The coordinator owns the switch (it builds the
     /// strip session); this controller only hosts views.
@@ -170,6 +182,8 @@ final class PagedReaderWindowController: NSWindowController {
         rootView.onKeyDown = { [weak self] event in
             self?.handleKey(event) ?? false
         }
+
+        assembleResumeHint()
     }
 
     private func registerObservers() {
@@ -262,11 +276,98 @@ final class PagedReaderWindowController: NSWindowController {
         progressLabel.isHidden = !visible
     }
 
+    // MARK: - Resume hint
+
+    /// Assembles the resume-hint HUD: a top-center capsule in the reader's
+    /// HUD chrome language (same material and radius as the strip's
+    /// scrubber pill), always in the hierarchy but fully transparent (and
+    /// hit-test-transparent) until shown. Top-center keeps it clear of the
+    /// corner buttons and of the strip's bottom scrubber pill.
+    private func assembleResumeHint() {
+        resumeHintLabel.font = .monospacedDigitSystemFont(ofSize: 12, weight: .medium)
+        resumeHintLabel.textColor = .white
+
+        resumeReturnButton.refusesFirstResponder = true
+        resumeReturnButton.target = self
+        resumeReturnButton.action = #selector(handleResumeReturn(_:))
+
+        // The hint pill speaks the same HUD-capsule language as the
+        // scrubber pill.
+        resumeHintPill.material = .hudWindow
+        resumeHintPill.blendingMode = .withinWindow
+        resumeHintPill.state = .active
+        resumeHintPill.wantsLayer = true
+        resumeHintPill.layer?.cornerRadius = CoveStyle.radiusLarge
+        resumeHintPill.layer?.masksToBounds = true
+        resumeHintPill.alphaValue = 0
+
+        resumeHintPill.addSubview(resumeHintLabel)
+        resumeHintPill.addSubview(resumeReturnButton)
+        rootView.addSubview(resumeHintPill)
+        resumeHintPill.snp.makeConstraints { make in
+            make.centerX.equalToSuperview()
+            make.top.equalToSuperview().offset(16)
+            make.height.equalTo(32)
+        }
+        resumeHintLabel.snp.makeConstraints { make in
+            make.leading.equalToSuperview().offset(14)
+            make.centerY.equalToSuperview()
+        }
+        resumeReturnButton.snp.makeConstraints { make in
+            make.leading.equalTo(resumeHintLabel.snp.trailing).offset(10)
+            make.trailing.equalToSuperview().offset(-10)
+            make.centerY.equalToSuperview()
+        }
+    }
+
+    /// Shows the resume hint with a short fade-in and schedules the ~4 s
+    /// auto fade-out; any re-show resets the timer. `page` is the 0-based
+    /// restored page index (displayed 1-based, matching the progress label).
+    /// Pure rendering: the click is forwarded via `onReturn`, which fires at
+    /// most once per show.
+    func showResumeHint(page: Int, onReturn: @escaping () -> Void) {
+        resumeHintLabel.stringValue = "已回到第 \(page + 1) 页"
+        resumeHintReturnHandler = onReturn
+        resumeHintDismissTask?.cancel()
+        setResumeHintVisible(true)
+        resumeHintDismissTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(4))
+            guard let self, !Task.isCancelled else { return }
+            self.hideResumeHint()
+        }
+    }
+
+    /// Dismisses the resume hint early (page turn, scroll, window close).
+    /// Idempotent, and always cancels the pending auto-dismiss.
+    func hideResumeHint() {
+        resumeHintDismissTask?.cancel()
+        resumeHintDismissTask = nil
+        resumeHintReturnHandler = nil
+        guard resumeHintPill.alphaValue > 0.01 else { return }
+        setResumeHintVisible(false)
+    }
+
+    private func setResumeHintVisible(_ visible: Bool) {
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = visible ? 0.15 : 0.3
+            resumeHintPill.animator().alphaValue = visible ? 1 : 0
+        }
+    }
+
+    @objc private func handleResumeReturn(_ sender: NSButton) {
+        // Take the handler before hiding: hiding clears it, so the jump
+        // fires exactly once even on a double click.
+        let handler = resumeHintReturnHandler
+        hideResumeHint()
+        handler?()
+    }
+
     // MARK: - Keyboard
 
     /// Returns true when the key was consumed. Works in full screen because
     /// the root view is the window's first responder. In strip mode scroll
-    /// keys go to the strip view; Esc steps out of full screen and is
+    /// keys and Space (the auto-scroll toggle, consumed by the strip view
+    /// itself) go to the strip view; Esc steps out of full screen and is
     /// otherwise ignored.
     private func handleKey(_ event: NSEvent) -> Bool {
         // Strip zoom shortcuts (⌘=/⌘−/⌘0) are consumed here; every other
@@ -313,6 +414,8 @@ final class PagedReaderWindowController: NSWindowController {
     @objc private func windowWillClose(_ notification: Notification) {
         guard !isTornDown else { return }
         isTornDown = true
+        // The auto-dismiss task must never outlive the window.
+        hideResumeHint()
         viewModel.tearDown()
         NotificationCenter.default.removeObserver(self)
     }
@@ -336,5 +439,19 @@ private final class PagedReaderRootView: NSView {
     override func draw(_ dirtyRect: NSRect) {
         NSColor.black.setFill()
         dirtyRect.fill()
+    }
+}
+
+/// The resume-hint capsule: HUD material with capsule corners, matching the
+/// strip's scrubber pill. While fully transparent it is also fully
+/// hit-test-transparent, so clicks and wheel events pass through to the
+/// reader surface beneath; while visible, only the embedded button accepts
+/// hits — the capsule body and label never block the page.
+@MainActor
+private final class ResumeHintPill: NSVisualEffectView {
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        guard alphaValue > 0.01 else { return nil }
+        let hit = super.hitTest(point)
+        return hit is NSButton ? hit : nil
     }
 }

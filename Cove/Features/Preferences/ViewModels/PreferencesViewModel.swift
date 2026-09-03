@@ -8,6 +8,7 @@ protocol PreferencesSettingsManaging: AnyObject {
     var preheatRateLimitMBps: Double { get set }
     var preheatFolders: [String] { get set }
     var vaultRootBookmark: Data? { get set }
+    var readerResumeOnOpen: Bool { get set }
 }
 
 extension SettingsService: PreferencesSettingsManaging {}
@@ -23,6 +24,7 @@ final class PreferencesViewModel {
         let originalUsageBytes: Int64?
         let displayUsageBytes: Int64?
         let vaultPath: String
+        let readerResumeOnOpen: Bool
     }
 
     private let settings: any PreferencesSettingsManaging
@@ -55,7 +57,8 @@ final class PreferencesViewModel {
             folders: settings.preheatFolders,
             originalUsageBytes: originalUsageBytes,
             displayUsageBytes: displayUsageBytes,
-            vaultPath: vault.displayPath
+            vaultPath: vault.displayPath,
+            readerResumeOnOpen: settings.readerResumeOnOpen
         )
     }
 
@@ -118,6 +121,11 @@ final class PreferencesViewModel {
 
     func setPreheatEnabled(_ enabled: Bool) {
         settings.preheatEnabled = enabled
+        publish()
+    }
+
+    func setReaderResumeOnOpen(_ enabled: Bool) {
+        settings.readerResumeOnOpen = enabled
         publish()
     }
 
