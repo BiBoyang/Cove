@@ -2,7 +2,8 @@
 
 A native macOS NAS media player. Long-term goal: video playback, image/comic/PDF
 reading, warm-up caching and a local vault, all directly off your NAS — in the
-spirit of SenPlayer, but for the Mac.
+spirit of SenPlayer, but for the Mac. The whole UI is dark-only (warm dark
+library chrome, dark player) regardless of the system appearance.
 
 **v0 scope**: built-in SMB client (direct NAS connection) + file browsing.
 Everything else comes later.
@@ -23,10 +24,22 @@ Everything else comes later.
   flv, webm, ts and more — anything mpv plays) to stream it straight off the
   NAS via [libmpv](https://mpv.io) bridged onto Cove's own SMB stack; nothing
   is downloaded in advance. A floating frosted control capsule (play/pause,
-  seekable progress, volume) hides itself with the cursor during playback
-  and returns on mouse movement; keyboard: space, ←/→ seek, ↑/↓ volume.
+  seekable progress, volume with live readout) hides itself with the cursor
+  during playback and returns on mouse movement; the centered file title
+  stays put. Keyboard: space, ←/→ seek, ↑/↓ volume, Esc exits full screen.
   Each video's playback position is remembered and resumed on reopen
   (finished videos start over).
+  - **Sibling-video playlist**: the videos alongside the opened one form a
+    queue. The capsule's playlist button lists it (tap a row to jump);
+    previous/next step through it. When a video ends, an "Up Next" pill
+    counts down 5 seconds on the last frame — play now, cancel (Esc), or
+    let it fire (Return plays immediately) — and the queue's last video
+    simply parks on its last frame.
+  - **Play modes**: single (park at end), repeat-one, list, list-loop and
+    shuffle, picked from the capsule's mode button; they drive both
+    auto-advance and how prev/next behave at the queue edges.
+  - **Playback speed**: 0.5–2x from the capsule's speed button; the chosen
+    rate carries over across track changes.
 - **PDF reading**: double-click a `.pdf` to read it with PDFKit — the file
   is cached whole in the original pool (instant on reopen) and shown as
   continuous pages with breaks (`.cbr`-style one-offs are not special-cased;

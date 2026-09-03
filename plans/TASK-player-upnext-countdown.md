@@ -1,6 +1,7 @@
 # TASK: 播放器"即将播放"倒计时浮层（Up Next countdown）
 
 日期：2026-08-27 ｜ 协作模式（助手规划/Review，用户实现）
+状态：已完成并入库（`776a59f`，2026-09-04；真机验收用户已通过）
 
 ## 目标复述
 
@@ -120,6 +121,27 @@
 make test                    # 全量回归（含新模型用例）
 make generate && make build  # 零警告
 ```
+
+## 实际落地范围（超出原计划，2026-09-04 追记）
+
+最终实现随倒计时一起入库的还有一组播放器传输能力，均经 review +
+`make build` 零警告 / `make test` 全绿 + 用户真机验收：
+
+- **播放模式**：单视频 / 单视频循环 / 列表 / 列表循环 / 随机
+  （`PlayMode`）；`PlayerPlaylist` 从 advance/back 重写为
+  `autoAdvanceIndex(mode:)` / `stepIndex(delta:mode:)` 纯函数 + 测试重写。
+  列表类模式播完走倒计时；单循环原地 replay 不弹浮层；单视频停在
+  最后一帧。倒计时期间切模式在 fire 时重新读取（即时生效）。
+- **倍速**：胶囊 "1x" 按钮 + popover（0.5/0.75/1/1.25/1.5/2），
+  Coordinator 记住选择并应用到后续 session。
+- **播放列表面板**：胶囊播放列表按钮弹出队列（NSTableView，当前行
+  金色 + 扬声器），点行跳转；队列移动时旧面板自动关闭防陈旧高亮。
+- **mpv keep-open**：`keep-open=yes` 让 EOF 停在最后一帧且不卸载文件
+  （取消倒计时后拖回进度条可用）；clean EOF 信号改为 `eof-reached`
+  属性上升沿（END_FILE 在 keep-open 下不再为 clean EOF 触发），
+  END_FILE 分支留防御且不会双发。
+- 顺带修复：音量滑条跟随键盘调节（render 统一回写）；标题从左上角
+  改为顶部居中（中间截断）。
 
 ## Review 交接
 
