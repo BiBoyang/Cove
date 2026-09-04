@@ -3,6 +3,14 @@ options:
   bundleIdPrefix: com.biboyang
   createIntermediateGroups: true
 
+# Explicitly built modules off project-wide: Xcode 26's EBM .pcm incremental
+# cache has gone stale locally (missing module files broke libsmb2 builds
+# until a full clean). See plans/TASK-ci.md.
+settings:
+  base:
+    CLANG_ENABLE_EXPLICIT_MODULES: "NO"
+    SWIFT_ENABLE_EXPLICIT_MODULES: "NO"
+
 packages:
   SnapKit:
     url: https://github.com/SnapKit/SnapKit
