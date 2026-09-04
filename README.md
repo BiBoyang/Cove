@@ -1,13 +1,11 @@
 # Cove
 
-A native macOS NAS media player. Long-term goal: video playback, image/comic/PDF
-reading, warm-up caching and a local vault, all directly off your NAS. The whole UI is dark-only (warm dark
-library chrome, dark player) regardless of the system appearance.
+A native macOS NAS media player: video playback, image/comic/PDF reading,
+preheat caching and a local vault, all served directly off your NAS through
+the built-in SMB client. The whole UI is dark-only (warm dark library
+chrome, dark player) regardless of the system appearance.
 
-**v0 scope**: built-in SMB client (direct NAS connection) + file browsing.
-Everything else comes later.
-
-## Features (v0)
+## Features
 
 - Add SMB servers with just an address, username and password — no share name
   needed. Connecting lists the server's shares automatically as a card grid
@@ -69,7 +67,7 @@ Everything else comes later.
   `Esc`, and a page counter support manual navigation. The two pages after
   the current one are prefetched in the background so page turns hit the
   local cache. Originals and downsampled display variants use the disk
-  cache; A1 does not start automatic directory warming.
+  cache.
   - **Paged zoom**: `⌘=` / `⌘−` / `⌘0` step between 100% (fit) / 150% /
     200% / 300%, with drag-to-pan while zoomed; turning the page or resizing
     the window resets to fit.
@@ -102,8 +100,7 @@ Everything else comes later.
   automatically. Optional background preheating of user-configured folders is
   also available; those folders are enumerated breadth-first (image files
   only) and warmed over a dedicated SMB connection, so bulk reads never stall
-  browsing; the pipeline can be rate-limited. Automatic adjacent-page
-  preheating in the reader remains deferred.
+  browsing; the pipeline can be rate-limited.
 - Settings (app menu → 设置…, Cmd+,): cache budget (GB) and TTL (days) with
   live per-pool usage and a clear-now button; preheat on/off, rate limit
   (MB/s, 0 = unlimited), and the preheat folder list. Folder entries include
@@ -221,7 +218,9 @@ identifier in `project.yml` (`PRODUCT_BUNDLE_IDENTIFIER`).
     assembly, pending archive-open cancellation, and Reader-window lifetime.
   - `Services/` — app adapters grouped by responsibility:
     `Infrastructure/` (SMB sessions and persisted servers), `Media/`
-    (cache policy, thumbnails, and Reader content/loading adapters),
+    (cache policy, thumbnails, Reader content/loading adapters, and the
+    libmpv video playback bridge), `Vault/` (the local library: root
+    resolution, recursive/single-file downloads, local deletes),
     `Preheat/` (background warming lifecycle), and `Settings/`
     (UserDefaults-backed configuration).
   - `SharedUI/` — reusable AppKit components shared by multiple features.

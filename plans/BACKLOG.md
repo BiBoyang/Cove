@@ -10,7 +10,7 @@
 
 ## 上架前必须
 
-- [ ] libmpv 供应链收敛：brew 源码重编（-Dgl=enabled）或装配 MPVKit 静态依赖；IINA 森林的 GPL 合规审计（见 plans/SPIKE-video-playback.md §结论一 + 2026-08-27 调研追加）
+- [ ] libmpv 供应链收敛：brew 源码重编（-Dgl=enabled）或装配 MPVKit 静态依赖；IINA 森林的 GPL 合规审计（见 plans/archive/SPIKE-video-playback.md §结论一 + 2026-08-27 调研追加）
 - [ ] project.yml 填 DEVELOPMENT_TEAM + 替换占位 bundle id（AGENTS.md 已记）
 
 ## 远期（North Star：Mac 上的一流 NAS 媒体中心）
@@ -18,7 +18,7 @@
 - [ ] 目录模式 decode-ahead（相邻页预取的姊妹项）
 - [ ] 播放器多窗口
 - [ ] Preheat 解码挪出 actor（实测预热慢再做，见 PreheatScheduler.execute 注释）
-- [ ] ErrorPresenter（alert 所有权扩张时，见 plans/ARCHITECTURE-AUDIT-2026-08-22.md）
+- [ ] ErrorPresenter（alert 所有权扩张时，见 plans/archive/ARCHITECTURE-AUDIT-2026-08-22.md）
 - [ ] ContentItem/SMBShareInfo/ServerConfig 是否下沉共享领域包（同上，待 target 拆分时定）
 
 ## 已归档（近期完成）
@@ -43,5 +43,5 @@
 - 目录浏览滚动修复：切目录回顶、返回上级揭示并选中来源文件夹（2026-09-05 真机通过）
 - 单页模式缩放：⌘ 四档 + 拖拽平移 + 翻页/resize 重置（见 plans/archive/TASK-reader-paged-zoom.md，2026-09-04 真机通过）
 - CI 落地：push/PR/每日 02:00 门控全量测试（framework + app 双 job，含失败演练实证）；根治 .pcm 增量腐坏（禁 explicitly-built-modules）（见 plans/archive/TASK-ci.md，2026-09-05）
-- 服务器远程地址：remoteHost 双地址 + 右键切换 + 失败引导 + 生效地址持久化（见 plans/TASK-remote-address.md，2026-09-04 热点实测机制五项 + Tailscale 子网路由端到端联通全过）
+- 服务器远程地址：remoteHost 双地址 + 右键切换 + 失败引导 + 生效地址持久化（见 plans/archive/TASK-remote-address.md，2026-09-04 热点实测机制五项 + Tailscale 子网路由端到端联通全过）
 - SMB 连接/枚举显式超时 15s 快速失败 + 摘除 ETIMEDOUT 透明重试（见 plans/archive/TASK-smb-timeout.md，2026-09-05 smb-spike 黑洞实测 15.1s/15.0s 达标）

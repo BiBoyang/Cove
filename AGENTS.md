@@ -6,9 +6,9 @@
 Cove/                    # App target（纯 AppKit，禁止 import SwiftUI，不用 storyboard）
 ├── Application/         # main.swift + AppDelegate，手动接线
 ├── Features/            # 按功能组织的 AppKit View + @MainActor ViewModel
-├── Services/            # App 服务适配层，按 Infrastructure/Media/Preheat/Settings 分组
+├── Services/            # App 服务适配层，按 Infrastructure/Media/Vault/Preheat/Settings 分组
 │   ├── Infrastructure/  # SMB 会话 + 服务器配置持久化
-│   ├── Media/           # 缓存、缩略图、Reader 内容与图片加载适配
+│   ├── Media/           # 缓存、缩略图、Reader 内容与图片加载适配、libmpv 视频播放桥接
 │   ├── Vault/           # 本地仓库：根目录解析、递归/单文件下载（temp+rename）、本地删除
 │   ├── Preheat/         # 用户配置的后台预热生命周期
 │   └── Settings/        # UserDefaults 设置
@@ -51,7 +51,7 @@ ReaderKit 是 Frameworks 下的领域核心包，不依赖 AppKit、SnapKit、SM
    （SourceKit SMB 客户端）、ZIPFoundation（ComicKit CBZ 解析）、libmpv
    （视频播放引擎，Vendor/libmpv dylib 随包嵌入 App target；Vendor/libmpv
    不入库，由 `scripts/assemble-libmpv.sh` 从本机 IINA.app 装配，获取方式
-   与选型理由见 `plans/SPIKE-video-playback.md`）。
+   与选型理由见 `plans/archive/SPIKE-video-playback.md`）。
 9. 日志隐私：TraceKit 插值默认 `.auto`（持久化日志里打码）；host/share/path
    等用户数据显式传 `.private`；`.public` 只给确定安全的内容。任何 API 都
    不许记密码。
@@ -78,9 +78,15 @@ ReaderKit 是 Frameworks 下的领域核心包，不依赖 AppKit、SnapKit、SM
 ```sh
 make generate   # xcodegen 生成工程
 make build      # Debug 构建
-make test       # 七个 Framework 包的单测 + smb-spike 编译检查
+make test       # 八个 Framework 包 + App target 单测 + smb-spike 编译检查
 make clean
 ```
+
+排障注记：本地 `make test` 若在 App target 步报 CodeSign 失败
+（`Cove.app ... CoveTests.xctest 未签名`）：先增量重跑一次，仍失败再
+`make clean`。这是 DerivedData 一次性腐坏（2026-09-05 实证：干净 HEAD
+同样失败、CI 同版本 Xcode 全绿、增量重跑自愈），不是代码或签名配置
+问题——不要为此改 `project.yml` 里已正确的 `CODE_SIGN_STYLE` 配置。
 
 ## 文档分工与协作纪律
 
