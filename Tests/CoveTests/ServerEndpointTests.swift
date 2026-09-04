@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 import Testing
 @testable import Cove
 
@@ -158,4 +159,181 @@ struct SMBSessionServiceConfigTests {
             _ = try service.updateRemoteHost("100.64.0.5", for: UUID())
         }
     }
+
+    @Test("switching to remote persists the choice across a service reload")
+    func switchToRemotePersists() throws {
+        let server = seededServer(endpoint: .lan)
+        let (service, store, suiteName) = try makeSeededService([server])
+        defer { UserDefaults(suiteName: suiteName)?.removePersistentDomain(forName: suiteName) }
+
+        let updated = try service.switchEndpoint(of: server.id)
+
+        #expect(updated.activeEndpoint == .remote)
+        #expect(updated.activeHost == "100.64.0.5")
+        #expect(SMBSessionService(store: store).servers.first?.activeEndpoint == .remote)
+    }
+
+    @Test("switching back to LAN persists and a LAN-only server never flips")
+    func switchBackAndLanOnly() throws {
+        let remoteActive = seededServer(endpoint: .remote)
+        let lanOnly = ServerConfig(id: UUID(), host: "nas.local", username: "user")
+        let (service, _, suiteName) = try makeSeededService([remoteActive, lanOnly])
+        defer { UserDefaults(suiteName: suiteName)?.removePersistentDomain(forName: suiteName) }
+
+        let backToLan = try service.switchEndpoint(of: remoteActive.id)
+        #expect(backToLan.activeEndpoint == .lan)
+        #expect(backToLan.activeHost == "nas.local")
+
+        let unchanged = try service.switchEndpoint(of: lanOnly.id)
+        #expect(unchanged.activeEndpoint == .lan)
+        #expect(unchanged.activeHost == "nas.local")
+    }
+}
+
+@Suite("Remote endpoint guidance")
+@MainActor
+struct RemoteEndpointHintTests {
+    @Test("the hint appends the switch suggestion to the underlying error")
+    func messageComposition() {
+        let underlying = NSError(
+            domain: "test", code: 1,
+            userInfo: [NSLocalizedDescriptionKey: "connection refused"]
+        )
+        let hint = RemoteEndpointHint(underlying: underlying)
+
+        #expect(hint.localizedDescription == "connection refused\n\n该服务器已配置远程地址，可右键服务器切换到远程地址后重试。")
+    }
+}
+
+@Suite("Library endpoint switching")
+@MainActor
+struct LibraryEndpointSwitchTests {
+    private func seededServer(endpoint: ServerConfig.Endpoint) -> ServerConfig {
+        ServerConfig(
+            id: UUID(), host: "nas.local", username: "user",
+            remoteHost: "100.64.0.5", activeEndpoint: endpoint
+        )
+    }
+
+    /// A coordinator over an isolated session store. The seeded servers
+    /// have no Keychain password, so share enumeration fails fast with
+    /// `missingPassword` — a deterministic stand-in for a dead address
+    /// that never touches the network.
+    private func makeLibraryCoordinator(
+        seed: [ServerConfig]
+    ) throws -> (LibraryCoordinator, SMBSessionService, () -> Void) {
+        let suiteName = "LibraryEndpointSwitchTests-\(UUID().uuidString)"
+        let settingsSuite = "\(suiteName)-settings"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        let store = ServerStore(defaults: defaults)
+        try store.save(seed)
+        let service = SMBSessionService(store: store)
+        let settings = SettingsService(defaults: UserDefaults(suiteName: settingsSuite)!)
+        let cache = makeTestCache()
+        let preheat = PreheatService(settings: settings, cacheStore: cache)
+        let coordinator = LibraryCoordinator(
+            sessionService: service,
+            cache: cache,
+            readerCoordinator: ReaderCoordinator(cache: cache, preheatService: preheat, settings: settings),
+            preheatService: preheat,
+            vaultService: VaultService(
+                root: URL(fileURLWithPath: NSTemporaryDirectory())
+                    .appendingPathComponent("CoveTests-\(UUID().uuidString)")
+            )
+        )
+        let cleanup: () -> Void = {
+            defaults.removePersistentDomain(forName: suiteName)
+            UserDefaults(suiteName: settingsSuite)?.removePersistentDomain(forName: settingsSuite)
+        }
+        return (coordinator, service, cleanup)
+    }
+
+    /// Records onError deliveries as plain values for lock-free asserting.
+    private final class ErrorLog {
+        private let entries = Mutex<[(message: String, title: String)]>([])
+
+        var first: (message: String, title: String)? {
+            entries.withLock { $0.first }
+        }
+
+        func record(_ error: Error, title: String) {
+            entries.withLock { $0.append((error.localizedDescription, title)) }
+        }
+    }
+
+    @Test("switching flips the stored endpoint and re-enumerates at the new address", .timeLimit(.minutes(1)))
+    func switchFlipsAndReenumerates() async throws {
+        let server = seededServer(endpoint: .lan)
+        let (coordinator, service, cleanup) = try makeLibraryCoordinator(seed: [server])
+        defer { cleanup() }
+        let errors = ErrorLog()
+        coordinator.onError = { error, title in errors.record(error, title: title) }
+
+        coordinator.switchEndpoint(of: server)
+
+        // The flip lands synchronously before enumeration starts.
+        #expect(service.servers.first?.activeEndpoint == .remote)
+        try await waitUntil { errors.first != nil }
+        // Enumeration ran and failed (no password in the test keychain);
+        // already on remote, so no switch hint is suggested again.
+        #expect(errors.first?.title == "获取共享列表失败")
+        let message = errors.first?.message ?? ""
+        #expect(message.contains("已配置远程地址") == false)
+    }
+
+    @Test("a share enumeration failure suggests the idle remote address", .timeLimit(.minutes(1)))
+    func enumerationFailureHintsAtRemote() async throws {
+        let server = seededServer(endpoint: .lan)
+        let (coordinator, service, cleanup) = try makeLibraryCoordinator(seed: [server])
+        defer { cleanup() }
+        let errors = ErrorLog()
+        coordinator.onError = { error, title in errors.record(error, title: title) }
+
+        coordinator.enumerateShares(of: server)
+
+        try await waitUntil { errors.first != nil }
+        #expect(errors.first?.title == "获取共享列表失败")
+        #expect((errors.first?.message ?? "").contains("已配置远程地址"))
+        // The hint is advisory only: nothing flipped.
+        #expect(service.servers.first?.activeEndpoint == .lan)
+    }
+
+    @Test("a LAN-only server never flips and its failures carry no hint", .timeLimit(.minutes(1)))
+    func lanOnlyNeverFlips() async throws {
+        let server = ServerConfig(id: UUID(), host: "nas.local", username: "user")
+        let (coordinator, service, cleanup) = try makeLibraryCoordinator(seed: [server])
+        defer { cleanup() }
+        let errors = ErrorLog()
+        coordinator.onError = { error, title in errors.record(error, title: title) }
+
+        coordinator.switchEndpoint(of: server)
+
+        #expect(service.servers.first?.activeEndpoint == .lan)
+        try await waitUntil { errors.first != nil }
+        let message = errors.first?.message ?? ""
+        #expect(message.contains("已配置远程地址") == false)
+    }
+}
+
+/// Polls `condition` on the main actor until it holds, yielding between
+/// checks so queued main-actor continuations can run. Throws (and thus
+/// fails the test) on timeout instead of hanging. Same helper as in
+/// ViewModelTests; both files keep a private copy.
+@MainActor
+private func waitUntil(
+    _ message: @autoclosure () -> String = "condition not met before timeout",
+    _ condition: () -> Bool
+) async throws {
+    let deadline = ContinuousClock.now + .seconds(10)
+    while !condition() {
+        if ContinuousClock.now > deadline {
+            throw WaitTimeout(message: message())
+        }
+        try await Task.sleep(for: .milliseconds(5))
+    }
+}
+
+private struct WaitTimeout: Error, CustomStringConvertible {
+    let message: String
+    var description: String { message }
 }

@@ -11,6 +11,7 @@ final class ServerListViewController: NSViewController {
     var onAddServer: (() -> Void)?
     var onConnect: ((ServerConfig) -> Void)?
     var onEdit: ((ServerConfig) -> Void)?
+    var onSwitchEndpoint: ((ServerConfig) -> Void)?
     var onRemove: ((ServerConfig) -> Void)?
     var onOpenVault: (() -> Void)?
 
@@ -56,6 +57,11 @@ final class ServerListViewController: NSViewController {
         // Right-click menu on server rows; validated against clickedRow in
         // validateMenuItem so the header row and empty space offer nothing.
         let menu = NSMenu()
+        let switchItem = NSMenuItem(
+            title: "切换到远程地址", action: #selector(handleSwitchEndpoint), keyEquivalent: ""
+        )
+        switchItem.target = self
+        menu.addItem(switchItem)
         let editItem = NSMenuItem(title: "编辑…", action: #selector(handleEdit), keyEquivalent: "")
         editItem.target = self
         menu.addItem(editItem)
@@ -91,6 +97,12 @@ final class ServerListViewController: NSViewController {
         onConnect?(server)
     }
 
+    @objc private func handleSwitchEndpoint() {
+        let row = tableView.clickedRow
+        guard let server = viewModel.server(atTableRow: row) else { return }
+        onSwitchEndpoint?(server)
+    }
+
     @objc private func handleEdit() {
         let row = tableView.clickedRow
         guard let server = viewModel.server(atTableRow: row) else { return }
@@ -106,10 +118,17 @@ final class ServerListViewController: NSViewController {
 
 extension ServerListViewController: NSMenuItemValidation {
     /// Menu items only apply to actual server rows — not the section
-    /// header (row 0) and not empty space below the list.
+    /// header (row 0) and not empty space below the list. The switch item
+    /// additionally renames itself to the destination address kind and is
+    /// only offered for servers that actually have a remote address.
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         let row = tableView.clickedRow
-        return viewModel.server(atTableRow: row) != nil
+        guard let server = viewModel.server(atTableRow: row) else { return false }
+        if menuItem.action == #selector(handleSwitchEndpoint) {
+            menuItem.title = server.activeEndpoint == .remote ? "切换到局域网地址" : "切换到远程地址"
+            return server.remoteHost != nil
+        }
+        return true
     }
 }
 
@@ -222,11 +241,13 @@ extension ServerListViewController: NSTableViewDataSource, NSTableViewDelegate {
 }
 
 /// One server row: a plain monochrome symbol and the server name, in the
-/// clean sidebar (no badge chrome).
+/// clean sidebar (no badge chrome). The one marker is a small "远程" tag
+/// while the server's remote address is the active one.
 @MainActor
 private final class ServerRowCellView: NSTableCellView {
     private let iconView = NSImageView()
     private let nameLabel = NSTextField(labelWithString: "")
+    private let endpointTagLabel = NSTextField(labelWithString: "远程")
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -239,12 +260,23 @@ private final class ServerRowCellView: NSTableCellView {
         nameLabel.textColor = .labelColor
         nameLabel.lineBreakMode = .byTruncatingMiddle
 
+        endpointTagLabel.font = .systemFont(ofSize: 10, weight: .medium)
+        endpointTagLabel.textColor = .secondaryLabelColor
+        endpointTagLabel.isHidden = true
+        endpointTagLabel.setContentHuggingPriority(.required, for: .horizontal)
+        endpointTagLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
+
         addSubview(iconView)
         addSubview(nameLabel)
+        addSubview(endpointTagLabel)
         iconView.snp.makeConstraints { make in
             make.leading.equalToSuperview().offset(6)
             make.centerY.equalToSuperview()
             make.width.height.equalTo(18)
+        }
+        endpointTagLabel.snp.makeConstraints { make in
+            make.trailing.equalToSuperview().offset(-6)
+            make.centerY.equalToSuperview()
         }
         nameLabel.snp.makeConstraints { make in
             make.leading.equalTo(iconView.snp.trailing).offset(8)
@@ -260,6 +292,19 @@ private final class ServerRowCellView: NSTableCellView {
 
     func configure(with server: ServerConfig) {
         configure(symbol: "server.rack", title: server.displayName, tint: .labelColor)
+        // The LAN default stays unmarked (clean sidebar); only the remote
+        // endpoint earns the tag, so reuse has to be able to drop it again.
+        let showsRemoteTag = server.activeEndpoint == .remote && server.remoteHost != nil
+        endpointTagLabel.isHidden = !showsRemoteTag
+        nameLabel.snp.remakeConstraints { make in
+            make.leading.equalTo(iconView.snp.trailing).offset(8)
+            make.centerY.equalToSuperview()
+            if showsRemoteTag {
+                make.trailing.lessThanOrEqualTo(endpointTagLabel.snp.leading).offset(-6)
+            } else {
+                make.trailing.equalToSuperview().offset(-4)
+            }
+        }
     }
 
     /// Generic icon + title content (the vault row uses it too).

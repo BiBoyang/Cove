@@ -148,6 +148,22 @@ final class SMBSessionService {
         }
     }
 
+    /// Flips the server's active endpoint (LAN ↔ remote) and persists it,
+    /// so the choice survives relaunches. A LAN-only server stays on LAN.
+    /// The caller is responsible for dropping any live session that still
+    /// runs on the old address.
+    @discardableResult
+    func switchEndpoint(of serverID: UUID) throws -> ServerConfig {
+        try updateConfig(id: serverID) { config in
+            switch config.activeEndpoint {
+            case .lan:
+                if config.remoteHost != nil { config.activeEndpoint = .remote }
+            case .remote:
+                config.activeEndpoint = .lan
+            }
+        }
+    }
+
     /// Mutates one stored config in place. Rolls the list back when the
     /// persist fails so a failed save never leaves divergent state.
     @discardableResult
@@ -170,33 +186,37 @@ final class SMBSessionService {
         return servers[index]
     }
 
-    /// Enumerates the browsable shares of a stored server. Does not touch
-    /// the active share session: enumeration uses its own short-lived
-    /// server-level connection (see `SMBServer`).
+    /// Enumerates the browsable shares of a stored server, at whichever
+    /// address its active endpoint selects. Does not touch the active
+    /// share session: enumeration uses its own short-lived server-level
+    /// connection (see `SMBServer`).
     func enumerateShares(for serverID: UUID) async throws -> [SMBShareInfo] {
         guard let server = servers.first(where: { $0.id == serverID }) else {
             throw SessionError.unknownServer
         }
         let password = try passwordFor(server)
-        logger.info("Enumerating shares on \(server.host)", privacy: .private)
+        let host = server.activeHost
+        logger.info("Enumerating shares on \(host)", privacy: .private)
         do {
             return try await SMBServer(
-                host: server.host,
+                host: host,
                 username: server.username,
                 password: password
             ).listShares()
         } catch {
-            logger.error("Share enumeration failed for \(server.host): \(error.localizedDescription)", privacy: .private)
+            logger.error("Share enumeration failed for \(host): \(error.localizedDescription)", privacy: .private)
             throw error
         }
     }
 
-    /// Connects to one share of a server, replacing any active session.
+    /// Connects to one share of a server at its active address, replacing
+    /// any active session.
     func connect(to server: ServerConfig, share: String) async throws {
         let password = try passwordFor(server)
-        logger.info("Connecting to \(server.host)/\(share)", privacy: .private)
+        let host = server.activeHost
+        logger.info("Connecting to \(host)/\(share)", privacy: .private)
         let newSource = SMBSource(
-            host: server.host,
+            host: host,
             share: share,
             username: server.username,
             password: password
@@ -204,7 +224,7 @@ final class SMBSessionService {
         do {
             try await newSource.connect()
         } catch {
-            logger.error("Connect failed for \(server.host)/\(share): \(error.localizedDescription)", privacy: .private)
+            logger.error("Connect failed for \(host)/\(share): \(error.localizedDescription)", privacy: .private)
             throw error
         }
         // Swap first so the new session is usable immediately; the old one
@@ -216,7 +236,7 @@ final class SMBSessionService {
             Task { await old.disconnect() }
         }
         // Rebuild the preheat connection for the new share in the background.
-        startPreheatConnection(host: server.host, share: share, username: server.username, password: password)
+        startPreheatConnection(host: host, share: share, username: server.username, password: password)
     }
 
     func list(at path: String) async throws -> [ContentItem] {

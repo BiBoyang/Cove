@@ -15,6 +15,12 @@ Everything else comes later.
 - Passwords are stored in the Keychain; only address, username and display
   name are persisted in `UserDefaults`. Right-click a server to delete it
   (drops both the config and the Keychain password, after confirmation).
+  Each server can carry an optional remote address (Tailscale/WireGuard/
+  public IP) alongside its LAN address: right-click to switch between 家/
+  远程 — the switch drops the live session, reconnects at the other
+  address, is remembered per server, and connection failures suggest
+  switching when an idle remote address is configured (see
+  [Remote access](#remote-access-tailscale--wireguard)).
 - Double-click a share card to browse it: directories, navigation into
   folders and back up (the back button returns to the share grid from the
   share root). Rows show a large rounded thumbnail with a name-plus-metadata
@@ -115,13 +121,18 @@ is [Tailscale](https://tailscale.com) (a WireGuard-based mesh VPN):
    device on the NAS's LAN), and sign them into the same tailnet.
 2. Find the NAS's tailnet IP (a `100.x.x.x` address) in the Tailscale admin
    console or menu-bar app.
-3. In Cove, add a server with that tailnet IP — the same username and
-   password as on the LAN.
+3. In Cove, add the server with its LAN address and enter the tailnet IP as
+   the optional remote address (远程地址) — the same username and password
+   as on the LAN.
+4. Away from home, right-click the server in the sidebar and switch to the
+   remote address; switch back the same way. Cove remembers each server's
+   last-used address, and a failed connection suggests switching when an
+   idle remote address is configured.
 
 A plain WireGuard tunnel works the same way: connect with any WireGuard
-client, then add the NAS's tunnel-side address as a server in Cove. The
-VPN itself is managed by the system VPN app; Cove just connects to whatever
-IP is reachable.
+client, then enter the NAS's tunnel-side address as the server's remote
+address in Cove. The VPN itself is managed by the system VPN app; Cove just
+connects to whatever IP is reachable.
 
 Logging: interpolated log content defaults to os_log `.auto` privacy
 (redacted in persisted logs); hosts, share names and paths are logged with

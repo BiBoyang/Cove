@@ -76,6 +76,7 @@ final class LibraryCoordinator {
         serverListViewController.onAddServer = { [weak self] in self?.presentAddServerSheet() }
         serverListViewController.onConnect = { [weak self] in self?.enumerateShares(of: $0) }
         serverListViewController.onEdit = { [weak self] in self?.presentEditServerSheet($0) }
+        serverListViewController.onSwitchEndpoint = { [weak self] in self?.switchEndpoint(of: $0) }
         serverListViewController.onRemove = { [weak self] in self?.confirmRemoveServer($0) }
         serverListViewController.onOpenVault = { [weak self] in self?.openVault() }
         shareGridViewController.onOpenShare = { [weak self] in self?.openShare($0) }
@@ -180,8 +181,15 @@ final class LibraryCoordinator {
             defer { activeAddServerSheet = nil }
             guard case let .editRemote(server, remoteHost) = outcome else { return }
             do {
-                _ = try sessionService.updateRemoteHost(remoteHost, for: server.id)
+                let updated = try sessionService.updateRemoteHost(remoteHost, for: server.id)
                 serverListViewModel.update(servers: sessionService.servers)
+                // Rewriting or clearing the remote address may leave the
+                // connected session on an address the config no longer
+                // selects; drop it and reconnect at the new selection.
+                if currentServer?.id == server.id, updated.activeHost != server.activeHost {
+                    activeTask = Task { await self.sessionService.disconnect() }
+                    enumerateShares(of: updated)
+                }
             } catch {
                 onError?(error, "保存远程地址失败")
             }
@@ -221,7 +229,34 @@ final class LibraryCoordinator {
         activeTask = Task { await sessionService.disconnect() }
     }
 
-    private func enumerateShares(of server: ServerConfig) {
+    /// Flips the server's address (LAN ↔ remote), drops any live session
+    /// still running on the old address, and reconnects by enumerating
+    /// shares at the newly selected one. Internal (not private) so the
+    /// disconnect/reconnect choreography is unit-testable, like
+    /// `LibraryNavigationPath`.
+    func switchEndpoint(of server: ServerConfig) {
+        let updated: ServerConfig
+        do {
+            updated = try sessionService.switchEndpoint(of: server.id)
+        } catch {
+            onError?(error, "切换地址失败")
+            return
+        }
+        serverListViewModel.update(servers: sessionService.servers)
+        if currentServer?.id == server.id {
+            // The live share session (and its preheat connection) still
+            // runs on the old address; drop it so reader traffic cannot
+            // keep flowing there after the flip. Enumeration opens its own
+            // short-lived connection, so the two never contend.
+            activeTask = Task { await sessionService.disconnect() }
+        }
+        enumerateShares(of: updated)
+    }
+
+    /// Enumerates the shares of a server at its active address and shows
+    /// the share grid. Internal (not private) so the failure-guidance
+    /// wiring is unit-testable, like `LibraryNavigationPath`.
+    func enumerateShares(of server: ServerConfig) {
         let generation = beginNavigation()
         currentServer = server
         browsingVault = false
@@ -241,7 +276,12 @@ final class LibraryCoordinator {
                 if Task.isCancelled { return }
                 guard generation == navigationGeneration else { return }
                 shareGridViewModel.showPlaceholder("获取共享列表失败，双击重试")
-                onError?(error, "获取共享列表失败")
+                // With an idle remote address configured, the failure may
+                // just mean the LAN address is unreachable from here.
+                onError?(
+                    server.canSwitchToRemote ? RemoteEndpointHint(underlying: error) : error,
+                    "获取共享列表失败"
+                )
             }
         }
     }
@@ -581,6 +621,22 @@ struct LibraryNavigationPath: Equatable, Sendable {
     /// directory name below it.
     static func browserTitle(forPath path: String, shareName: String?) -> String {
         path == "/" ? (shareName ?? "/") : (path as NSString).lastPathComponent
+    }
+}
+
+/// Wraps a connection failure with the "switch to the remote address"
+/// hint for servers that have a configured but idle remote address. Flows
+/// through the regular `onError` alert path — only the message gains a
+/// sentence, the alert presentation layer stays untouched.
+struct RemoteEndpointHint: LocalizedError {
+    private let underlying: Error
+
+    init(underlying: Error) {
+        self.underlying = underlying
+    }
+
+    var errorDescription: String? {
+        underlying.localizedDescription + "\n\n该服务器已配置远程地址，可右键服务器切换到远程地址后重试。"
     }
 }
 
