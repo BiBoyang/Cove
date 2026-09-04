@@ -75,6 +75,7 @@ final class LibraryCoordinator {
     private func wireCallbacks() {
         serverListViewController.onAddServer = { [weak self] in self?.presentAddServerSheet() }
         serverListViewController.onConnect = { [weak self] in self?.enumerateShares(of: $0) }
+        serverListViewController.onEdit = { [weak self] in self?.presentEditServerSheet($0) }
         serverListViewController.onRemove = { [weak self] in self?.confirmRemoveServer($0) }
         serverListViewController.onOpenVault = { [weak self] in self?.openVault() }
         shareGridViewController.onOpenShare = { [weak self] in self?.openShare($0) }
@@ -144,18 +145,46 @@ final class LibraryCoordinator {
         guard let window = hostWindowProvider?() else { return }
         let sheet = AddServerSheetController()
         activeAddServerSheet = sheet
-        sheet.beginSheet(on: window) { [weak self] result in
-            guard let self, let result else {
+        sheet.beginSheet(on: window) { [weak self] outcome in
+            guard let self else {
                 self?.activeAddServerSheet = nil
                 return
             }
+            defer { activeAddServerSheet = nil }
+            guard case let .add(result) = outcome else { return }
             do {
-                try sessionService.addServer(host: result.host, username: result.username, password: result.password)
+                try sessionService.addServer(
+                    host: result.host,
+                    username: result.username,
+                    password: result.password,
+                    remoteHost: result.remoteHost
+                )
                 serverListViewModel.update(servers: sessionService.servers)
             } catch {
                 onError?(error, "保存服务器失败")
             }
-            activeAddServerSheet = nil
+        }
+    }
+
+    /// Edits a stored server's optional remote address. Host, username,
+    /// and password are untouched, so the sheet never asks for them.
+    private func presentEditServerSheet(_ server: ServerConfig) {
+        guard let window = hostWindowProvider?() else { return }
+        let sheet = AddServerSheetController(editRemote: server)
+        activeAddServerSheet = sheet
+        sheet.beginSheet(on: window) { [weak self] outcome in
+            guard let self else {
+                self?.activeAddServerSheet = nil
+                return
+            }
+            defer { activeAddServerSheet = nil }
+            guard case let .editRemote(server, remoteHost) = outcome else { return }
+            do {
+                _ = try sessionService.updateRemoteHost(remoteHost, for: server.id)
+                serverListViewModel.update(servers: sessionService.servers)
+            } catch {
+                onError?(error, "保存远程地址失败")
+            }
         }
     }
 

@@ -69,7 +69,7 @@ final class SMBSessionService {
     private static let keychainService = "com.biboyang.cove"
 
     private let logger = TraceLogger(category: "SMBSessionService")
-    private let store = ServerStore()
+    private let store: ServerStore
 
     private(set) var servers: [ServerConfig]
     /// The interactive source: an `SMBSource` for NAS shares, or a
@@ -90,14 +90,20 @@ final class SMBSessionService {
     /// away. Assigned by the coordinator; fires on the main actor.
     var onPreheatConnectionChanged: ((PreheatConnection?) -> Void)?
 
-    init() {
+    init(store: ServerStore = ServerStore()) {
+        self.store = store
         servers = store.load()
     }
 
     /// Adds a server: password goes to the Keychain, the rest to UserDefaults.
     @discardableResult
-    func addServer(host: String, username: String, password: String) throws -> ServerConfig {
-        let config = ServerConfig(id: UUID(), host: host, username: username)
+    func addServer(
+        host: String,
+        username: String,
+        password: String,
+        remoteHost: String? = nil
+    ) throws -> ServerConfig {
+        let config = ServerConfig(id: UUID(), host: host, username: username, remoteHost: remoteHost)
         try KeychainKit.savePassword(password, service: Self.keychainService, account: config.id.uuidString)
         servers.append(config)
         do {
@@ -129,6 +135,39 @@ final class SMBSessionService {
         // UUID nothing references anymore).
         try? KeychainKit.deletePassword(service: Self.keychainService, account: id.uuidString)
         logger.info("Removed server \(removed.host)", privacy: .private)
+    }
+
+    /// Sets (or clears) a server's optional remote address. Clearing it
+    /// while the remote endpoint is active pins the endpoint back to LAN.
+    @discardableResult
+    func updateRemoteHost(_ remoteHost: String?, for serverID: UUID) throws -> ServerConfig {
+        let trimmed = remoteHost?.trimmedNonEmpty
+        return try updateConfig(id: serverID) { config in
+            config.remoteHost = trimmed
+            if trimmed == nil { config.activeEndpoint = .lan }
+        }
+    }
+
+    /// Mutates one stored config in place. Rolls the list back when the
+    /// persist fails so a failed save never leaves divergent state.
+    @discardableResult
+    private func updateConfig(
+        id: UUID,
+        _ change: (inout ServerConfig) -> Void
+    ) throws -> ServerConfig {
+        guard let index = servers.firstIndex(where: { $0.id == id }) else {
+            throw SessionError.unknownServer
+        }
+        let original = servers[index]
+        change(&servers[index])
+        do {
+            try store.save(servers)
+        } catch {
+            servers[index] = original
+            throw error
+        }
+        logger.info("Updated server \(servers[index].displayName)", privacy: .private)
+        return servers[index]
     }
 
     /// Enumerates the browsable shares of a stored server. Does not touch

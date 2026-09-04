@@ -4,12 +4,14 @@ import Foundation
 /// controller only forwards raw field values and renders the outcome.
 @MainActor
 final class AddServerViewModel {
-    /// Validated form values; host and username are whitespace-trimmed,
-    /// the password is passed through untouched.
+    /// Validated form values; host, username, and the optional remote
+    /// address are whitespace-trimmed, the password is passed through
+    /// untouched. A blank remote address stays nil (LAN-only server).
     struct FormResult: Equatable, Sendable {
         let host: String
         let username: String
         let password: String
+        let remoteHost: String?
     }
 
     enum ValidationError: Error, Equatable {
@@ -29,6 +31,7 @@ final class AddServerViewModel {
     /// or the first failing field.
     func submit(
         host: String,
+        remoteHost: String = "",
         username: String,
         password: String
     ) -> Result<FormResult, ValidationError> {
@@ -36,6 +39,13 @@ final class AddServerViewModel {
         guard !host.isEmpty else { return .failure(.emptyHost) }
         let username = username.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !username.isEmpty else { return .failure(.emptyUsername) }
-        return .success(FormResult(host: host, username: username, password: password))
+        return .success(
+            FormResult(
+                host: host,
+                username: username,
+                password: password,
+                remoteHost: remoteHost.trimmedNonEmpty
+            )
+        )
     }
 }

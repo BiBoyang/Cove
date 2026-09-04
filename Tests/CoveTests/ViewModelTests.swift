@@ -278,7 +278,18 @@ struct AddServerViewModelTests {
         let viewModel = AddServerViewModel()
         let result = viewModel.submit(host: "  nas.local\n", username: "\tuser ", password: " p ")
 
-        #expect(result == .success(.init(host: "nas.local", username: "user", password: " p ")))
+        #expect(result == .success(.init(host: "nas.local", username: "user", password: " p ", remoteHost: nil)))
+    }
+
+    @Test("a blank remote address stays unset and a filled one is trimmed")
+    func remoteHostHandling() {
+        let viewModel = AddServerViewModel()
+
+        let blank = viewModel.submit(host: "nas", remoteHost: "   ", username: "user", password: "")
+        #expect(blank == .success(.init(host: "nas", username: "user", password: "", remoteHost: nil)))
+
+        let filled = viewModel.submit(host: "nas", remoteHost: " 100.64.0.5 ", username: "user", password: "")
+        #expect(filled == .success(.init(host: "nas", username: "user", password: "", remoteHost: "100.64.0.5")))
     }
 
     @Test("rejects an empty or whitespace-only host")
@@ -302,7 +313,7 @@ struct AddServerViewModelTests {
         let viewModel = AddServerViewModel()
         let result = viewModel.submit(host: "192.168.1.10", username: "admin", password: "secret")
 
-        #expect(result == .success(.init(host: "192.168.1.10", username: "admin", password: "secret")))
+        #expect(result == .success(.init(host: "192.168.1.10", username: "admin", password: "secret", remoteHost: nil)))
     }
 }
 

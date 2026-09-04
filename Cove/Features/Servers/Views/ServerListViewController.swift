@@ -10,6 +10,7 @@ final class ServerListViewController: NSViewController {
 
     var onAddServer: (() -> Void)?
     var onConnect: ((ServerConfig) -> Void)?
+    var onEdit: ((ServerConfig) -> Void)?
     var onRemove: ((ServerConfig) -> Void)?
     var onOpenVault: (() -> Void)?
 
@@ -55,6 +56,10 @@ final class ServerListViewController: NSViewController {
         // Right-click menu on server rows; validated against clickedRow in
         // validateMenuItem so the header row and empty space offer nothing.
         let menu = NSMenu()
+        let editItem = NSMenuItem(title: "编辑…", action: #selector(handleEdit), keyEquivalent: "")
+        editItem.target = self
+        menu.addItem(editItem)
+        menu.addItem(.separator())
         let removeItem = NSMenuItem(title: "删除", action: #selector(handleRemove), keyEquivalent: "")
         removeItem.target = self
         menu.addItem(removeItem)
@@ -86,6 +91,12 @@ final class ServerListViewController: NSViewController {
         onConnect?(server)
     }
 
+    @objc private func handleEdit() {
+        let row = tableView.clickedRow
+        guard let server = viewModel.server(atTableRow: row) else { return }
+        onEdit?(server)
+    }
+
     @objc private func handleRemove() {
         let row = tableView.clickedRow
         guard let server = viewModel.server(atTableRow: row) else { return }
@@ -94,8 +105,8 @@ final class ServerListViewController: NSViewController {
 }
 
 extension ServerListViewController: NSMenuItemValidation {
-    /// "删除" only applies to actual server rows — not the section header
-    /// (row 0) and not empty space below the list.
+    /// Menu items only apply to actual server rows — not the section
+    /// header (row 0) and not empty space below the list.
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         let row = tableView.clickedRow
         return viewModel.server(atTableRow: row) != nil
