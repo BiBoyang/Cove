@@ -81,5 +81,8 @@ make generate && make build  # 零警告
   通告 NAS 的 /32（`--advertise-routes=192.168.1.10/32` + 后台批准），
   /32 比任何本地路由精确，对端自动装表；本机手动路由已删除。
   治理后热点下 ping NAS 约 45~70ms（直连建立，不再走 DERP 中继）。
-- 本机 Tailscale 为源码编译的临时形态（/tmp/tailscale-bin + launchd
-  plist 指向 /tmp，重启即失效）；长期使用应装官方 GUI 版。
+- 本机 Tailscale 最终形态：**CLI 正式版**（源码编译 v1.102.3，装在
+  `/usr/local/bin`，launchd 常驻自启）。官方 GUI 版已放弃并卸载——
+  本机网络对海外分发点长期受限（pkgs.tailscale.com 下载/登录不稳），
+  CLI 路径（GitHub 源码 + Go 镜像）完全绕开该约束；管理命令：
+  `tailscale status / up / down`。

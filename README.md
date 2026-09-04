@@ -129,6 +129,15 @@ is [Tailscale](https://tailscale.com) (a WireGuard-based mesh VPN):
    last-used address, and a failed connection suggests switching when an
    idle remote address is configured.
 
+If your NAS can't run Tailscale (closed consumer boxes without package
+support), put Tailscale on another always-on machine on the home LAN (e.g.
+a Mac mini) and enable its **subnet router** for the NAS — the NAS's
+regular LAN IP then stays reachable from anywhere and can serve as the
+remote address directly. Prefer advertising the NAS as a `/32` host route
+(`--advertise-routes=192.168.1.10/32`) rather than the whole subnet: a
+`/24` overlaps local networks at either end and Tailscale refuses to
+install it.
+
 A plain WireGuard tunnel works the same way: connect with any WireGuard
 client, then enter the NAS's tunnel-side address as the server's remote
 address in Cove. The VPN itself is managed by the system VPN app; Cove just
