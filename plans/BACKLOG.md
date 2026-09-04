@@ -4,10 +4,11 @@
 
 ## 进行中 / 待验收
 
-- [ ] 服务器远程地址（家里/远程切换，已排期，TASK 已刷新可派 agent，见 plans/TASK-remote-address.md）
+（无）
 
 ## 下一波（候选，未排期）
 
+- [ ] SMB 连接/枚举加显式超时（~15s）：远程地址功能的配套缺口——失败引导要快出现；对普通 LAN 失败同样受益
 - [ ] 自动滚屏速度档位（plans/archive/TASK-strip-autoscroll.md 留的后续口：当前单速 110 pt/s）
 - [ ] 单页模式自动翻页（jpg 目录漫画场景的候选）
 
@@ -43,3 +44,4 @@
 - 阅读位置记忆：cbz/目录记住最后页码、看完即删、可撤销浮层 + 设置开关（见 plans/archive/TASK-reader-position-memory.md，2026-09-04 真机通过）
 - 条带自动滚屏：110 pt/s 匀速、手动重定位不中断、缩放/到底/切模式停止（见 plans/archive/TASK-strip-autoscroll.md，2026-09-04 真机通过）
 - 单页模式缩放：⌘ 四档 + 拖拽平移 + 翻页/resize 重置（见 plans/archive/TASK-reader-paged-zoom.md，2026-09-04 真机通过）
+- 服务器远程地址：remoteHost 双地址 + 右键切换 + 失败引导 + 生效地址持久化（见 plans/TASK-remote-address.md，2026-09-04 热点实测机制五项全过；真远程联通待 Tailscale/中转条件）
