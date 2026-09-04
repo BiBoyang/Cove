@@ -4,12 +4,10 @@
 
 ## 进行中 / 待验收
 
-- [ ] 自动滚屏速度档位（0.5x/1x/2x 右键循环 + 持久化，见 plans/TASK-autoscroll-speed-gears.md，可派 agent）
-- [ ] 单页模式自动翻页 slideshow（5s 固定间隔 + 手动接管即停，见 plans/TASK-paged-slideshow.md，可派 agent）
+- [ ] SMB 连接/枚举加显式超时（~15s，见 plans/TASK-smb-timeout.md，可派 agent）
 
 ## 下一波（候选，未排期）
 
-- [ ] SMB 连接/枚举加显式超时（~15s）：远程地址功能的配套缺口——失败引导要快出现；对普通 LAN 失败同样受益
 - [ ] flaky 观察：ContinuousReaderViewModelTests "measurements land as one anchored batch" 高负载下偶发超时（CI 任务实测复跑即过），若 CI 上再红优先治理
 
 ## 上架前必须
@@ -43,6 +41,8 @@
 - 条带阅读器打磨：模式偏好按内容类型持久化、条带缩放（⌘ 四档 + 倍数闪现 + 横向滚动）、跳页 scrubber（见 plans/archive/TASK-reader-strip-polish.md，2026-09-04）
 - 阅读位置记忆：cbz/目录记住最后页码、看完即删、可撤销浮层 + 设置开关（见 plans/archive/TASK-reader-position-memory.md，2026-09-04 真机通过）
 - 条带自动滚屏：110 pt/s 匀速、手动重定位不中断、缩放/到底/切模式停止（见 plans/archive/TASK-strip-autoscroll.md，2026-09-04 真机通过）
+- 滚屏速度三档 0.5x/1x/2x（右键循环 + SettingsService 持久化）+ 单页自动翻页 slideshow（5s 固定、手动接管即停、末页即停）（见 plans/archive/TASK-autoscroll-speed-gears.md、plans/archive/TASK-paged-slideshow.md，2026-09-05 真机通过）
+- 目录浏览滚动修复：切目录回顶、返回上级揭示并选中来源文件夹（2026-09-05 真机通过）
 - 单页模式缩放：⌘ 四档 + 拖拽平移 + 翻页/resize 重置（见 plans/archive/TASK-reader-paged-zoom.md，2026-09-04 真机通过）
 - CI 落地：push/PR/每日 02:00 门控全量测试（framework + app 双 job，含失败演练实证）；根治 .pcm 增量腐坏（禁 explicitly-built-modules）（见 plans/archive/TASK-ci.md，2026-09-05）
 - 服务器远程地址：remoteHost 双地址 + 右键切换 + 失败引导 + 生效地址持久化（见 plans/TASK-remote-address.md，2026-09-04 热点实测机制五项 + Tailscale 子网路由端到端联通全过）
