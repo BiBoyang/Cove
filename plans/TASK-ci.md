@@ -80,3 +80,33 @@ make generate && make build  # EBM 关闭后零警告
 make test                    # 全量回归
 # CI 侧：workflow_dispatch 手动触发 → Actions 页全绿
 ```
+
+## 完成记录（2026-09-05）
+
+全部落地，提交 `1a5a001`（EBM 关闭）+ `56ab178`（CI workflow）。
+
+Step 1 DoD：
+- `make generate && make build` 零警告；增量重建两次 BUILD SUCCEEDED、
+  无 .pcm 类故障；`make test` 全绿（8 包 XCTest 全 0 失败 +
+  CoveTests 192 测试 + smb-spike 编译检查通过）。
+
+Step 2 DoD：
+1. workflow_dispatch 手动触发全绿（run 33896521840）；
+2. push 到 main 全绿（run 33895596205）：check-changes 5s、
+   framework-tests ~2min、app-tests ~3.3min，CI 侧 192 测试与本地一致，
+   libmpv 从 IINA v1.4.4 dmg 组装（72 dylibs）；
+3. schedule 空跑门控：逻辑用真实 API 双向验证——`since` 取未来时间
+   返回 0 commits（→ should_run=false，跳过），48h 窗口返回 5 commits
+   （→ true）。自然周期观察未做（当晚仓库活跃，无法自然触发空跑）；
+4. 失败路径演练（run 33897332537）：塞入 `ciFailureDrill` 假断言推送后
+   app-tests 变红、framework-tests 保持绿，`if: always()` 日志 tail 清晰
+   显示 `ciFailureDrill()` 与 `** TEST FAILED **`；随后 revert
+   （`0ad6eae`），CI 恢复绿（run 33898191245）。
+
+附加发现：
+- `ContinuousReaderViewModelTests` 的 "measurements land as one
+  anchored batch" 在本机高负载（并行构建干扰）下出现过一次
+  "condition not met before timeout"，复跑通过——时序敏感的 flaky
+  候选，CI 上有偶发红的风险，候选进 BACKLOG 观察而非本次修。
+- actionlint（v1.7.12，GitHub release 预编译二进制）作为本地 workflow
+  lint 手段可用；本机 Homebrew 不认识 beta macOS（`:dunno`）装不了。
