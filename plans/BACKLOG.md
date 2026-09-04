@@ -15,6 +15,11 @@
 
 ## 远期（North Star：Mac 上的一流 NAS 媒体中心）
 
+- [ ] iPad 端扩展（优先 iPad）：UIKit 手写（全平台禁用 SwiftUI，沿用 SnapKit
+  DSL 与 MVVM/Coordinator 范式），Frameworks/Services/ViewModel 整体复用（前提见
+  AGENTS.md 规矩 16），视频播放最后攻（待 libmpv 供应链收敛）。跨端 UI 一致性靠
+  共享设计规范而非代码：后续 Mac 端 UI 优化任务须把色值/字号/间距/圆角等设计决策
+  沉淀为平台无关的设计令牌文档，作为 iOS 重写的图纸
 - [ ] 目录模式 decode-ahead（相邻页预取的姊妹项）
 - [ ] 播放器多窗口
 - [ ] Preheat 解码挪出 actor（实测预热慢再做，见 PreheatScheduler.execute 注释）

@@ -38,7 +38,8 @@ ReaderKit 是 Frameworks 下的领域核心包，不依赖 AppKit、SnapKit、SM
 2. **ZIPFoundation 只允许在 `Frameworks/ComicKit` 包内 import**（CBZ/ZIP 解析；
    ComicKitTests 可用它构建测试包）。App target 和其他 Framework 一律不许碰。
 3. View Controller 不许直接碰网络层，一律走 `SMBSessionService`。
-4. 禁止 `import SwiftUI`，界面全部用 AppKit 手写。
+4. 禁止 `import SwiftUI`（全平台）：界面全部手写——macOS 用 AppKit，
+   未来 iPad/iOS 端用 UIKit（沿用 SnapKit DSL 与 MVVM/Coordinator 范式）。
 5. 密码只进 Keychain；`UserDefaults` 只存地址 / 用户名 / 显示名 / 设置项。
    密码、Token、真实 NAS 凭据不得写入源码、测试数据、日志、截图或 Git
    提交记录；smb-spike 的命令行密码参数仅用于开发期连通性探针，不是
@@ -72,6 +73,9 @@ ReaderKit 是 Frameworks 下的领域核心包，不依赖 AppKit、SnapKit、SM
 15. App target 的行为测试统一放在 `Tests/CoveTests`，优先使用 Swift Testing；
     仅 UI automation / XCTest-only 场景保留 XCTest。每次跨 actor 状态重构至少覆盖
     边界状态、取消或陈旧结果中的一个真实可观察行为。
+16. ViewModel / Services 的状态与接口禁止出现平台 UI 类型（AppKit 的
+    NSImage/NSColor/NSFont，未来 iOS 侧同理 UIImage/UIColor/UIFont），只传
+    CGImage/CGColor 或纯值——这是 iPad 扩展时 ViewModel/Services 整体复用的前提。
 
 ## 常用命令
 
