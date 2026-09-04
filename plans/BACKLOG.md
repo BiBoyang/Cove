@@ -4,11 +4,12 @@
 
 ## 进行中 / 待验收
 
-（无）
+- [ ] 服务器远程地址（家里/远程切换，已排期，TASK 已刷新可派 agent，见 plans/TASK-remote-address.md）
 
 ## 下一波（候选，未排期）
 
-- [ ] 服务器远程地址（家里/远程切换）：Tailscale/WireGuard 远程访问的 Cove 侧方案（见 plans/TASK-remote-address.md；不急，待排期）
+- [ ] 自动滚屏速度档位（plans/archive/TASK-strip-autoscroll.md 留的后续口：当前单速 110 pt/s）
+- [ ] 单页模式自动翻页（jpg 目录漫画场景的候选）
 
 ## 上架前必须
 
@@ -17,11 +18,8 @@
 
 ## 远期（North Star：Mac 上的一流 NAS 媒体中心）
 
-- [ ] PDF 阅读
-- [ ] 连续纵向条带阅读器（A1 决策搁置，A2 稳定后再议）
 - [ ] 目录模式 decode-ahead（相邻页预取的姊妹项）
 - [ ] 播放器多窗口
-- [ ] 本地仓库（vault）
 - [ ] Preheat 解码挪出 actor（实测预热慢再做，见 PreheatScheduler.execute 注释）
 - [ ] ErrorPresenter（alert 所有权扩张时，见 plans/ARCHITECTURE-AUDIT-2026-08-22.md）
 - [ ] ContentItem/SMBShareInfo/ServerConfig 是否下沉共享领域包（同上，待 target 拆分时定）
