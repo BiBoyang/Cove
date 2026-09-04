@@ -338,6 +338,10 @@ final class LibraryCoordinator {
             activeTask = Task {
                 do {
                     try await loadDirectory(at: target, generation: generation)
+                    // Keep the user's bearings: the folder just exited is
+                    // scrolled (and selected) into view. Runs after the
+                    // synchronous display→render, so the rows exist.
+                    browserViewController.revealItem(atPath: popped)
                 } catch {
                     if Task.isCancelled || error is CancellationError { return }
                     guard generation == navigationGeneration else { return }

@@ -59,6 +59,10 @@ final class BrowserViewController: NSViewController {
 
     private let tableView = NSTableView()
     private let scrollView = NSScrollView()
+    /// Path of the last rendered listing; a change means a navigation
+    /// happened and the scroll position resets to the top (reloadData
+    /// alone inherits the previous directory's offset).
+    private var lastRenderedPath: String?
     private let toolbarView = NSView()
     private let backButton = PillButton(
         symbolName: "chevron.left", pointSize: 15, style: .secondary,
@@ -236,6 +240,23 @@ final class BrowserViewController: NSViewController {
         renderPreheat(state.preheat)
         renderDownload(state.download)
         tableView.reloadData()
+        // Same-path renders (download/preheat progress, refresh after a
+        // delete) must not yank the user's scroll position.
+        if state.path != lastRenderedPath {
+            lastRenderedPath = state.path
+            scrollView.contentView.scroll(to: .zero)
+            scrollView.reflectScrolledClipView(scrollView.contentView)
+        }
+    }
+
+    /// Scrolls to and selects the row for `path` — used when navigating
+    /// back to a parent directory, so the folder just exited stays in view
+    /// (Finder-style). A row that no longer exists (renamed or deleted
+    /// meanwhile) degrades to the top reset from the path change.
+    func revealItem(atPath path: String) {
+        guard let row = viewModel.state.items.firstIndex(where: { $0.path == path }) else { return }
+        tableView.scrollRowToVisible(row)
+        tableView.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
     }
 
     /// One label for location: gray parent chain + semibold current name.
