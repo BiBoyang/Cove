@@ -4,9 +4,7 @@
 
 ## 进行中 / 待验收
 
-- [ ] 阅读位置记忆（已实现待真机验收，见 plans/TASK-reader-position-memory.md）
-- [ ] 条带自动滚屏（已实现待真机验收；行为已翻转为重定位不中断，见 plans/TASK-strip-autoscroll.md）
-- [ ] 单页模式缩放（已实现待真机验收，见 plans/TASK-reader-paged-zoom.md）
+（无）
 
 ## 下一波（候选，未排期）
 
@@ -44,3 +42,6 @@
 - 播放器传输包：Up Next 倒计时、五种播放模式、倍速（跨集记忆）、播放列表面板、mpv keep-open 停最后一帧（2026-09-04）
 - 暖黑风格库界面：全局深色、暖黑调色板、行高收紧、金色 accent（2026-09-04）
 - 条带阅读器打磨：模式偏好按内容类型持久化、条带缩放（⌘ 四档 + 倍数闪现 + 横向滚动）、跳页 scrubber（见 plans/archive/TASK-reader-strip-polish.md，2026-09-04）
+- 阅读位置记忆：cbz/目录记住最后页码、看完即删、可撤销浮层 + 设置开关（见 plans/TASK-reader-position-memory.md，2026-09-04 真机通过）
+- 条带自动滚屏：110 pt/s 匀速、手动重定位不中断、缩放/到底/切模式停止（见 plans/TASK-strip-autoscroll.md，2026-09-04 真机通过）
+- 单页模式缩放：⌘ 四档 + 拖拽平移 + 翻页/resize 重置（见 plans/TASK-reader-paged-zoom.md，2026-09-04 真机通过）
