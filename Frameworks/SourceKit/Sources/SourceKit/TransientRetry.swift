@@ -7,12 +7,15 @@ import Foundation
 /// the same connect succeeds moments later. Rather than surface that as a
 /// "connection failed" alert, retry once after a short delay. Only
 /// transport errors qualify — authentication and path failures are
-/// definitive and must come back immediately.
+/// definitive and must come back immediately. `ETIMEDOUT` is deliberately
+/// excluded: with the 15s connect timeout, a retry would only double the
+/// wait for a blackholed host, while the remaining codes fail fast and a
+/// retry is cheap.
 enum TransientRetry {
     /// POSIX codes worth one retry: the socket/transport died before any
     /// credentials or paths were evaluated.
     private static let retryable: Set<POSIXErrorCode> = [
-        .EIO, .ETIMEDOUT, .ECONNRESET, .ECONNREFUSED, .ENOTCONN,
+        .EIO, .ECONNRESET, .ECONNREFUSED, .ENOTCONN,
         .EHOSTUNREACH, .EHOSTDOWN, .ENETUNREACH, .EPIPE,
     ]
 

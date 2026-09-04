@@ -1,6 +1,16 @@
 import AMSMB2
 import Foundation
 
+/// Client-level timeouts (seconds) handed to AMSMB2's `SMB2Manager.timeout`.
+enum SMBTimeout {
+    /// Connect / share-enumeration phase: fail fast on unreachable hosts
+    /// instead of riding out AMSMB2's 60s default.
+    static let connect: TimeInterval = 15
+    /// Steady-state operations (list/metadata/read): AMSMB2's default, so
+    /// slow links and large files are not cut off by the connect budget.
+    static let read: TimeInterval = 60
+}
+
 /// `ContentSource` implementation backed by AMSMB2 (SMB2/SMB3).
 ///
 /// An actor: `SMB2Manager` is not `Sendable`, so every call that touches the
@@ -41,7 +51,9 @@ public actor SMBSource: ContentSource {
                 guard let client = SMB2Manager(url: url, credential: credential) else {
                     throw SourceError.connectionFailed("could not create SMB client for \(host)")
                 }
+                client.timeout = SMBTimeout.connect
                 try await client.connectShare(name: share)
+                client.timeout = SMBTimeout.read
                 return client
             }
         } catch let error as SourceError {

@@ -55,6 +55,7 @@ public struct SMBServer: Sendable {
                 guard let client = SMB2Manager(url: url, credential: credential) else {
                     throw SourceError.connectionFailed("could not create SMB client for \(host)")
                 }
+                client.timeout = SMBTimeout.connect
                 return try await client.listShares(enumerateHidden: false)
             }
         } catch let error as SourceError {

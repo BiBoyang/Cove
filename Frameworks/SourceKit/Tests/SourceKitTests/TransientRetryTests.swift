@@ -59,16 +59,33 @@ final class TransientRetryTests: XCTestCase {
         XCTAssertEqual(attempts, 1)
     }
 
-    func testSurfacesTheErrorWhenBothAttemptsFail() async {
+    func testDoesNotRetryTimeouts() async {
         let counter = AttemptCounter()
         do {
             _ = try await TransientRetry.run { () throws -> Int in
                 _ = await counter.next()
                 throw POSIXError(.ETIMEDOUT)
             }
-            XCTFail("expected the error to surface after the retry")
+            XCTFail("expected the timeout to surface without a retry")
         } catch let error as POSIXError {
             XCTAssertEqual(error.code, .ETIMEDOUT)
+        } catch {
+            XCTFail("unexpected error: \(error)")
+        }
+        let attempts = await counter.count
+        XCTAssertEqual(attempts, 1)
+    }
+
+    func testSurfacesTheSecondErrorWhenBothAttemptsFail() async {
+        let counter = AttemptCounter()
+        do {
+            _ = try await TransientRetry.run { () throws -> Int in
+                let attempt = await counter.next()
+                throw POSIXError(attempt == 1 ? .EIO : .ECONNRESET)
+            }
+            XCTFail("expected the second error to surface after the retry")
+        } catch let error as POSIXError {
+            XCTAssertEqual(error.code, .ECONNRESET)
         } catch {
             XCTFail("unexpected error: \(error)")
         }

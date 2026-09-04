@@ -4,8 +4,6 @@
 
 ## 进行中 / 待验收
 
-- [ ] SMB 连接/枚举加显式超时（~15s，见 plans/TASK-smb-timeout.md，可派 agent）
-
 ## 下一波（候选，未排期）
 
 - [ ] flaky 观察：ContinuousReaderViewModelTests "measurements land as one anchored batch" 高负载下偶发超时（CI 任务实测复跑即过），若 CI 上再红优先治理
@@ -46,3 +44,4 @@
 - 单页模式缩放：⌘ 四档 + 拖拽平移 + 翻页/resize 重置（见 plans/archive/TASK-reader-paged-zoom.md，2026-09-04 真机通过）
 - CI 落地：push/PR/每日 02:00 门控全量测试（framework + app 双 job，含失败演练实证）；根治 .pcm 增量腐坏（禁 explicitly-built-modules）（见 plans/archive/TASK-ci.md，2026-09-05）
 - 服务器远程地址：remoteHost 双地址 + 右键切换 + 失败引导 + 生效地址持久化（见 plans/TASK-remote-address.md，2026-09-04 热点实测机制五项 + Tailscale 子网路由端到端联通全过）
+- SMB 连接/枚举显式超时 15s 快速失败 + 摘除 ETIMEDOUT 透明重试（见 plans/archive/TASK-smb-timeout.md，2026-09-05 smb-spike 黑洞实测 15.1s/15.0s 达标）
