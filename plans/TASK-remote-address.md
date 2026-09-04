@@ -70,3 +70,17 @@ make generate && make build  # 零警告
 ## Review 交接
 
 按 WORKFLOW.md §5.2 Review Package，每 Step 单独提审。
+
+## 部署备注（2026-09-04 真机验收后记）
+
+- 验收环境：Mac（热点）→ Tailscale → 家中 Mac mini 子网路由 → NAS。
+  联想个人云装不了 Tailscale，子网路由是标准解法。
+- **坑：子网路由与本地网段冲突**。Mac mini 通告 `192.168.1.0/24`，但
+  热点/家里网络本身握有 192.168.x.x 的路由，Tailscale 为避免打断本地
+  网络不装这条子网路由。临时解法：本机手动加 /32 主机路由进 utun
+  （重启即失效）；正规修法：子网路由端只通告 NAS 的 /32（如
+  `--advertise-routes=192.168.1.10/32`）。
+- 中继路径延迟高（1.8~4.8s，NAT 双方无直连时走 DERP）；浏览/漫画可用，
+  视频靠 mpv 缓存。
+- 本机 Tailscale 为源码编译的临时形态（/tmp/tailscale-bin + launchd
+  plist 指向 /tmp，重启即失效）；长期使用应装官方 GUI 版。
