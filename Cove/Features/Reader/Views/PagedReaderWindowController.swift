@@ -21,7 +21,7 @@ final class PagedReaderWindowController: NSWindowController {
     private var isTornDown = false
 
     private let rootView = PagedReaderRootView()
-    private let imageView = NSImageView()
+    private let imageView = NonInteractiveImageView()
     private let statusLabel = NSTextField(labelWithString: "")
     private let previousButton = FrostedCircleButton(
         symbolName: "chevron.left", pointSize: 16, accessibilityDescription: "上一张"
@@ -48,6 +48,26 @@ final class PagedReaderWindowController: NSWindowController {
     private var resumeHintReturnHandler: (() -> Void)?
     /// Pending ~4 s auto-dismiss; cancelled by hide, re-show, and teardown.
     private var resumeHintDismissTask: Task<Void, Never>?
+
+    // MARK: zoom state (session-scoped, never persisted)
+
+    /// Current zoom tier as a multiplier of the window-fit size (1 = fit).
+    private var zoomTier: CGFloat = 1
+    /// Pan offset of the zoomed image from the centered position, clamped
+    /// so a zoomed image always covers the window (no black background).
+    private var zoomPanOffset = CGPoint.zero
+    /// Point size of the currently displayed page; drives the fit rect.
+    private var currentImageSize = CGSize.zero
+    /// Underlying CGImage of the last render; identity-compared to detect
+    // page changes (the NSImage wrapper is recreated on every render).
+    private var lastRenderedImage: CGImage?
+    /// Container size the last frame was computed for; a change means a
+    /// resize/full-screen transition and resets the zoom to fit.
+    private var lastContainerSize = CGSize.zero
+    /// True while a pan drag owns the closed-hand cursor.
+    private var isPanningWithCursor = false
+    private let zoomFlashLabel = NSTextField(labelWithString: "")
+    private var zoomFlashGeneration = 0
 
     /// The active surface. The coordinator owns the switch (it builds the
     /// strip session); this controller only hosts views.
@@ -106,17 +126,19 @@ final class PagedReaderWindowController: NSWindowController {
 
         rootView.wantsLayer = true
         rootView.layer?.backgroundColor = NSColor.black.cgColor
+        // Zoomed (panned) image frames may extend past the view bounds; the
+        // layer clips them so the window never composes image pixels over
+        // neighboring screens or the title bar.
+        rootView.layer?.masksToBounds = true
 
         imageView.imageScaling = .scaleProportionallyUpOrDown
         imageView.imageAlignment = .alignCenter
-        // The ≤-superview size caps must beat the image's intrinsic point
-        // size: `NSImage(cgImage:size:.zero)` claims pixel dims as points,
-        // which exceeds any window, and with the default compression
-        // resistance the caps can lose — the view then renders at image
-        // size and the window crops it (seen on landscape monitors).
-        // Lowering the resistance lets the solver always shrink the view.
-        imageView.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        imageView.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
+        // Layout is frame-driven (see `applyZoomedFrame`): the frame is
+        // always computed from the aspect-fit rect in code, so the view can
+        // never settle at the image's intrinsic point size — the bug the
+        // old low compression-resistance constraints fixed on landscape
+        // monitors (`NSImage(cgImage:size:.zero)` claims pixel dims as
+        // points). Zoom just scales that fitted rect by the tier.
 
         statusLabel.alignment = .center
         statusLabel.font = .systemFont(ofSize: 13)
@@ -135,6 +157,17 @@ final class PagedReaderWindowController: NSWindowController {
         progressLabel.font = .monospacedDigitSystemFont(ofSize: 12, weight: .medium)
         progressLabel.textColor = .white
 
+        // The zoom flash reads over bright pages thanks to the shadow
+        // (same treatment as the strip's zoom flash).
+        zoomFlashLabel.font = .systemFont(ofSize: 15, weight: .semibold)
+        zoomFlashLabel.textColor = NSColor.white.withAlphaComponent(0.9)
+        zoomFlashLabel.alphaValue = 0
+        let zoomShadow = NSShadow()
+        zoomShadow.shadowColor = NSColor.black.withAlphaComponent(0.6)
+        zoomShadow.shadowBlurRadius = 3
+        zoomShadow.shadowOffset = NSSize(width: 0, height: -1)
+        zoomFlashLabel.shadow = zoomShadow
+
         rootView.addSubview(imageView)
         rootView.addSubview(statusLabel)
         rootView.addSubview(previousButton)
@@ -142,15 +175,12 @@ final class PagedReaderWindowController: NSWindowController {
         rootView.addSubview(exitButton)
         rootView.addSubview(modeButton)
         rootView.addSubview(progressLabel)
+        rootView.addSubview(zoomFlashLabel)
 
-        // Centered, aspect-preserving, never larger than the window. The
-        // constraints — not code — keep the image placed through full-screen
-        // and resize transitions; no relayout handler is needed.
-        imageView.snp.makeConstraints { make in
-            make.center.equalToSuperview()
-            make.width.lessThanOrEqualToSuperview()
-            make.height.lessThanOrEqualToSuperview()
-        }
+        // The imageView is deliberately unconstrained: zoom places it with
+        // a frame on every layout pass (see `rootView.onLayout`), so resize
+        // and full-screen transitions re-fit the page in code instead of via
+        // the Auto Layout solver. Everything else stays constraint-based.
         statusLabel.snp.makeConstraints { make in
             make.center.equalToSuperview()
         }
@@ -178,9 +208,21 @@ final class PagedReaderWindowController: NSWindowController {
             make.centerX.equalToSuperview()
             make.bottom.equalToSuperview().offset(-16)
         }
+        zoomFlashLabel.snp.makeConstraints { make in
+            make.center.equalToSuperview()
+        }
 
         rootView.onKeyDown = { [weak self] event in
             self?.handleKey(event) ?? false
+        }
+        rootView.onLayout = { [weak self] in
+            self?.applyZoomedFrameFromLayoutPass()
+        }
+        rootView.onPanDelta = { [weak self] delta in
+            self?.panImage(by: delta)
+        }
+        rootView.onPanEnd = { [weak self] in
+            self?.endPan()
         }
 
         assembleResumeHint()
@@ -206,7 +248,20 @@ final class PagedReaderWindowController: NSWindowController {
         previousButton.isEnabled = state.canGoPrevious
         nextButton.isEnabled = state.canGoNext
         window?.title = state.pageTitle
-        imageView.image = state.image.map { NSImage(cgImage: $0, size: .zero) }
+        let newImage = state.image.map { NSImage(cgImage: $0, size: .zero) }
+        // A page change is a new CGImage; zoom is session-scoped per page.
+        // Compare the underlying CGImage identity, not the NSImage wrapper
+        // (a fresh wrapper is created every render, so wrapper comparison
+        // would always report a page change).
+        let didChangePage = state.image !== lastRenderedImage
+        lastRenderedImage = state.image
+        imageView.image = newImage
+        currentImageSize = state.image.map { CGSize(width: $0.width, height: $0.height) } ?? .zero
+        if didChangePage {
+            resetZoom(silent: true)
+        } else {
+            applyZoomedFrameFromLayoutPass()
+        }
         statusLabel.stringValue = state.errorMessage ?? ""
         statusLabel.isHidden = state.errorMessage == nil
     }
@@ -230,6 +285,120 @@ final class PagedReaderWindowController: NSWindowController {
         window?.makeFirstResponder(rootView)
     }
 
+    // MARK: - Zoom
+
+    /// Steps the zoom tier up (⌘=). Clamped at the largest tier; the
+    /// boundary no-op does nothing (no recenter, no flash).
+    private func zoomIn() {
+        let next = PagedZoomLayout.stepUp(from: zoomTier)
+        guard next != zoomTier else { return }
+        setZoomTier(next)
+    }
+
+    /// Steps the zoom tier down (⌘−). Clamped at the 100% fit; the boundary
+    /// no-op does nothing (no flash).
+    private func zoomOut() {
+        let next = PagedZoomLayout.stepDown(from: zoomTier)
+        guard next != zoomTier else { return }
+        setZoomTier(next)
+    }
+
+    /// ⌘0: back to the 100% fit. A no-op when already pristine (tier 1,
+    /// zero pan) so it does not flash a pointless "100%"; after panning it
+    /// still recenters and flashes.
+    private func zoomReset() {
+        guard zoomTier != 1 || zoomPanOffset != .zero else { return }
+        setZoomTier(1)
+    }
+
+    private func setZoomTier(_ tier: CGFloat) {
+        zoomTier = tier
+        // Tier changes recenter; the old pan offset is meaningless at the
+        // new size.
+        zoomPanOffset = .zero
+        flashZoom(tier)
+        applyZoomedFrameFromLayoutPass()
+    }
+
+    /// Resets to the 100% fit. `silent` skips the flash for implicit resets
+    /// (page turn, resize) — only explicit zoom actions flash.
+    private func resetZoom(silent: Bool) {
+        zoomTier = 1
+        zoomPanOffset = .zero
+        if !silent {
+            flashZoom(1)
+        }
+        applyZoomedFrameFromLayoutPass()
+    }
+
+    /// Single recompute entry point: also invoked from the root view's
+    /// layout pass so resize/full-screen transitions re-fit the page — the
+    /// frame-driven replacement for what the old constraints did for free.
+    private func applyZoomedFrameFromLayoutPass() {
+        let containerSize = rootView.bounds.size
+        // A container-size change is a resize/full-screen transition: zoom
+        // resets to fit (the fit base itself moved).
+        if containerSize != lastContainerSize {
+            lastContainerSize = containerSize
+            zoomTier = 1
+            zoomPanOffset = .zero
+        }
+        imageView.frame = PagedZoomLayout.imageFrame(
+            imageSize: currentImageSize,
+            containerSize: containerSize,
+            tier: zoomTier,
+            panOffset: zoomPanOffset
+        )
+    }
+
+    /// Accumulates a drag delta into the pan offset, clamped so the zoomed
+    /// image always covers the window; no-ops at the 100% fit tier.
+    private func panImage(by delta: CGSize) {
+        guard mode == .paged, zoomTier > 1 else { return }
+        if !isPanningWithCursor {
+            isPanningWithCursor = true
+            NSCursor.closedHand.push()
+        }
+        let frameSize = PagedZoomLayout.zoomedSize(
+            imageSize: currentImageSize,
+            containerSize: rootView.bounds.size,
+            tier: zoomTier
+        )
+        zoomPanOffset = PagedZoomLayout.clampedPan(
+            CGPoint(x: zoomPanOffset.x + delta.width, y: zoomPanOffset.y + delta.height),
+            frameSize: frameSize,
+            containerSize: rootView.bounds.size
+        )
+        applyZoomedFrameFromLayoutPass()
+    }
+
+    private func endPan() {
+        guard isPanningWithCursor else { return }
+        isPanningWithCursor = false
+        NSCursor.pop()
+    }
+
+    /// Briefly flashes the zoom percent at the window center, then fades it
+    /// out; rapid repeated zooms retrigger instead of stacking fades (same
+    /// generation-counter pattern as the strip's flash).
+    private func flashZoom(_ tier: CGFloat) {
+        zoomFlashLabel.stringValue = "\(Int((tier * 100).rounded()))%"
+        zoomFlashGeneration += 1
+        let generation = zoomFlashGeneration
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.1
+            zoomFlashLabel.animator().alphaValue = 1
+        }
+        Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(800))
+            guard let self, self.zoomFlashGeneration == generation else { return }
+            NSAnimationContext.beginGrouping()
+            NSAnimationContext.current.duration = 0.3
+            self.zoomFlashLabel.animator().alphaValue = 0
+            NSAnimationContext.endGrouping()
+        }
+    }
+
     // MARK: - Mode switching
 
     /// Swaps the single-page chrome for the strip surface. The paged view
@@ -243,6 +412,9 @@ final class PagedReaderWindowController: NSWindowController {
         view.snp.makeConstraints { make in
             make.edges.equalToSuperview()
         }
+        // Switching modes resets the paged zoom back to the 100% fit.
+        zoomTier = 1
+        zoomPanOffset = .zero
         setPagedChromeVisible(false)
         modeButton.setSymbol("rectangle.portrait", accessibilityDescription: "切换到单页模式")
         window?.makeFirstResponder(rootView)
@@ -254,6 +426,8 @@ final class PagedReaderWindowController: NSWindowController {
         stripView?.removeFromSuperview()
         stripView = nil
         mode = .paged
+        zoomTier = 1
+        zoomPanOffset = .zero
         setPagedChromeVisible(true)
         modeButton.setSymbol("scroll", accessibilityDescription: "切换到条带模式")
         // Idempotent: starts the paged session on the first switch-back of
@@ -380,6 +554,18 @@ final class PagedReaderWindowController: NSWindowController {
             default: return false
             }
         }
+        // Paged zoom shortcuts (⌘=/⌘−/⌘0) are consumed here; every other
+        // Cmd combination still falls through to the menu commands. This
+        // block must sit BEFORE the Cmd fall-through guard below, or these
+        // keys would be handed to the menu where they do not exist.
+        if mode == .paged, event.modifierFlags.contains(.command) {
+            switch event.keyCode {
+            case 24: zoomIn(); return true // ⌘=
+            case 27: zoomOut(); return true // ⌘−
+            case 29: zoomReset(); return true // ⌘0
+            default: return false
+            }
+        }
         // Leave menu commands (Cmd+W, Cmd+Q, …) to the responder chain.
         guard !event.modifierFlags.contains(.command) else { return false }
         if mode == .strip {
@@ -427,6 +613,15 @@ final class PagedReaderWindowController: NSWindowController {
 private final class PagedReaderRootView: NSView {
     /// Returns true when the key was consumed.
     var onKeyDown: ((NSEvent) -> Bool)?
+    /// Runs at the end of every layout pass (resize, full-screen toggle,
+    /// zoom setNeedsLayout) so the frame-driven image can re-fit.
+    var onLayout: (() -> Void)?
+    /// Drag delta in view coordinates; forwarded while a drag is active.
+    var onPanDelta: ((CGSize) -> Void)?
+    /// The drag ended (mouse up anywhere).
+    var onPanEnd: (() -> Void)?
+
+    private var panLocation: NSPoint?
 
     override var acceptsFirstResponder: Bool { true }
 
@@ -436,9 +631,122 @@ private final class PagedReaderRootView: NSView {
         }
     }
 
+    override func layout() {
+        super.layout()
+        onLayout?()
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        panLocation = convert(event.locationInWindow, from: nil)
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard let last = panLocation else { return }
+        let location = convert(event.locationInWindow, from: nil)
+        panLocation = location
+        onPanDelta?(CGSize(width: location.x - last.x, height: location.y - last.y))
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        panLocation = nil
+        onPanEnd?()
+    }
+
     override func draw(_ dirtyRect: NSRect) {
         NSColor.black.setFill()
         dirtyRect.fill()
+    }
+}
+
+/// The page image never accepts hits itself — mouse events must reach the
+/// root view so the pan drag (and nothing else) owns them. The floating
+/// chrome buttons are separate siblings and still receive their clicks.
+@MainActor
+private final class NonInteractiveImageView: NSImageView {
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+}
+
+/// Pure geometry for the paged reader's layout-level zoom: aspect-fit rect,
+/// tier scaling, and pan clamping. Layout-level (never a rendered
+/// magnification) so zooming stays sharp; the image view's frame is simply
+/// resized and AppKit/`scaleProportionallyUpOrDown` does the drawing.
+enum PagedZoomLayout {
+    /// Ratios of the window-fit size; percent is relative to fit, not to
+    /// the image's native pixels.
+    static let tiers: [CGFloat] = [1, 1.5, 2, 3]
+
+    /// Next tier up, clamped at the largest tier.
+    static func stepUp(from tier: CGFloat) -> CGFloat {
+        tiers.first { $0 > tier } ?? tiers.last!
+    }
+
+    /// Next tier down, clamped at the 100% fit.
+    static func stepDown(from tier: CGFloat) -> CGFloat {
+        tiers.last { $0 < tier } ?? tiers.first!
+    }
+
+    /// Aspect-fit rect of `imageSize` centered in `containerSize` — the
+    /// 100% tier. An empty image yields an empty centered rect.
+    static func fittedRect(imageSize: CGSize, containerSize: CGSize) -> CGRect {
+        guard imageSize.width > 0, imageSize.height > 0,
+              containerSize.width > 0, containerSize.height > 0 else {
+            return CGRect(
+                x: (containerSize.width) / 2, y: (containerSize.height) / 2,
+                width: 0, height: 0
+            )
+        }
+        let scale = min(
+            containerSize.width / imageSize.width,
+            containerSize.height / imageSize.height
+        )
+        let size = CGSize(width: imageSize.width * scale, height: imageSize.height * scale)
+        return CGRect(
+            x: (containerSize.width - size.width) / 2,
+            y: (containerSize.height - size.height) / 2,
+            width: size.width,
+            height: size.height
+        )
+    }
+
+    /// The image frame size at `tier` (fitted size × tier).
+    static func zoomedSize(imageSize: CGSize, containerSize: CGSize, tier: CGFloat) -> CGSize {
+        let fitted = fittedRect(imageSize: imageSize, containerSize: containerSize).size
+        return CGSize(width: fitted.width * tier, height: fitted.height * tier)
+    }
+
+    /// Clamps a pan offset (displacement of the frame center from the
+    /// container center) so the frame never lets the container show past an
+    /// image edge while zoomed; an axis smaller than the container pins to
+    /// the center (offset 0) instead.
+    static func clampedPan(_ pan: CGPoint, frameSize: CGSize, containerSize: CGSize) -> CGPoint {
+        func clampAxis(_ offset: CGFloat, _ frame: CGFloat, _ container: CGFloat) -> CGFloat {
+            let slack = (frame - container) / 2
+            guard slack > 0 else { return 0 }
+            return min(max(offset, -slack), slack)
+        }
+        return CGPoint(
+            x: clampAxis(pan.x, frameSize.width, containerSize.width),
+            y: clampAxis(pan.y, frameSize.height, containerSize.height)
+        )
+    }
+
+    /// The final image frame: fitted centered rect × tier, displaced by the
+    /// clamped pan offset. At tier 1 this is exactly the fitted centered
+    /// rect (the clamp zeroes any pan).
+    static func imageFrame(
+        imageSize: CGSize,
+        containerSize: CGSize,
+        tier: CGFloat,
+        panOffset: CGPoint
+    ) -> CGRect {
+        let size = zoomedSize(imageSize: imageSize, containerSize: containerSize, tier: tier)
+        let pan = clampedPan(panOffset, frameSize: size, containerSize: containerSize)
+        return CGRect(
+            x: (containerSize.width - size.width) / 2 + pan.x,
+            y: (containerSize.height - size.height) / 2 + pan.y,
+            width: size.width,
+            height: size.height
+        )
     }
 }
 

@@ -64,6 +64,13 @@ Everything else comes later.
   the current one are prefetched in the background so page turns hit the
   local cache. Originals and downsampled display variants use the disk
   cache; A1 does not start automatic directory warming.
+  - **Paged zoom**: `⌘=` / `⌘−` / `⌘0` step between 100% (fit) / 150% /
+    200% / 300%, with drag-to-pan while zoomed; turning the page or resizing
+    the window resets to fit.
+  - **Reading position memory**: reopening a comic or image folder resumes
+    the last-read page (a finished one starts over). When a folder resume
+    jumps away from the file you clicked, a hint pill offers a jump back;
+    the behavior can be turned off in Settings.
 - Double-click a `.cbz` comic archive to read it in the same single-page
   reader — or in **continuous strip mode**: comic archives default to a
   vertical, webtoon-style continuous scroll (a toolbar button toggles
@@ -74,6 +81,10 @@ Everything else comes later.
   - **Strip zoom**: `⌘=` / `⌘−` / `⌘0` step the strip between 100% / 125% /
     150% / 200% of the window width; beyond 100% the strip scrolls
     horizontally too. Zoom is per session (reopens at 100%).
+  - **Auto-scroll**: the play/pause button in the bottom pill (or Space)
+    glides the strip down at a steady speed; manual scrolling just
+    repositions without stopping it — only the toggle, zoom, reaching the
+    end, or leaving the mode stops the drive.
   - **Page scrubber**: the bottom pill in strip mode is a slider — drag to
     preview a page number, release to jump straight to that page.
   - **Mode preference**: the paged/strip choice is remembered per content

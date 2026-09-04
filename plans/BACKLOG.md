@@ -5,12 +5,12 @@
 ## 进行中 / 待验收
 
 - [ ] 阅读位置记忆（已实现待真机验收，见 plans/TASK-reader-position-memory.md）
-- [ ] 条带自动滚屏（已实现待真机验收，见 plans/TASK-strip-autoscroll.md）
+- [ ] 条带自动滚屏（已实现待真机验收；行为已翻转为重定位不中断，见 plans/TASK-strip-autoscroll.md）
+- [ ] 单页模式缩放（已实现待真机验收，见 plans/TASK-reader-paged-zoom.md）
 
 ## 下一波（候选，未排期）
 
 - [ ] 服务器远程地址（家里/远程切换）：Tailscale/WireGuard 远程访问的 Cove 侧方案（见 plans/TASK-remote-address.md；不急，待排期）
-- [ ] 单页模式缩放：⌘ 档位放大 + 拖拽平移（见 plans/TASK-reader-paged-zoom.md，可派 agent）
 
 ## 上架前必须
 
