@@ -4,7 +4,7 @@
 
 ## 进行中 / 待验收
 
-（无）
+- [ ] CI 落地 + 禁 explicitly-built-modules（见 plans/TASK-ci.md，可派 agent）
 
 ## 下一波（候选，未排期）
 
