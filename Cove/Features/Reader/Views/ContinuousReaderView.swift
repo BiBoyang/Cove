@@ -15,6 +15,7 @@ import SnapKit
 @MainActor
 final class ContinuousReaderView: NSView {
     private let viewModel: ContinuousReaderViewModel
+    private let settings: SettingsService
     private let scrollView = NSScrollView()
     private let documentView = StripDocumentView()
     /// Bottom-center scrubber pill: drag the slider to preview a page
@@ -32,26 +33,46 @@ final class ContinuousReaderView: NSView {
     /// instead of yanking the slider under the user's thumb.
     private var isScrubbing = false
 
-    /// Auto-scroll (自动滚屏): a pure view-layer, fixed-speed downward
-    /// drive. Created lazily on play and invalidated on every stop or
-    /// teardown path — the link (which retains its target) must never
-    /// outlive this view or keep firing while paused.
+    /// Auto-scroll (自动滚屏): a pure view-layer downward drive at the
+    /// selected speed gear. Created lazily on play and invalidated on every
+    /// stop or teardown path — the link (which retains its target) must
+    /// never outlive this view or keep firing while paused.
     private var isAutoScrolling = false
     private var autoScrollDisplayLink: CADisplayLink?
     /// Timestamp of the previous display-link beat; nil until the first
     /// beat after a start records its baseline (no movement on beat one).
     private var autoScrollLastTick: CFTimeInterval?
-    /// Play/pause toggle at the scrubber pill's leading edge.
-    private let autoScrollButton = NSButton()
-    /// Fixed drive speed in pt/s (ratified: single speed, ~10 s per screen).
-    private static let autoScrollSpeed: CGFloat = 110
+    /// Play/pause toggle at the scrubber pill's leading edge; a right
+    /// click cycles the speed gear.
+    private let autoScrollButton = AutoScrollButton()
+    /// Small gear readout ("1x") pinned to the button's trailing edge.
+    private let speedLabel = NSTextField(labelWithString: "")
+    /// Base drive speed in pt/s (~10 s per screen at 1x); the gears below
+    /// are multipliers of it.
+    private static let baseAutoScrollSpeed: CGFloat = 110
+    /// Speed gears cycled by right-clicking the play/pause button, in the
+    /// macOS player speed-button language: left toggles, right steps.
+    private static let speedGears: [Double] = [0.5, 1.0, 2.0]
+    /// Current gear, restored from settings at init and persisted on every
+    /// cycle. A running drive picks a gear change up on its next beat.
+    private var speedGearIndex: Int
+    private var autoScrollSpeed: CGFloat {
+        Self.baseAutoScrollSpeed * Self.speedGears[speedGearIndex]
+    }
     /// Frame-delta ceiling: after an occlusion/hidden pause the display
     /// link reports one huge dt, which would teleport the strip instead
     /// of gliding.
     private static let autoScrollMaxFrameInterval: CFTimeInterval = 0.1
 
-    init(viewModel: ContinuousReaderViewModel) {
+    init(viewModel: ContinuousReaderViewModel, settings: SettingsService) {
         self.viewModel = viewModel
+        self.settings = settings
+        // Snap a stored factor to the nearest gear; the setting is a plain
+        // Double, so values written by other builds still land on a gear.
+        let factor = settings.stripAutoScrollSpeedFactor
+        speedGearIndex = Self.speedGears.indices.min(by: {
+            abs(Self.speedGears[$0] - factor) < abs(Self.speedGears[$1] - factor)
+        }) ?? Self.speedGears.firstIndex(of: 1.0)!
         super.init(frame: .zero)
         assemble()
         bindViewModel()
@@ -117,7 +138,14 @@ final class ContinuousReaderView: NSView {
         autoScrollButton.imageScaling = .scaleProportionallyUpOrDown
         autoScrollButton.target = self
         autoScrollButton.action = #selector(toggleAutoScroll)
+        autoScrollButton.onRightClick = { [weak self] in
+            self?.cycleSpeedGear()
+        }
         setAutoScrollSymbol(paused: true)
+
+        speedLabel.font = .monospacedDigitSystemFont(ofSize: 9, weight: .medium)
+        speedLabel.textColor = NSColor.white.withAlphaComponent(0.7)
+        updateSpeedLabel()
 
         progressLabel.font = .monospacedDigitSystemFont(ofSize: 12, weight: .medium)
         progressLabel.textColor = .white
@@ -137,6 +165,7 @@ final class ContinuousReaderView: NSView {
         scrubberSlider.action = #selector(handleScrub(_:))
 
         scrubberPill.addSubview(autoScrollButton)
+        scrubberPill.addSubview(speedLabel)
         scrubberPill.addSubview(scrubberSlider)
         scrubberPill.addSubview(progressLabel)
         // The zoom flash reads over bright pages thanks to the shadow.
@@ -164,8 +193,12 @@ final class ContinuousReaderView: NSView {
             make.centerY.equalToSuperview()
             make.size.equalTo(24)
         }
+        speedLabel.snp.makeConstraints { make in
+            make.leading.equalTo(autoScrollButton.snp.trailing).offset(2)
+            make.centerY.equalToSuperview()
+        }
         scrubberSlider.snp.makeConstraints { make in
-            make.leading.equalTo(autoScrollButton.snp.trailing).offset(6)
+            make.leading.equalTo(speedLabel.snp.trailing).offset(6)
             make.centerY.equalToSuperview()
             make.width.equalTo(220)
         }
@@ -336,10 +369,26 @@ final class ContinuousReaderView: NSView {
         setAutoScrollSymbol(paused: true)
     }
 
-    /// One display-link beat: advance the offset by 110 pt/s × dt through
-    /// the existing clamping `scroll(to:)` (slot sync, page reporting, and
-    /// warm window all ride its bounds-change notification chain), then
-    /// stop on reaching the document bottom.
+    /// Right-click on the play/pause button: step to the next gear and
+    /// persist it. A running drive applies the new speed on its next beat;
+    /// paused, only the readout changes and the next play uses the gear.
+    private func cycleSpeedGear() {
+        speedGearIndex = (speedGearIndex + 1) % Self.speedGears.count
+        settings.stripAutoScrollSpeedFactor = Self.speedGears[speedGearIndex]
+        updateSpeedLabel()
+    }
+
+    private func updateSpeedLabel() {
+        let factor = Self.speedGears[speedGearIndex]
+        speedLabel.stringValue = factor.truncatingRemainder(dividingBy: 1) == 0
+            ? "\(Int(factor))x"
+            : "\(factor)x"
+    }
+
+    /// One display-link beat: advance the offset by the geared speed × dt
+    /// through the existing clamping `scroll(to:)` (slot sync, page
+    /// reporting, and warm window all ride its bounds-change notification
+    /// chain), then stop on reaching the document bottom.
     @objc private func autoScrollTick(_ link: CADisplayLink) {
         guard isAutoScrolling else { return }
         let timestamp = link.targetTimestamp
@@ -348,7 +397,7 @@ final class ContinuousReaderView: NSView {
         guard let last = autoScrollLastTick else { return }
         let dt = min(max(timestamp - last, 0), Self.autoScrollMaxFrameInterval)
         guard dt > 0 else { return }
-        scroll(to: scrollView.contentView.bounds.origin.y + Self.autoScrollSpeed * CGFloat(dt))
+        scroll(to: scrollView.contentView.bounds.origin.y + autoScrollSpeed * CGFloat(dt))
         let maxOffset = max(0, viewModel.contentHeight - scrollView.contentView.bounds.height)
         if scrollView.contentView.bounds.origin.y >= maxOffset {
             stopAutoScroll()
@@ -419,6 +468,18 @@ final class ContinuousReaderView: NSView {
         default: return false
         }
         return true
+    }
+}
+
+/// The strip's play/pause button: left click toggles, right click cycles
+/// the speed gear (overriding `rightMouseDown` beats a gesture recognizer
+/// here — no system-menu conflict, zero extra objects).
+@MainActor
+private final class AutoScrollButton: NSButton {
+    var onRightClick: (() -> Void)?
+
+    override func rightMouseDown(with event: NSEvent) {
+        onRightClick?()
     }
 }
 

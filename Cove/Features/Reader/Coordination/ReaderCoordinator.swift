@@ -271,7 +271,7 @@ final class ReaderCoordinator: NSObject {
             self?.readerController?.hideResumeHint()
         }
         stripViewModel = strip
-        reader.showStrip(ContinuousReaderView(viewModel: strip))
+        reader.showStrip(ContinuousReaderView(viewModel: strip, settings: settings))
     }
 
     private func toggleReaderMode() {

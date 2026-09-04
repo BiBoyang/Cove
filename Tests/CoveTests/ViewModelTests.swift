@@ -1253,6 +1253,168 @@ struct SettingsReaderModeTests {
     }
 }
 
+@Suite("SettingsService strip auto-scroll speed factor")
+@MainActor
+struct SettingsStripSpeedFactorTests {
+    private func makeSettings() -> (SettingsService, UserDefaults) {
+        let defaults = UserDefaults(suiteName: "SettingsStripSpeedFactorTests-\(UUID().uuidString)")!
+        return (SettingsService(defaults: defaults), defaults)
+    }
+
+    @Test("the factor round-trips through the store")
+    func roundTrip() {
+        let (settings, defaults) = makeSettings()
+
+        settings.stripAutoScrollSpeedFactor = 0.5
+        #expect(settings.stripAutoScrollSpeedFactor == 0.5)
+        settings.stripAutoScrollSpeedFactor = 2.0
+        #expect(settings.stripAutoScrollSpeedFactor == 2.0)
+
+        // A second service over the same suite reads the persisted value.
+        #expect(SettingsService(defaults: defaults).stripAutoScrollSpeedFactor == 2.0)
+    }
+
+    @Test("a fresh store defaults to 1x")
+    func defaultIsOne() {
+        let (settings, _) = makeSettings()
+        #expect(settings.stripAutoScrollSpeedFactor == 1.0)
+    }
+
+    @Test("invalid values fall back to the 1x default on write and on read")
+    func invalidFallsBack() {
+        let (settings, defaults) = makeSettings()
+
+        // Write side: the setter sanitizes.
+        settings.stripAutoScrollSpeedFactor = 0
+        #expect(settings.stripAutoScrollSpeedFactor == 1.0)
+        settings.stripAutoScrollSpeedFactor = -2
+        #expect(settings.stripAutoScrollSpeedFactor == 1.0)
+
+        // Read side: a raw/corrupt value already in the store is rejected
+        // (key literal kept in sync with SettingsService.Keys).
+        defaults.set(0.0, forKey: "cove.settings.stripAutoScrollSpeedFactor")
+        #expect(settings.stripAutoScrollSpeedFactor == 1.0)
+        defaults.set(-1.0, forKey: "cove.settings.stripAutoScrollSpeedFactor")
+        #expect(settings.stripAutoScrollSpeedFactor == 1.0)
+    }
+}
+
+@Suite("Reader auto-advance slideshow")
+@MainActor
+struct ReaderAutoAdvanceTests {
+    private func makeViewModel(pageCount: Int = 3, startIndex: Int = 0) -> ReaderViewModel {
+        let pages = (1...pageCount).map { ReaderPage(id: "\($0)", title: "\($0)") }
+        return ReaderViewModel(
+            pages: pages,
+            startIndex: startIndex,
+            loader: DelayedReaderLoader(),
+            logger: TraceLogger(category: "ReaderTests")
+        )
+    }
+
+    @Test("a tick turns one page and keeps the show running")
+    func tickAdvances() {
+        let viewModel = makeViewModel()
+        defer { viewModel.tearDown() }
+
+        viewModel.toggleAutoAdvance()
+        #expect(viewModel.isAutoAdvancing)
+        #expect(viewModel.state.isAutoAdvancing)
+
+        viewModel.autoAdvanceTick()
+
+        #expect(viewModel.currentPageIndex == 1)
+        #expect(viewModel.isAutoAdvancing)
+    }
+
+    @Test("landing on the last page stops the show on the spot")
+    func lastPageTickStops() {
+        let viewModel = makeViewModel(pageCount: 3, startIndex: 1)
+        defer { viewModel.tearDown() }
+        viewModel.toggleAutoAdvance()
+
+        // The beat that lands on the last page turns, then stops
+        // immediately — no lingering beat on the last page.
+        viewModel.autoAdvanceTick()
+        #expect(viewModel.currentPageIndex == 2)
+        #expect(!viewModel.isAutoAdvancing)
+
+        // Once stopped, further beats are inert.
+        viewModel.autoAdvanceTick()
+        #expect(viewModel.currentPageIndex == 2)
+    }
+
+    @Test("pressing play at the last page is a no-op")
+    func playAtLastPageIsNoOp() {
+        let viewModel = makeViewModel(pageCount: 3, startIndex: 2)
+        defer { viewModel.tearDown() }
+
+        viewModel.toggleAutoAdvance()
+
+        #expect(!viewModel.isAutoAdvancing)
+        #expect(viewModel.currentPageIndex == 2)
+    }
+
+    @Test("toggling again pauses the show")
+    func togglePauses() {
+        let viewModel = makeViewModel()
+        defer { viewModel.tearDown() }
+
+        viewModel.toggleAutoAdvance()
+        viewModel.toggleAutoAdvance()
+
+        #expect(!viewModel.isAutoAdvancing)
+        // A paused show's beats do nothing.
+        viewModel.autoAdvanceTick()
+        #expect(viewModel.currentPageIndex == 0)
+    }
+
+    @Test("manual goNext/goPrevious/jumpToPage take over and release the show")
+    func manualPagingTakesOver() {
+        let viewModel = makeViewModel(pageCount: 5, startIndex: 2)
+        defer { viewModel.tearDown() }
+
+        viewModel.toggleAutoAdvance()
+        viewModel.goNext()
+        #expect(!viewModel.isAutoAdvancing)
+        #expect(viewModel.currentPageIndex == 3)
+        // Released: beats no longer turn pages.
+        viewModel.autoAdvanceTick()
+        #expect(viewModel.currentPageIndex == 3)
+
+        viewModel.toggleAutoAdvance()
+        viewModel.goPrevious()
+        #expect(!viewModel.isAutoAdvancing)
+        #expect(viewModel.currentPageIndex == 2)
+        viewModel.autoAdvanceTick()
+        #expect(viewModel.currentPageIndex == 2)
+
+        viewModel.toggleAutoAdvance()
+        viewModel.jumpToPage(0)
+        #expect(!viewModel.isAutoAdvancing)
+        #expect(viewModel.currentPageIndex == 0)
+        viewModel.autoAdvanceTick()
+        #expect(viewModel.currentPageIndex == 0)
+    }
+
+    @Test("teardown stops the show and leaves no residual beating")
+    func teardownStopsShow() {
+        let viewModel = makeViewModel()
+        var pageChanges: [Int] = []
+        viewModel.onPageChanged = { pageChanges.append($0) }
+        viewModel.toggleAutoAdvance()
+
+        viewModel.tearDown()
+
+        #expect(!viewModel.isAutoAdvancing)
+        // No residual calls: a beat after teardown neither turns the page
+        // nor fires the page-changed seam.
+        viewModel.autoAdvanceTick()
+        #expect(viewModel.currentPageIndex == 0)
+        #expect(pageChanges.isEmpty)
+    }
+}
+
 @Suite("Reader image warm")
 struct ReaderImageLoaderWarmTests {
     private let targetWidth = 1024

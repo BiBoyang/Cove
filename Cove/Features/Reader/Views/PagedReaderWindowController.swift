@@ -1,11 +1,12 @@
 import AppKit
 import SnapKit
 
-/// AppKit single-page manual-paging reader (route A1): shows exactly one page at
-/// a time over a near-black background, centered and fit to the window
-/// Navigation is manual only — previous/next buttons,
-/// arrow/Page keys; there is no continuous scrolling, no slot topology,
-/// no retention, and no prefetch.
+/// AppKit single-page reader (route A1): shows exactly one page at
+/// a time over a near-black background, centered and fit to the window.
+/// Navigation is manual (previous/next buttons, arrow/Page keys) plus an
+/// opt-in fixed-interval auto-advance slideshow (Space or the page
+/// counter's play button); there is no continuous scrolling, no slot
+/// topology, no retention, and no prefetch.
 ///
 /// The same window can swap to the continuous strip surface
 /// (`ContinuousReaderView`) via the mode button; the paged chrome is then
@@ -36,6 +37,11 @@ final class PagedReaderWindowController: NSWindowController {
         symbolName: "scroll", pointSize: 13, accessibilityDescription: "切换到条带模式"
     )
     private let progressLabel = NSTextField(labelWithString: "")
+    /// Auto-advance (自动翻页) play/pause next to the page counter; shows
+    /// the pause symbol while the slideshow runs.
+    private let autoAdvanceButton = FrostedCircleButton(
+        symbolName: "play.fill", pointSize: 10, accessibilityDescription: "自动翻页"
+    )
     // Resume hint: a window-level HUD capsule shown after a
     // resume-from-memory open moved the start off the tapped file. It is a
     // pure rendering surface — the coordinator decides when to show it and
@@ -153,6 +159,8 @@ final class PagedReaderWindowController: NSWindowController {
         exitButton.action = #selector(handleExit(_:))
         modeButton.target = self
         modeButton.action = #selector(handleModeSwitch(_:))
+        autoAdvanceButton.target = self
+        autoAdvanceButton.action = #selector(handleAutoAdvance(_:))
 
         progressLabel.font = .monospacedDigitSystemFont(ofSize: 12, weight: .medium)
         progressLabel.textColor = .white
@@ -175,6 +183,7 @@ final class PagedReaderWindowController: NSWindowController {
         rootView.addSubview(exitButton)
         rootView.addSubview(modeButton)
         rootView.addSubview(progressLabel)
+        rootView.addSubview(autoAdvanceButton)
         rootView.addSubview(zoomFlashLabel)
 
         // The imageView is deliberately unconstrained: zoom places it with
@@ -207,6 +216,11 @@ final class PagedReaderWindowController: NSWindowController {
         progressLabel.snp.makeConstraints { make in
             make.centerX.equalToSuperview()
             make.bottom.equalToSuperview().offset(-16)
+        }
+        autoAdvanceButton.snp.makeConstraints { make in
+            make.leading.equalTo(progressLabel.snp.trailing).offset(10)
+            make.centerY.equalTo(progressLabel)
+            make.size.equalTo(24)
         }
         zoomFlashLabel.snp.makeConstraints { make in
             make.center.equalToSuperview()
@@ -245,6 +259,10 @@ final class PagedReaderWindowController: NSWindowController {
 
     private func render(_ state: ReaderViewModel.State) {
         progressLabel.stringValue = state.progressText
+        autoAdvanceButton.setSymbol(
+            state.isAutoAdvancing ? "pause.fill" : "play.fill",
+            accessibilityDescription: "自动翻页"
+        )
         previousButton.isEnabled = state.canGoPrevious
         nextButton.isEnabled = state.canGoNext
         window?.title = state.pageTitle
@@ -282,6 +300,11 @@ final class PagedReaderWindowController: NSWindowController {
 
     @objc private func handleModeSwitch(_ sender: NSButton) {
         onModeSwitch?()
+        window?.makeFirstResponder(rootView)
+    }
+
+    @objc private func handleAutoAdvance(_ sender: NSButton) {
+        viewModel.toggleAutoAdvance()
         window?.makeFirstResponder(rootView)
     }
 
@@ -404,6 +427,9 @@ final class PagedReaderWindowController: NSWindowController {
     /// Swaps the single-page chrome for the strip surface. The paged view
     /// model stays alive (just hidden), so switching back is instant.
     func showStrip(_ view: ContinuousReaderView) {
+        // The slideshow belongs to the paged surface; leaving paged mode
+        // stops it so no hidden timer keeps turning pages underneath.
+        viewModel.stopAutoAdvance()
         stripView?.removeFromSuperview()
         stripView = view
         mode = .strip
@@ -448,6 +474,7 @@ final class PagedReaderWindowController: NSWindowController {
         previousButton.isHidden = !visible
         nextButton.isHidden = !visible
         progressLabel.isHidden = !visible
+        autoAdvanceButton.isHidden = !visible
     }
 
     // MARK: - Resume hint
@@ -580,6 +607,8 @@ final class PagedReaderWindowController: NSWindowController {
             viewModel.goPrevious()
         case 124, 121: // →, PageDown
             viewModel.goNext()
+        case 49: // Space toggles the auto-advance slideshow
+            if !event.isARepeat { viewModel.toggleAutoAdvance() }
         case 53: // Esc
             handleEscape()
         default:

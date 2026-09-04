@@ -20,6 +20,7 @@ final class SettingsService {
         static let readerModeComic = "cove.settings.readerMode.comic"
         static let readerModeDirectory = "cove.settings.readerMode.directory"
         static let readerResumeOnOpen = "cove.settings.readerResumeOnOpen"
+        static let stripAutoScrollSpeedFactor = "cove.settings.stripAutoScrollSpeedFactor"
     }
 
     private let defaults: UserDefaults
@@ -33,6 +34,7 @@ final class SettingsService {
             Keys.preheatRateLimitMBps: 0.0,
             Keys.preheatFolders: [String](),
             Keys.readerResumeOnOpen: true,
+            Keys.stripAutoScrollSpeedFactor: 1.0,
         ])
     }
 
@@ -94,6 +96,24 @@ final class SettingsService {
     var readerResumeOnOpen: Bool {
         get { defaults.bool(forKey: Keys.readerResumeOnOpen) }
         set { defaults.set(newValue, forKey: Keys.readerResumeOnOpen); post() }
+    }
+
+    /// Strip auto-scroll speed multiplier (the 0.5x / 1x / 2x gears). Any
+    /// non-positive or non-finite stored value falls back to the 1x
+    /// default; the write side sanitizes the same way.
+    var stripAutoScrollSpeedFactor: Double {
+        get {
+            let value = defaults.double(forKey: Keys.stripAutoScrollSpeedFactor)
+            return Self.sanitizedSpeedFactor(value)
+        }
+        set {
+            defaults.set(Self.sanitizedSpeedFactor(newValue), forKey: Keys.stripAutoScrollSpeedFactor)
+            post()
+        }
+    }
+
+    private static func sanitizedSpeedFactor(_ value: Double) -> Double {
+        value.isFinite && value > 0 ? value : 1.0
     }
 
     var cacheCapacityBytes: Int64 { Int64(cacheCapacityGB) * 1024 * 1024 * 1024 }

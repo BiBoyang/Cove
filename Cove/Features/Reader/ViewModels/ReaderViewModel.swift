@@ -5,11 +5,12 @@ import TraceKit
 
 /// Main-actor state for one single-page Reader session.
 ///
-/// The ViewModel owns paging, cancellation, stale-result rejection, and the
-/// state rendered by AppKit. Cache reads and image decoding remain inside the
-/// Sendable loader and run in a detached user-initiated task.
+/// The ViewModel owns paging, cancellation, stale-result rejection, the
+/// auto-advance slideshow, and the state rendered by AppKit. Cache reads
+/// and image decoding remain inside the Sendable loader and run in a
+/// detached user-initiated task.
 @MainActor
-final class ReaderViewModel {
+final class ReaderViewModel: NSObject {
     struct State: Sendable {
         let pageTitle: String
         let progressText: String
@@ -17,6 +18,7 @@ final class ReaderViewModel {
         let canGoNext: Bool
         let image: CGImage?
         let errorMessage: String?
+        let isAutoAdvancing: Bool
     }
 
     private let logger: TraceLogger
@@ -29,6 +31,16 @@ final class ReaderViewModel {
     private var loadingTask: Task<Void, Never>?
     private var isTornDown = false
     private var hasStarted = false
+
+    /// Screensaver-style auto page turning (自动翻页): a fixed-interval
+    /// timer owned here — UI session state and task lifetime belong to the
+    /// VM (AGENTS.md §12). Any manual paging intent takes over and stops
+    /// it; reaching the last page stops it instead of wrapping.
+    static let autoAdvanceInterval: TimeInterval = 5
+    /// Retains this view model while scheduled (target/selector); every
+    /// stop/teardown path must invalidate it.
+    private var autoAdvanceTimer: Timer?
+    private(set) var isAutoAdvancing = false
 
     var onStateChange: ((State) -> Void)? {
         didSet { publishState() }
@@ -50,7 +62,8 @@ final class ReaderViewModel {
             canGoPrevious: currentIndex > 0,
             canGoNext: currentIndex < pages.count - 1,
             image: currentImage,
-            errorMessage: errorMessage
+            errorMessage: errorMessage,
+            isAutoAdvancing: isAutoAdvancing
         )
     }
 
@@ -65,6 +78,7 @@ final class ReaderViewModel {
         currentIndex = min(max(startIndex, 0), pages.count - 1)
         self.loader = loader
         self.logger = logger
+        super.init()
     }
 
     func start() {
@@ -74,22 +88,95 @@ final class ReaderViewModel {
     }
 
     func goPrevious() {
+        // A manual page intent takes over: stop the slideshow first. A
+        // whole-page jump would otherwise keep yanking away the page the
+        // user is reading — deliberately unlike the strip auto-scroll's
+        // "a reposition never interrupts" semantics.
+        stopAutoAdvance()
         goToPage(currentIndex - 1)
     }
 
     func goNext() {
+        stopAutoAdvance()
         goToPage(currentIndex + 1)
     }
 
     /// Jumps straight to a page (strip-mode handoff). Same clamping and
     /// no-op-if-current semantics as a manual page turn.
     func jumpToPage(_ index: Int) {
+        stopAutoAdvance()
         goToPage(index)
+    }
+
+    /// Play/pause toggle for the auto-advance slideshow (Space and the HUD
+    /// button). Pressing play at the last page is a deliberate no-op — the
+    /// same "a dead tap beats losing the reading spot" call as the strip's
+    /// auto-scroll at the document bottom.
+    func toggleAutoAdvance() {
+        if isAutoAdvancing {
+            stopAutoAdvance()
+        } else {
+            startAutoAdvance()
+        }
+    }
+
+    /// Stops the slideshow and publishes the released state. All manual
+    /// paging, the mode switch, and teardown funnel through here.
+    func stopAutoAdvance() {
+        autoAdvanceTimer?.invalidate()
+        autoAdvanceTimer = nil
+        guard isAutoAdvancing else { return }
+        isAutoAdvancing = false
+        publishState()
+    }
+
+    /// One slideshow beat, called by the timer and directly by tests (no
+    /// real-time waits): turn the page through the regular paging path so
+    /// prefetch/loading/state publication ride along unchanged. Landing on
+    /// the last page stops the show on the spot (the HUD flips back to
+    /// play immediately, no dead one-beat linger); a beat that finds the
+    /// show already stopped there is inert.
+    func autoAdvanceTick() {
+        guard isAutoAdvancing, !isTornDown else { return }
+        guard currentIndex < pages.count - 1 else {
+            stopAutoAdvance()
+            return
+        }
+        goToPage(currentIndex + 1)
+        if currentIndex == pages.count - 1 {
+            stopAutoAdvance()
+        }
+    }
+
+    private func startAutoAdvance() {
+        guard !isTornDown, currentIndex < pages.count - 1 else { return }
+        isAutoAdvancing = true
+        publishState()
+        autoAdvanceTimer?.invalidate()
+        // Target/selector rather than a block: the block API is @Sendable
+        // and would fight the view model's MainActor isolation (same call
+        // as PlayerCoordinator's up-next timer).
+        autoAdvanceTimer = Timer.scheduledTimer(
+            timeInterval: Self.autoAdvanceInterval,
+            target: self,
+            selector: #selector(autoAdvanceTimerFired),
+            userInfo: nil,
+            repeats: true
+        )
+    }
+
+    @objc private func autoAdvanceTimerFired() {
+        autoAdvanceTick()
     }
 
     func tearDown() {
         guard !isTornDown else { return }
         isTornDown = true
+        // The timer retains this view model while scheduled; it must never
+        // outlive the session.
+        autoAdvanceTimer?.invalidate()
+        autoAdvanceTimer = nil
+        isAutoAdvancing = false
         loadGeneration += 1
         loadingTask?.cancel()
         loadingTask = nil
