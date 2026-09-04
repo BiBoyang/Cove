@@ -1,0 +1,146 @@
+name: CI
+
+# Trigger model follows the battle-tested pattern from
+# biboyang.github.io "GitHub Actions 每日自动测试" post:
+#   - push / PR to main: full run
+#   - workflow_dispatch: manual full run
+#   - schedule 18:00 UTC = 02:00 Beijing next day, gated by
+#     check-changes so idle days skip the macOS jobs entirely.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+  schedule:
+    - cron: '0 18 * * *'
+
+jobs:
+  # Cheap ubuntu gate: for schedule runs, look for commits in the last
+  # 24h and skip the macOS jobs when the repo has been idle. Non-schedule
+  # events always proceed.
+  check-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      should_run: ${{ steps.check.outputs.should_run }}
+    steps:
+      - name: Check for commits in the last 24h
+        id: check
+        uses: actions/github-script@v7
+        with:
+          script: |
+            if (context.eventName !== 'schedule') {
+              core.info('Not a schedule event, proceeding');
+              core.setOutput('should_run', 'true');
+              return;
+            }
+            const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+            const branch = context.ref.replace('refs/heads/', '');
+            const commits = await github.rest.repos.listCommits({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: branch,
+              since: since,
+              per_page: 1,
+            });
+            const shouldRun = commits.data.length > 0 ? 'true' : 'false';
+            core.info(`Commits on ${branch} since ${since}: ${commits.data.length}, should_run=${shouldRun}`);
+            core.setOutput('should_run', shouldRun);
+
+  # All 8 local SPM packages via swift test (shared scratch path, same
+  # commands as the Makefile test target) plus the smb-spike compile
+  # check. No libmpv needed, so this job stays fast.
+  framework-tests:
+    needs: check-changes
+    if: needs.check-changes.outputs.should_run == 'true'
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - name: Select newest installed Xcode
+        run: |
+          find /Applications -maxdepth 1 -name 'Xcode*.app' || true
+          XCODE_APP="$(find /Applications -maxdepth 1 -name 'Xcode*_*.app' | sort -V | tail -n1)"
+          if [ -z "$XCODE_APP" ]; then XCODE_APP=/Applications/Xcode.app; fi
+          echo "Selecting $XCODE_APP"
+          sudo xcode-select -s "$XCODE_APP"
+          xcodebuild -version
+          swift --version
+      - uses: actions/checkout@v4
+      - name: Run framework package tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          : > framework-tests.log
+          for pkg in TraceKit KeychainKit SourceKit ImagePipeline CacheKit PreheatKit ComicKit ReaderKit; do
+            echo "=== swift test: $pkg ===" | tee -a framework-tests.log
+            swift test --package-path "Frameworks/$pkg" --scratch-path "$PWD/.build" 2>&1 | tee -a framework-tests.log
+          done
+          echo "=== swift build: smb-spike ===" | tee -a framework-tests.log
+          swift build --package-path Frameworks/SourceKit --product smb-spike --scratch-path "$PWD/.build" 2>&1 | tee -a framework-tests.log
+      - name: Show log tail
+        if: always()
+        run: tail -n 200 framework-tests.log || true
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: framework-test-logs
+          path: framework-tests.log
+
+  # The only path that exercises the App target: assemble the vendored
+  # libmpv from a pinned IINA release, generate the project, then run the
+  # full CoveTests suite.
+  app-tests:
+    needs: check-changes
+    if: needs.check-changes.outputs.should_run == 'true'
+    runs-on: macos-latest
+    timeout-minutes: 45
+    env:
+      IINA_VERSION: v1.4.4
+    steps:
+      - name: Select newest installed Xcode
+        run: |
+          find /Applications -maxdepth 1 -name 'Xcode*.app' || true
+          XCODE_APP="$(find /Applications -maxdepth 1 -name 'Xcode*_*.app' | sort -V | tail -n1)"
+          if [ -z "$XCODE_APP" ]; then XCODE_APP=/Applications/Xcode.app; fi
+          echo "Selecting $XCODE_APP"
+          sudo xcode-select -s "$XCODE_APP"
+          xcodebuild -version
+          swift --version
+      - uses: actions/checkout@v4
+      - name: Install xcodegen
+        run: brew install xcodegen
+      - name: Download IINA (pinned)
+        run: |
+          curl -fsSL --retry 3 -o /tmp/IINA.dmg \
+            "https://github.com/iina/iina/releases/download/${IINA_VERSION}/IINA.${IINA_VERSION}.dmg"
+      - name: Assemble vendored libmpv
+        run: |
+          hdiutil attach /tmp/IINA.dmg -mountpoint /Volumes/IINA -nobrowse -readonly
+          IINA_APP=/Volumes/IINA/IINA.app scripts/assemble-libmpv.sh
+      - name: Generate Xcode project
+        run: make generate
+      - name: Build app
+        shell: bash
+        run: |
+          set -euo pipefail
+          make build 2>&1 | tee xcodebuild-build.log
+      - name: Run app tests
+        shell: bash
+        run: |
+          set -o pipefail
+          xcodebuild -project Cove.xcodeproj -scheme Cove -destination 'platform=macOS' test 2>&1 | tee xcodebuild-test.log
+      - name: Show test log tail
+        if: always()
+        run: tail -n 200 xcodebuild-test.log || true
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-test-logs
+          path: |
+            xcodebuild-build.log
+            xcodebuild-test.log
+      - name: Detach IINA dmg
+        if: always()
+        run: hdiutil detach /Volumes/IINA || true
