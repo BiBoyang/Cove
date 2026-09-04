@@ -4,13 +4,12 @@
 
 ## 进行中 / 待验收
 
-（无）
+- [ ] 自动滚屏速度档位（0.5x/1x/2x 右键循环 + 持久化，见 plans/TASK-autoscroll-speed-gears.md，可派 agent）
+- [ ] 单页模式自动翻页 slideshow（5s 固定间隔 + 手动接管即停，见 plans/TASK-paged-slideshow.md，可派 agent）
 
 ## 下一波（候选，未排期）
 
 - [ ] SMB 连接/枚举加显式超时（~15s）：远程地址功能的配套缺口——失败引导要快出现；对普通 LAN 失败同样受益
-- [ ] 自动滚屏速度档位（plans/archive/TASK-strip-autoscroll.md 留的后续口：当前单速 110 pt/s）
-- [ ] 单页模式自动翻页（jpg 目录漫画场景的候选）
 - [ ] flaky 观察：ContinuousReaderViewModelTests "measurements land as one anchored batch" 高负载下偶发超时（CI 任务实测复跑即过），若 CI 上再红优先治理
 
 ## 上架前必须
