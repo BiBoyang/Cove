@@ -4,7 +4,7 @@
 
 ## 进行中 / 待验收
 
-- [ ] UI 统一优化主线：选题池与证据见 plans/UI-AUDIT-2026-09-05.md（按 §4 性价比顺序推进），令牌图纸 design/DESIGN-TOKENS.md；下一张卡 = **设置迁移进 App**（独立窗口 → App 内页面，面向 iOS 扩展的信息架构，用户拍板方向，协作模式实施）
+- [ ] UI 统一优化主线：选题池与证据见 plans/UI-AUDIT-2026-09-05.md（按 §4 性价比顺序推进），令牌图纸 design/DESIGN-TOKENS.md；候选下一张卡 = P5 克制的动效 / P6 媒体 chrome（用户点题，协作模式实施）
 
 ## 下一波（候选，未排期）
 
@@ -60,4 +60,5 @@
 - 网格细节：share 卡片 cardBorderColor rest 描边、hover-fill/radiusRowSelection/overlay 按钮配方三族令牌落地、浏览器右键选中联动（见 plans/archive/TASK-grid-card-details.md，2026-09-05 真机通过）
 - 排版层级：form-label/mono-digit/overlay-flash 三档字体令牌落地，9/10pt 越刻度废除、15pt 闪现去重、设置窗口分区标题回归 11sb（见 plans/archive/TASK-typography-scale.md，2026-09-05 真机通过）
 - SF Symbols 一致性：symbolSmall/Medium/Large/Hero 四档尺寸令牌落地，音量图标随音量四档分档，权重约定入令牌文档 §4.5（见 plans/archive/TASK-symbol-consistency.md，2026-09-05 真机通过）
+- 设置迁移进 App：独立窗口退役，设置成为侧栏目的地（本地仓库同区），四分区迁入主区滚动页、NSOpenPanel 改挂主窗口、Cmd+, 重定向（协作模式三步，见 plans/archive/TASK-settings-in-app.md，2026-09-05 真机通过）
 - 阅读器自定义 X 关闭钮删除：与红绿灯重叠的冗余按钮，关闭收尾本就走 willCloseNotification（audit BUG-2，2026-09-05 真机通过）
