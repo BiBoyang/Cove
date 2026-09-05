@@ -71,13 +71,13 @@ Cove 跨平台 UI 一致性的图纸：所有色值/字号/间距/圆角/动效/
 ## 6. 组件配方（跨平台要同一效果；平台实现细节另注）
 
 ### 6.1 空态（Empty State）
-[提议，借 SenPlayer 主界面/空 share]
+[已拍板] 2026-09-05 · TASK-empty-loading-states（借 SenPlayer 主界面/空 share）
 居中插画或大图标（text-tertiary）+ 标题（title）+ 一行说明（caption，
 text-secondary）+ 必要时主行动按钮。**禁止裸底零提示**（Cove 现状：空文件夹
 整面无内容）。Mac 端插画可用 SF Symbols 大号单色代替，够用即可。
 
 ### 6.2 加载态（Loading）
-[提议]
+[已拍板] 2026-09-05 · TASK-empty-loading-states
 spinner（平台原生指示器）+ 一行说明（caption）。**禁止静态图标冒充加载中**
 （Cove 现状：share 网格加载只有静态图标 + 文字，audit G1）。目录切换先出
 加载态，不留旧内容残留。

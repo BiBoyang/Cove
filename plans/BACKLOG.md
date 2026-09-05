@@ -4,7 +4,7 @@
 
 ## 进行中 / 待验收
 
-- [ ] UI 统一优化主线：选题池与证据见 plans/UI-AUDIT-2026-09-05.md（按 §4 性价比顺序推进），令牌图纸 design/DESIGN-TOKENS.md；下一张卡 = 空态与加载态体系
+- [ ] UI 统一优化主线：选题池与证据见 plans/UI-AUDIT-2026-09-05.md（按 §4 性价比顺序推进），令牌图纸 design/DESIGN-TOKENS.md；下一张卡 = 缩略图/网格细节
 
 ## 下一波（候选，未排期）
 
@@ -56,3 +56,4 @@
 - CBZ 行 badge 修复：符号名 books.closed.fill（不存在）→ book.closed.fill（见 plans/archive/TASK-fix-cbz-badge-symbol.md，2026-09-05 真机通过）
 - 浏览器 drill-down 首帧滚动错乱（沉底/空白）修复：reloadData 后强制布局再复位（见 plans/archive/TASK-browser-scroll-reset.md，2026-09-05 真机通过）
 - UI 现状盘点 2026-09-05：plans/UI-AUDIT-2026-09-05.md + 29 张证据截图；平台无关设计令牌图纸 design/DESIGN-TOKENS.md 建立（四项决策已拍板）
+- 空态与加载态体系（库界面）：StatePlaceholderView 组件 + share 网格加载 spinner/失败占位+重试（不再与 alert 双重提示）/零服务器引导 + 浏览器空文件夹与目录加载态（见 plans/archive/TASK-empty-loading-states.md，2026-09-05 真机通过）
