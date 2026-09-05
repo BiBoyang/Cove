@@ -148,11 +148,17 @@ final class ShareCardItem: NSCollectionViewItem {
     private let commentLabel = NSTextField(labelWithString: "")
     private var trackingAreaRef: NSTrackingArea?
     private var isHovering = false {
-        didSet { updateHighlight() }
+        didSet {
+            guard oldValue != isHovering else { return }
+            updateHighlight()
+        }
     }
 
     override var isSelected: Bool {
-        didSet { updateHighlight() }
+        didSet {
+            guard oldValue != isSelected else { return }
+            updateHighlight()
+        }
     }
 
     override func loadView() {
@@ -197,7 +203,7 @@ final class ShareCardItem: NSCollectionViewItem {
         }
 
         view = cardView
-        updateHighlight()
+        updateHighlight(animated: false)
     }
 
     override func viewDidLoad() {
@@ -221,14 +227,18 @@ final class ShareCardItem: NSCollectionViewItem {
     }
 
     // `RoundedFillView` re-resolves the fill on appearance changes, so the
-    // highlight never goes stale across appearance flips.
-    private func updateHighlight() {
+    // highlight never goes stale across appearance flips. Initial state in
+    // `loadView` lands un-animated; live hover/selection changes transition
+    // over the fast motion token (tokens §5).
+    private func updateHighlight(animated: Bool = true) {
+        let color: NSColor
         if isSelected {
-            cardView.fillColor = .selectedContentBackgroundColor
+            color = .selectedContentBackgroundColor
         } else if isHovering {
-            cardView.fillColor = CoveStyle.hoverFillColor
+            color = CoveStyle.hoverFillColor
         } else {
-            cardView.fillColor = .clear
+            color = .clear
         }
+        cardView.setFillColor(color, animated: animated)
     }
 }

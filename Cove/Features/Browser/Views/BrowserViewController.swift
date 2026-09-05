@@ -594,7 +594,8 @@ private final class BrowserRowCellView: NSTableCellView {
         thumbnailImageView.isHidden = false
         badgeImageView.isHidden = true
         NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.15
+            context.duration = CoveStyle.motionFast
+            context.timingFunction = CoveStyle.motionTimingFunction
             thumbnailImageView.animator().alphaValue = 1
         }
     }

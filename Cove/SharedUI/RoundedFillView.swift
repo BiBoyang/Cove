@@ -9,6 +9,26 @@ final class RoundedFillView: NSView {
         didSet { needsDisplay = true }
     }
 
+    /// Updates the fill, optionally animating the change with the fast
+    /// motion token (tokens §5). The model value updates immediately and
+    /// `updateLayer` re-resolves to the same value, which is a no-op for
+    /// Core Animation, so the running transition never gets clobbered;
+    /// appearance-driven re-resolves still land instantly (by design).
+    /// Falls back to the un-animated path when not yet in a window.
+    func setFillColor(_ color: NSColor, animated: Bool) {
+        guard animated, window != nil, color != fillColor else {
+            fillColor = color
+            return
+        }
+        fillColor = color
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = CoveStyle.motionFast
+            context.timingFunction = CoveStyle.motionTimingFunction
+            context.allowsImplicitAnimation = true
+            layer?.backgroundColor = color.cgColor
+        }
+    }
+
     /// Optional hairline border, re-resolved with the fill on appearance
     /// changes. Nil means no border.
     var borderColor: NSColor? {

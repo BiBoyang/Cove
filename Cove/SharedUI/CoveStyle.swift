@@ -32,6 +32,20 @@ enum CoveStyle {
     /// Hairline border for overlay buttons.
     static var overlayButtonBorder: NSColor { NSColor.white.withAlphaComponent(0.18) }
 
+    // MARK: Motion (tokens §5)
+
+    /// Motion serves state feedback only (hover/selection/fade-ins), never
+    /// decoration, and always eases out so changes start fast and settle
+    /// instead of feeling floaty. Fast: hover/selection fills, fade-ins.
+    static let motionFast: TimeInterval = 0.15
+    /// Medium: panel and overlay-chrome reveals. Reserved for future use;
+    /// no current call site consumes it yet.
+    static let motionMedium: TimeInterval = 0.25
+    /// Shared timing curve for both motion tiers.
+    static var motionTimingFunction: CAMediaTimingFunction {
+        CAMediaTimingFunction(name: .easeOut)
+    }
+
     // MARK: Symbol sizes
 
     /// Small affordances (tags, compact controls).

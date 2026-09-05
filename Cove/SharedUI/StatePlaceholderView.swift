@@ -87,6 +87,20 @@ final class StatePlaceholderView: NSView {
         fatalError("init(coder:) is not supported")
     }
 
+    /// Fade in on every appearance (fast motion token, tokens §5): a
+    /// placeholder replaces whole-pane content, and a hard cut there reads
+    /// as a flash. The fade is short enough to stay below notice.
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        guard window != nil else { return }
+        alphaValue = 0
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = CoveStyle.motionFast
+            context.timingFunction = CoveStyle.motionTimingFunction
+            animator().alphaValue = 1
+        }
+    }
+
     @objc private func handleAction() {
         onAction?()
     }
