@@ -2,9 +2,9 @@ import AppKit
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var mainWindowController: MainWindowController?
-    /// Retained for the app lifetime; the window itself closes and reopens
-    /// freely (`isReleasedWhenClosed = false`).
-    private var preferencesWindowController: PreferencesWindowController?
+    /// Retained so the app-menu Cmd+, entry can route into the library
+    /// coordinator's settings destination.
+    private var libraryCoordinator: LibraryCoordinator?
     /// The app's single composition root owns the service graph; the
     /// preheat service is retained transitively by the library coordinator.
     private var settingsService: SettingsService?
@@ -26,8 +26,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let vaultService = VaultService(settings: settingsService)
         // One preferences session for the sidebar settings destination,
         // built here because only the composition root sees all services.
-        // The legacy Cmd+, window keeps its own lazy instance until it is
-        // retired; onStateChange is a single slot, so they never share.
         let preferencesViewModel = PreferencesViewModel(
             settings: settingsService,
             cache: PreferencesCacheAdapter(store: cacheService.store),
@@ -51,6 +49,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.settingsService = settingsService
         self.cacheService = cacheService
         self.vaultService = vaultService
+        self.libraryCoordinator = libraryCoordinator
         let controller = MainWindowController(libraryCoordinator: libraryCoordinator)
         controller.showWindow(nil)
         mainWindowController = controller
@@ -73,7 +72,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let appMenu = NSMenu()
         let preferencesItem = NSMenuItem(
             title: "设置…",
-            action: #selector(showPreferences(_:)),
+            action: #selector(openSettings(_:)),
             keyEquivalent: ","
         )
         preferencesItem.target = self
@@ -101,17 +100,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApplication.shared.mainMenu = mainMenu
     }
 
-    @MainActor @objc private func showPreferences(_ sender: Any?) {
-        if preferencesWindowController == nil {
-            guard let settingsService, let cacheService, let vaultService else { return }
-            let viewModel = PreferencesViewModel(
-                settings: settingsService,
-                cache: PreferencesCacheAdapter(store: cacheService.store),
-                vault: vaultService
-            )
-            preferencesWindowController = PreferencesWindowController(viewModel: viewModel)
-        }
-        preferencesWindowController?.showWindow(nil)
+    /// Settings live in the main window as a sidebar destination (the same
+    /// information architecture a future iOS split view would use); Cmd+,
+    /// and the menu item both focus it.
+    @MainActor @objc private func openSettings(_ sender: Any?) {
+        mainWindowController?.showWindow(nil)
+        libraryCoordinator?.openSettings()
         NSApplication.shared.activate(ignoringOtherApps: true)
     }
 }

@@ -88,6 +88,14 @@ final class ServerListViewController: NSViewController {
         onAddServer?()
     }
 
+    /// Programmatically selects the fixed settings row; the
+    /// selection-change path then routes to the settings destination,
+    /// exactly like a user click.
+    func selectSettingsRow() {
+        loadViewIfNeeded()
+        tableView.selectRowIndexes(IndexSet(integer: viewModel.settingsRow), byExtendingSelection: false)
+    }
+
     @objc private func handleDoubleClick() {
         let row = tableView.clickedRow
         if viewModel.isVaultRow(row) {

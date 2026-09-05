@@ -4,12 +4,10 @@ import SnapKit
 /// Settings destination pane shown in the main area when the sidebar
 /// "设置" row is selected: cache budget/TTL/usage/clear, preheat
 /// enable/rate-limit/folders, reader resume-on-open, and the vault
-/// location. The controls are migrated as-is from the legacy
-/// PreferencesWindowController (retired in a later step); values persist
-/// via `SettingsService` (UserDefaults) and apply live through the
-/// didChange notification. Unlike the old fixed 520pt window, the form
-/// re-flows to the main-area width up to a readable max column, aligned
-/// leading, and scrolls vertically.
+/// location. Values persist via `SettingsService` (UserDefaults) and
+/// apply live through the didChange notification. The form re-flows to
+/// the main-area width up to a readable max column, aligned leading,
+/// and scrolls vertically.
 @MainActor
 final class SettingsPaneViewController: NSViewController {
     private let viewModel: PreferencesViewModel

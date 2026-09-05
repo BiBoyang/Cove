@@ -491,6 +491,16 @@ final class LibraryCoordinator {
 
     // MARK: - Settings
 
+    /// Opens the settings destination from outside the sidebar (the
+    /// Cmd+, app-menu entry): syncs the sidebar selection to the settings
+    /// row and shows the pane. `showSettings` is idempotent, so the extra
+    /// call after the selection-driven routing is harmless. Internal so
+    /// the composition root can reach it, like `enumerateShares`.
+    func openSettings() {
+        serverListViewController.selectSettingsRow()
+        showSettings()
+    }
+
     /// Settings destination: swaps the detail pane to the settings page.
     /// Leaving the on-screen directory cancels its in-flight loads and
     /// directory preheat, the same discipline as opening a reader; the
