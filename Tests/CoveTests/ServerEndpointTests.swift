@@ -190,21 +190,6 @@ struct SMBSessionServiceConfigTests {
     }
 }
 
-@Suite("Remote endpoint guidance")
-@MainActor
-struct RemoteEndpointHintTests {
-    @Test("the hint appends the switch suggestion to the underlying error")
-    func messageComposition() {
-        let underlying = NSError(
-            domain: "test", code: 1,
-            userInfo: [NSLocalizedDescriptionKey: "connection refused"]
-        )
-        let hint = RemoteEndpointHint(underlying: underlying)
-
-        #expect(hint.localizedDescription == "connection refused\n\n该服务器已配置远程地址，可右键服务器切换到远程地址后重试。")
-    }
-}
-
 @Suite("Library endpoint switching")
 @MainActor
 struct LibraryEndpointSwitchTests {
@@ -248,37 +233,31 @@ struct LibraryEndpointSwitchTests {
         return (coordinator, service, cleanup)
     }
 
-    /// Records onError deliveries as plain values for lock-free asserting.
-    private final class ErrorLog {
-        private let entries = Mutex<[(message: String, title: String)]>([])
-
-        var first: (message: String, title: String)? {
-            entries.withLock { $0.first }
-        }
-
-        func record(_ error: Error, title: String) {
-            entries.withLock { $0.append((error.localizedDescription, title)) }
-        }
-    }
-
     @Test("switching flips the stored endpoint and re-enumerates at the new address", .timeLimit(.minutes(1)))
     func switchFlipsAndReenumerates() async throws {
         let server = seededServer(endpoint: .lan)
         let (coordinator, service, cleanup) = try makeLibraryCoordinator(seed: [server])
         defer { cleanup() }
-        let errors = ErrorLog()
-        coordinator.onError = { error, title in errors.record(error, title: title) }
+        var alerts = 0
+        coordinator.onError = { _, _ in alerts += 1 }
 
         coordinator.switchEndpoint(of: server)
 
         // The flip lands synchronously before enumeration starts.
         #expect(service.servers.first?.activeEndpoint == .remote)
-        try await waitUntil { errors.first != nil }
         // Enumeration ran and failed (no password in the test keychain);
-        // already on remote, so no switch hint is suggested again.
-        #expect(errors.first?.title == "获取共享列表失败")
-        let message = errors.first?.message ?? ""
-        #expect(message.contains("已配置远程地址") == false)
+        // the failure surfaces as the grid placeholder, never as an alert.
+        // Wait past the loading placeholder for the terminal failure state.
+        try await waitUntil {
+            coordinator.shareGridViewModel.state.placeholder?.kind
+                == .failure(symbol: "exclamationmark.triangle")
+        }
+        let placeholder = coordinator.shareGridViewModel.state.placeholder
+        #expect(placeholder?.kind == .failure(symbol: "exclamationmark.triangle"))
+        #expect(placeholder?.action == .retry)
+        // Already on remote, so no switch hint is suggested again.
+        #expect(placeholder?.message.contains("已配置远程地址") == false)
+        #expect(alerts == 0)
     }
 
     @Test("a share enumeration failure suggests the idle remote address", .timeLimit(.minutes(1)))
@@ -286,14 +265,19 @@ struct LibraryEndpointSwitchTests {
         let server = seededServer(endpoint: .lan)
         let (coordinator, service, cleanup) = try makeLibraryCoordinator(seed: [server])
         defer { cleanup() }
-        let errors = ErrorLog()
-        coordinator.onError = { error, title in errors.record(error, title: title) }
+        var alerts = 0
+        coordinator.onError = { _, _ in alerts += 1 }
 
         coordinator.enumerateShares(of: server)
 
-        try await waitUntil { errors.first != nil }
-        #expect(errors.first?.title == "获取共享列表失败")
-        #expect((errors.first?.message ?? "").contains("已配置远程地址"))
+        try await waitUntil {
+            coordinator.shareGridViewModel.state.placeholder?.kind
+                == .failure(symbol: "exclamationmark.triangle")
+        }
+        let placeholder = coordinator.shareGridViewModel.state.placeholder
+        #expect(placeholder?.action == .retry)
+        #expect((placeholder?.message ?? "").contains("已配置远程地址"))
+        #expect(alerts == 0)
         // The hint is advisory only: nothing flipped.
         #expect(service.servers.first?.activeEndpoint == .lan)
     }
@@ -303,15 +287,15 @@ struct LibraryEndpointSwitchTests {
         let server = ServerConfig(id: UUID(), host: "nas.local", username: "user")
         let (coordinator, service, cleanup) = try makeLibraryCoordinator(seed: [server])
         defer { cleanup() }
-        let errors = ErrorLog()
-        coordinator.onError = { error, title in errors.record(error, title: title) }
 
         coordinator.switchEndpoint(of: server)
 
         #expect(service.servers.first?.activeEndpoint == .lan)
-        try await waitUntil { errors.first != nil }
-        let message = errors.first?.message ?? ""
-        #expect(message.contains("已配置远程地址") == false)
+        try await waitUntil {
+            coordinator.shareGridViewModel.state.placeholder?.kind
+                == .failure(symbol: "exclamationmark.triangle")
+        }
+        #expect(coordinator.shareGridViewModel.state.placeholder?.message.contains("已配置远程地址") == false)
     }
 }
 

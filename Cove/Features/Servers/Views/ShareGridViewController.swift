@@ -9,12 +9,13 @@ final class ShareGridViewController: NSViewController {
     private let viewModel: ShareGridViewModel
 
     var onOpenShare: ((SMBShareInfo) -> Void)?
+    /// Placeholder action intents, mapped from the state's action kind.
+    var onRetry: (() -> Void)?
+    var onAddServer: (() -> Void)?
 
     private let scrollView = NSScrollView()
     private let collectionView = NSCollectionView()
-    private let placeholderLabel = NSTextField(labelWithString: "")
-    private let placeholderIcon = NSImageView()
-    private let placeholderStack = NSStackView()
+    private var placeholderView: StatePlaceholderView?
 
     init(viewModel: ShareGridViewModel) {
         self.viewModel = viewModel
@@ -59,24 +60,9 @@ final class ShareGridViewController: NSViewController {
         scrollView.drawsBackground = false
         scrollView.backgroundColor = CoveStyle.libraryBackground
 
-        placeholderIcon.image = NSImage(
-            systemSymbolName: "externaldrive", accessibilityDescription: nil
-        )?.withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 36, weight: .light))
-        placeholderIcon.contentTintColor = .tertiaryLabelColor
-        placeholderLabel.textColor = .secondaryLabelColor
-        placeholderStack.orientation = .vertical
-        placeholderStack.alignment = .centerX
-        placeholderStack.spacing = 10
-        placeholderStack.addArrangedSubview(placeholderIcon)
-        placeholderStack.addArrangedSubview(placeholderLabel)
-
         root.addSubview(scrollView)
-        root.addSubview(placeholderStack)
         scrollView.snp.makeConstraints { make in
             make.edges.equalToSuperview()
-        }
-        placeholderStack.snp.makeConstraints { make in
-            make.center.equalToSuperview()
         }
 
         view = root
@@ -86,8 +72,39 @@ final class ShareGridViewController: NSViewController {
     private func render(_ state: ShareGridViewModel.State) {
         loadViewIfNeeded()
         collectionView.reloadData()
-        placeholderLabel.stringValue = state.placeholder ?? ""
-        placeholderStack.isHidden = state.placeholder == nil
+
+        placeholderView?.removeFromSuperview()
+        placeholderView = nil
+        guard let placeholder = state.placeholder else { return }
+
+        let style: StatePlaceholderView.Style
+        switch placeholder.kind {
+        case .loading: style = .loading
+        case .info(let symbol): style = .symbol(symbol)
+        case .failure(let symbol): style = .symbol(symbol)
+        }
+        let actionTitle: String?
+        switch placeholder.action {
+        case .none: actionTitle = nil
+        case .retry: actionTitle = "重试"
+        case .addServer: actionTitle = "添加服务器"
+        }
+        let view = StatePlaceholderView(
+            style: style, title: placeholder.title, message: placeholder.message,
+            actionTitle: actionTitle
+        )
+        view.onAction = { [weak self] in
+            switch placeholder.action {
+            case .retry: self?.onRetry?()
+            case .addServer: self?.onAddServer?()
+            case .none: break
+            }
+        }
+        self.view.addSubview(view)
+        view.snp.makeConstraints { make in
+            make.edges.equalToSuperview()
+        }
+        placeholderView = view
     }
 
     @objc private func handleDoubleClick(_ gesture: NSClickGestureRecognizer) {

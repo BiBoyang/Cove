@@ -64,6 +64,8 @@ final class BrowserViewController: NSViewController {
     /// alone inherits the previous directory's offset).
     private var lastRenderedPath: String?
     private let toolbarView = NSView()
+    /// The state placeholder (loading / empty folder), swapped per render.
+    private var placeholderView: StatePlaceholderView?
     private let backButton = PillButton(
         symbolName: "chevron.left", pointSize: 15, style: .secondary,
         accessibilityDescription: "返回"
@@ -252,6 +254,37 @@ final class BrowserViewController: NSViewController {
             scrollView.contentView.scroll(to: .zero)
             scrollView.reflectScrolledClipView(scrollView.contentView)
         }
+        renderPlaceholder(state)
+    }
+
+    /// Loading and empty states overlay the list; a loaded directory with
+    /// items shows neither. The placeholder never participates in scroll
+    /// reset — the table underneath keeps its own geometry.
+    private func renderPlaceholder(_ state: BrowserViewModel.State) {
+        placeholderView?.removeFromSuperview()
+        placeholderView = nil
+
+        let placeholder: StatePlaceholderView?
+        if state.isLoading {
+            placeholder = StatePlaceholderView(
+                style: .loading, title: "正在加载…", message: state.title
+            )
+        } else if state.canGoUp && state.items.isEmpty {
+            placeholder = StatePlaceholderView(
+                style: .symbol("tray"),
+                title: "空文件夹",
+                message: "这个文件夹里没有可浏览的内容。"
+            )
+        } else {
+            placeholder = nil
+        }
+        guard let placeholder else { return }
+        view.addSubview(placeholder)
+        placeholder.snp.makeConstraints { make in
+            make.top.equalTo(toolbarView.snp.bottom)
+            make.leading.trailing.bottom.equalToSuperview()
+        }
+        placeholderView = placeholder
     }
 
     /// Scrolls to and selects the row for `path` — used when navigating

@@ -258,10 +258,10 @@ struct ServerViewModelTests {
     func shareStates() {
         let viewModel = ShareGridViewModel()
         viewModel.showLoading()
-        #expect(viewModel.state.placeholder == "正在获取共享列表…")
+        #expect(viewModel.state.placeholder?.kind == .loading)
 
         viewModel.display(shares: [])
-        #expect(viewModel.state.placeholder == "该服务器没有可用共享")
+        #expect(viewModel.state.placeholder?.kind == .info(symbol: "folder"))
 
         let share = SMBShareInfo(name: "media", comment: "")
         viewModel.display(shares: [share])
@@ -1664,5 +1664,62 @@ private final class GatedFileReader: Sendable {
         started.signal()
         gate.wait()
         return payload
+    }
+}
+
+
+@Suite("Share grid placeholder")
+@MainActor
+struct ShareGridPlaceholderTests {
+    @Test("loading renders the spinner kind without an action")
+    func loading() {
+        let viewModel = ShareGridViewModel()
+        viewModel.showLoading()
+        #expect(viewModel.state.placeholder == ShareGridViewModel.Placeholder(
+            kind: .loading, title: "正在获取共享列表…", message: "", action: nil
+        ))
+    }
+
+    @Test("enumeration failure offers retry, with the remote hint only when switchable")
+    func failure() {
+        let viewModel = ShareGridViewModel()
+        viewModel.showEnumerationFailure(canSwitchToRemote: false)
+        #expect(viewModel.state.placeholder?.kind == .failure(symbol: "exclamationmark.triangle"))
+        #expect(viewModel.state.placeholder?.action == .retry)
+        #expect(viewModel.state.placeholder?.message.contains("远程地址") == false)
+
+        viewModel.showEnumerationFailure(canSwitchToRemote: true)
+        #expect(viewModel.state.placeholder?.message.contains("远程地址") == true)
+    }
+
+    @Test("first-run guidance offers the add-server action; idle guidance does not")
+    func guidance() {
+        let viewModel = ShareGridViewModel()
+        viewModel.showEmptyServerGuidance()
+        #expect(viewModel.state.placeholder?.action == .addServer)
+
+        viewModel.showIdlePlaceholder()
+        #expect(viewModel.state.placeholder?.action == nil)
+    }
+}
+
+@Suite("Browser loading state")
+@MainActor
+struct BrowserLoadingStateTests {
+    @Test("beginLoading clears the listing and flags loading; display resolves both")
+    func loadingTransition() {
+        let viewModel = BrowserViewModel()
+        let item = ContentItem(name: "a", path: "/a", isDirectory: true, size: 0, modifiedDate: nil)
+        viewModel.display(items: [item], path: "/", title: "share")
+        #expect(viewModel.state.isLoading == false)
+
+        viewModel.beginLoading(path: "/a", title: "a")
+        #expect(viewModel.state.isLoading == true)
+        #expect(viewModel.state.items.isEmpty)
+        #expect(viewModel.state.path == "/a")
+
+        viewModel.display(items: [item], path: "/a", title: "a")
+        #expect(viewModel.state.isLoading == false)
+        #expect(viewModel.state.items == [item])
     }
 }

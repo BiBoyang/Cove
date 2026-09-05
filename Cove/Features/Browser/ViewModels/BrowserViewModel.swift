@@ -32,12 +32,17 @@ final class BrowserViewModel {
         let path: String
         let title: String
         let canGoUp: Bool
+        /// True while a directory listing is in flight; `items` is empty
+        /// then, so the pane shows a loading placeholder instead of the
+        /// previous directory's leftovers.
+        let isLoading: Bool
         let preheat: PreheatButtonState
         let download: DownloadState?
     }
 
     private(set) var state = State(
-        items: [], path: "", title: "", canGoUp: false, preheat: .unavailable, download: nil
+        items: [], path: "", title: "", canGoUp: false, isLoading: false,
+        preheat: .unavailable, download: nil
     )
 
     var onStateChange: ((State) -> Void)? {
@@ -66,6 +71,25 @@ final class BrowserViewModel {
         state.items.first { $0.path == path }
     }
 
+    /// Marks the start of a directory load: the pane switches to the loading
+    /// placeholder (previous listing cleared) until `display` lands.
+    /// The scroll position resets here via the path change, so the arriving
+    /// listing is already anchored at the top.
+    func beginLoading(path: String, title: String) {
+        preheatPollTask?.cancel()
+        preheatPollTask = nil
+        state = State(
+            items: [],
+            path: path,
+            title: title,
+            canGoUp: true,
+            isLoading: true,
+            preheat: .unavailable,
+            download: nil
+        )
+        onStateChange?(state)
+    }
+
     func display(items: [ContentItem], path: String, title: String) {
         preheatPollTask?.cancel()
         preheatPollTask = nil
@@ -74,6 +98,7 @@ final class BrowserViewModel {
             path: path,
             title: title,
             canGoUp: true,
+            isLoading: false,
             preheat: .ready,
             // Navigation ends any download presentation; the download task
             // itself is the coordinator's business.
@@ -102,6 +127,7 @@ final class BrowserViewModel {
             path: state.path,
             title: state.title,
             canGoUp: state.canGoUp,
+            isLoading: state.isLoading,
             preheat: state.preheat,
             download: download
         )
@@ -163,6 +189,7 @@ final class BrowserViewModel {
             path: state.path,
             title: state.title,
             canGoUp: state.canGoUp,
+            isLoading: state.isLoading,
             preheat: preheat,
             download: state.download
         )

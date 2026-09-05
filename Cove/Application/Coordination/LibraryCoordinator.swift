@@ -1,6 +1,7 @@
 import AppKit
 import CacheKit
 import SourceKit
+import TraceKit
 
 /// Coordinates the Servers and Browser features over one SMB session.
 /// A single generation covers all navigation branches so stale async results
@@ -14,7 +15,9 @@ final class LibraryCoordinator {
     private let vaultService: VaultService
 
     private let serverListViewModel = ServerListViewModel()
-    private let shareGridViewModel = ShareGridViewModel()
+    /// Internal (not private) so the enumeration-failure placeholder wiring
+    /// is unit-testable, like `enumerateShares`.
+    let shareGridViewModel = ShareGridViewModel()
     private let browserViewModel = BrowserViewModel()
 
     let serverListViewController: ServerListViewController
@@ -37,6 +40,7 @@ final class LibraryCoordinator {
     private let pdfReaderCoordinator: PdfReaderCoordinator
     private var navigationGeneration = 0
     private var activeTask: Task<Void, Never>?
+    private let logger = TraceLogger(category: "Library")
 
     var hostWindowProvider: (() -> NSWindow?)?
     var onShowDetail: ((NSViewController) -> Void)?
@@ -69,7 +73,17 @@ final class LibraryCoordinator {
 
     func start() {
         serverListViewModel.update(servers: sessionService.servers)
-        shareGridViewModel.showPlaceholder("双击左侧服务器以连接")
+        showIdlePlaceholderForCurrentServerList()
+    }
+
+    /// Idle detail-pane placeholder: first-run guidance with an add action
+    /// when no servers exist, plain "connect" guidance otherwise.
+    private func showIdlePlaceholderForCurrentServerList() {
+        if sessionService.servers.isEmpty {
+            shareGridViewModel.showEmptyServerGuidance()
+        } else {
+            shareGridViewModel.showIdlePlaceholder()
+        }
     }
 
     private func wireCallbacks() {
@@ -80,6 +94,8 @@ final class LibraryCoordinator {
         serverListViewController.onRemove = { [weak self] in self?.confirmRemoveServer($0) }
         serverListViewController.onOpenVault = { [weak self] in self?.openVault() }
         shareGridViewController.onOpenShare = { [weak self] in self?.openShare($0) }
+        shareGridViewController.onRetry = { [weak self] in self?.retryEnumeration() }
+        shareGridViewController.onAddServer = { [weak self] in self?.presentAddServerSheet() }
         browserViewController.onOpenDirectory = { [weak self] in self?.navigateInto($0) }
         browserViewController.onOpenImage = { [weak self] in self?.openReader(forImageAt: $0) }
         browserViewController.onOpenComic = { [weak self] in self?.openComicReader(at: $0) }
@@ -224,7 +240,7 @@ final class LibraryCoordinator {
         navigationPath.reset()
         onTitleChange?("Cove")
         browserViewController.thumbnailProvider = nil
-        shareGridViewModel.showPlaceholder("双击左侧服务器以连接")
+        showIdlePlaceholderForCurrentServerList()
         onShowDetail?(shareGridViewController)
         activeTask = Task { await sessionService.disconnect() }
     }
@@ -275,15 +291,19 @@ final class LibraryCoordinator {
             } catch {
                 if Task.isCancelled { return }
                 guard generation == navigationGeneration else { return }
-                shareGridViewModel.showPlaceholder("获取共享列表失败，双击重试")
-                // With an idle remote address configured, the failure may
-                // just mean the LAN address is unreachable from here.
-                onError?(
-                    server.canSwitchToRemote ? RemoteEndpointHint(underlying: error) : error,
-                    "获取共享列表失败"
-                )
+                // The placeholder owns the failure presentation (retry button,
+                // remote-endpoint hint); no modal alert on top of it.
+                logger.error("获取共享列表失败: \(error.localizedDescription)")
+                shareGridViewModel.showEnumerationFailure(canSwitchToRemote: server.canSwitchToRemote)
             }
         }
+    }
+
+    /// Retries share enumeration for the server the grid failed on
+    /// (placeholder retry button).
+    private func retryEnumeration() {
+        guard let server = currentServer else { return }
+        enumerateShares(of: server)
     }
 
     private func openShare(_ share: SMBShareInfo) {
@@ -364,11 +384,15 @@ final class LibraryCoordinator {
     }
 
     private func loadDirectory(at path: String, generation: Int) async throws {
-        let items = try await sessionService.list(at: path)
-        guard generation == navigationGeneration else { throw CancellationError() }
+        // Switch to the loading placeholder first: the listing clears (no
+        // stale leftovers) and the scroll position resets via the path
+        // change, so the arriving directory is anchored at the top.
         let title = LibraryNavigationPath.browserTitle(
             forPath: path, shareName: browsingVault ? "本地仓库" : currentShare
         )
+        browserViewModel.beginLoading(path: path, title: title)
+        let items = try await sessionService.list(at: path)
+        guard generation == navigationGeneration else { throw CancellationError() }
         browserViewModel.display(items: items, path: path, title: title)
         if browsingVault {
             // `display` resets the preheat button to ready; the vault has
@@ -625,22 +649,6 @@ struct LibraryNavigationPath: Equatable, Sendable {
     /// directory name below it.
     static func browserTitle(forPath path: String, shareName: String?) -> String {
         path == "/" ? (shareName ?? "/") : (path as NSString).lastPathComponent
-    }
-}
-
-/// Wraps a connection failure with the "switch to the remote address"
-/// hint for servers that have a configured but idle remote address. Flows
-/// through the regular `onError` alert path — only the message gains a
-/// sentence, the alert presentation layer stays untouched.
-struct RemoteEndpointHint: LocalizedError {
-    private let underlying: Error
-
-    init(underlying: Error) {
-        self.underlying = underlying
-    }
-
-    var errorDescription: String? {
-        underlying.localizedDescription + "\n\n该服务器已配置远程地址，可右键服务器切换到远程地址后重试。"
     }
 }
 
