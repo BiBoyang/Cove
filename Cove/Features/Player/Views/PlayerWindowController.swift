@@ -189,7 +189,7 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
         speedButton.isBordered = false
         speedButton.title = "1x"
         speedButton.font = CoveStyle.monoDigitFont
-        speedButton.contentTintColor = NSColor.white.withAlphaComponent(0.8)
+        speedButton.contentTintColor = CoveStyle.textOnMedia2
         speedButton.target = self
         speedButton.action = #selector(handleSpeedTapped(_:))
 
@@ -197,7 +197,7 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
         playModeButton.isBordered = false
         playModeButton.image = NSImage(systemSymbolName: "list.bullet", accessibilityDescription: "播放模式")?
             .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: CoveStyle.symbolMedium, weight: .medium))
-        playModeButton.contentTintColor = NSColor.white.withAlphaComponent(0.8)
+        playModeButton.contentTintColor = CoveStyle.textOnMedia2
         playModeButton.target = self
         playModeButton.action = #selector(handlePlayModeTapped(_:))
 
@@ -208,7 +208,7 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
         progressSlider.action = #selector(handleProgressSlider(_:))
 
         timeLabel.font = CoveStyle.monoDigitFont
-        timeLabel.textColor = NSColor.white.withAlphaComponent(0.8)
+        timeLabel.textColor = CoveStyle.textOnMedia2
         timeLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
 
         volumeIconView.image = NSImage(
@@ -217,7 +217,7 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
         )?.withSymbolConfiguration(
             NSImage.SymbolConfiguration(pointSize: CoveStyle.symbolMedium, weight: .medium)
         )
-        volumeIconView.contentTintColor = NSColor.white.withAlphaComponent(0.8)
+        volumeIconView.contentTintColor = CoveStyle.textOnMedia2
 
         volumeSlider.minValue = 0
         volumeSlider.maxValue = 100
@@ -226,7 +226,7 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
         volumeSlider.action = #selector(handleVolumeSlider(_:))
 
         volumeValueLabel.font = .monospacedDigitSystemFont(ofSize: 11, weight: .medium)
-        volumeValueLabel.textColor = NSColor.white.withAlphaComponent(0.7)
+        volumeValueLabel.textColor = CoveStyle.textOnMedia2
         volumeValueLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
         volumeValueLabel.setContentHuggingPriority(.required, for: .horizontal)
 
@@ -339,7 +339,7 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
             systemSymbolName: symbol,
             accessibilityDescription: accessibilityDescription
         )?.withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: CoveStyle.symbolMedium, weight: .semibold))
-        button.contentTintColor = .white
+        button.contentTintColor = CoveStyle.textOnMedia1
         button.imageScaling = .scaleProportionallyUpOrDown
         button.target = self
         button.action = action
@@ -431,7 +431,7 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
             string: title,
             attributes: [
                 .font: NSFont.systemFont(ofSize: 13, weight: .medium),
-                .foregroundColor: NSColor.white.withAlphaComponent(0.9),
+                .foregroundColor: CoveStyle.textOnMedia1,
                 .shadow: shadow,
             ]
         )
@@ -830,7 +830,7 @@ private final class UpNextOverlayView: NSView {
             string: "",
             attributes: [
                 .font: NSFont.systemFont(ofSize: 13, weight: .medium),
-                .foregroundColor: NSColor.white.withAlphaComponent(0.9),
+                .foregroundColor: CoveStyle.textOnMedia1,
             ]
         )
         // The file name yields and truncates; the pill never grows past its
@@ -838,7 +838,7 @@ private final class UpNextOverlayView: NSView {
         titleLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
         countdownLabel.font = CoveStyle.formLabelFont
-        countdownLabel.textColor = NSColor.white.withAlphaComponent(0.7)
+        countdownLabel.textColor = CoveStyle.textOnMedia2
 
         styleButton(playNowButton, emphasized: true)
         styleButton(cancelButton, emphasized: false)
@@ -897,7 +897,7 @@ private final class UpNextOverlayView: NSView {
             string: title,
             attributes: [
                 .font: NSFont.systemFont(ofSize: 13, weight: .medium),
-                .foregroundColor: NSColor.white.withAlphaComponent(0.9),
+                .foregroundColor: CoveStyle.textOnMedia1,
             ]
         )
         update(seconds: seconds)

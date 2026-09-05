@@ -32,6 +32,35 @@ enum CoveStyle {
     /// Hairline border for overlay buttons.
     static var overlayButtonBorder: NSColor { NSColor.white.withAlphaComponent(0.18) }
 
+    // MARK: Media chrome surfaces (tokens §1)
+
+    /// Opaque warm-black backing for chrome floating over media (reader
+    /// pills, the player capsule, codec chips). Deliberately NOT a
+    /// translucent material: on bright comic pages a see-through fill lets
+    /// the page wash out the chrome, and an opaque board keeps contrast
+    /// predictable regardless of what renders underneath.
+    static let surfaceOverlay = NSColor(
+        srgbRed: 0x1E / 255.0, green: 0x1C / 255.0, blue: 0x1C / 255.0, alpha: 1
+    )
+
+    /// Overlay text on media, tier 1: primary readouts (page numbers,
+    /// timecodes, titles, zoom flashes).
+    static let textOnMedia1 = NSColor.white
+    /// Overlay text on media, tier 2: secondary readouts (speed gears,
+    /// volume values).
+    static let textOnMedia2 = NSColor.white.withAlphaComponent(0.7)
+    /// Overlay text on media, tier 3: hints (page placeholders).
+    static let textOnMedia3 = NSColor.white.withAlphaComponent(0.5)
+
+    /// Reader letterbox background (single-page, strip, PDF): warm
+    /// near-black, one step deeper than `surfaceOverlay` and in the same
+    /// warm family as the library palette. Pure black reads cold next to
+    /// the warm chrome and flattens the layering; this keeps the frame
+    /// warm while staying darker than any chrome floating on it.
+    static let readerBackground = NSColor(
+        srgbRed: 0x1A / 255.0, green: 0x18 / 255.0, blue: 0x18 / 255.0, alpha: 1
+    )
+
     // MARK: Motion (tokens §5)
 
     /// Motion serves state feedback only (hover/selection/fade-ins), never

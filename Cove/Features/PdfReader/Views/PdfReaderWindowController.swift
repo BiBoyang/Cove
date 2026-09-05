@@ -35,7 +35,7 @@ final class PdfReaderWindowController: NSWindowController {
         window.title = viewModel.title
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
-        window.backgroundColor = .black
+        window.backgroundColor = CoveStyle.readerBackground
         window.isReleasedWhenClosed = false
         window.collectionBehavior = [.fullScreenPrimary]
 
@@ -66,12 +66,12 @@ final class PdfReaderWindowController: NSWindowController {
         window.contentView = rootView
 
         rootView.wantsLayer = true
-        rootView.layer?.backgroundColor = NSColor.black.cgColor
+        rootView.layer?.backgroundColor = CoveStyle.readerBackground.cgColor
 
         pdfView.displayMode = .singlePageContinuous
         pdfView.autoScales = true
         pdfView.displaysPageBreaks = true
-        pdfView.backgroundColor = .black
+        pdfView.backgroundColor = CoveStyle.readerBackground
         pdfView.isHidden = true
 
         statusLabel.alignment = .center
@@ -174,7 +174,7 @@ private final class PdfReaderRootView: NSView {
     }
 
     override func draw(_ dirtyRect: NSRect) {
-        NSColor.black.setFill()
+        CoveStyle.readerBackground.setFill()
         dirtyRect.fill()
     }
 }

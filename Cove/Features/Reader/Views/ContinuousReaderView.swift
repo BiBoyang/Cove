@@ -19,8 +19,9 @@ final class ContinuousReaderView: NSView {
     private let scrollView = NSScrollView()
     private let documentView = StripDocumentView()
     /// Bottom-center scrubber pill: drag the slider to preview a page
-    /// number, release to jump. Replaces the passive progress label.
-    private let scrubberPill = NSVisualEffectView()
+    /// number, release to jump. Opaque warm-black board (surfaceOverlay)
+    /// so the chrome stays readable over bright pages.
+    private let scrubberPill = NSView()
     private let scrubberSlider = NSSlider()
     private let progressLabel = NSTextField(labelWithString: "")
     /// Center flash showing the zoom factor ("150%") on every zoom change;
@@ -117,7 +118,7 @@ final class ContinuousReaderView: NSView {
 
     private func assemble() {
         wantsLayer = true
-        layer?.backgroundColor = NSColor.black.cgColor
+        layer?.backgroundColor = CoveStyle.readerBackground.cgColor
 
         scrollView.drawsBackground = false
         scrollView.borderType = .noBorder
@@ -144,17 +145,17 @@ final class ContinuousReaderView: NSView {
         setAutoScrollSymbol(paused: true)
 
         speedLabel.font = CoveStyle.monoDigitFont
-        speedLabel.textColor = NSColor.white.withAlphaComponent(0.7)
+        speedLabel.textColor = CoveStyle.textOnMedia2
         updateSpeedLabel()
 
         progressLabel.font = CoveStyle.monoDigitFont
-        progressLabel.textColor = .white
+        progressLabel.textColor = CoveStyle.textOnMedia1
 
-        // The scrubber pill speaks the player's HUD-capsule language.
-        scrubberPill.material = .hudWindow
-        scrubberPill.blendingMode = .withinWindow
-        scrubberPill.state = .active
+        // The scrubber pill speaks the shared chrome-pill language: an
+        // opaque surfaceOverlay board (see the token's comment for why it
+        // must not be a translucent material).
         scrubberPill.wantsLayer = true
+        scrubberPill.layer?.backgroundColor = CoveStyle.surfaceOverlay.cgColor
         scrubberPill.layer?.cornerRadius = CoveStyle.radiusLarge
         scrubberPill.layer?.masksToBounds = true
 
@@ -170,7 +171,7 @@ final class ContinuousReaderView: NSView {
         scrubberPill.addSubview(progressLabel)
         // The zoom flash reads over bright pages thanks to the shadow.
         zoomLabel.font = CoveStyle.overlayFlashFont
-        zoomLabel.textColor = NSColor.white.withAlphaComponent(0.9)
+        zoomLabel.textColor = CoveStyle.textOnMedia1
         zoomLabel.alphaValue = 0
         let zoomShadow = NSShadow()
         zoomShadow.shadowColor = NSColor.black.withAlphaComponent(0.6)
@@ -504,10 +505,10 @@ private final class StripSlotView: NSView {
         self.pageIndex = pageIndex
         super.init(frame: .zero)
         wantsLayer = true
-        layer?.backgroundColor = NSColor(white: 0.08, alpha: 1).cgColor
+        layer?.backgroundColor = CoveStyle.readerBackground.cgColor
 
         numberLabel.font = .monospacedDigitSystemFont(ofSize: 13, weight: .medium)
-        numberLabel.textColor = NSColor.white.withAlphaComponent(0.35)
+        numberLabel.textColor = CoveStyle.textOnMedia3
         numberLabel.alignment = .center
         numberLabel.stringValue = "\(pageIndex + 1)"
 

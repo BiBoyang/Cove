@@ -33,12 +33,16 @@ final class PagedReaderWindowController: NSWindowController {
     private let modeButton = FrostedCircleButton(
         symbolName: "scroll", pointSize: CoveStyle.symbolMedium, accessibilityDescription: "切换到条带模式"
     )
+    /// Bottom-center chrome pill: page counter + auto-advance toggle on
+    /// the same surfaceOverlay board as the strip's scrubber pill — one
+    /// chrome language across both reader modes.
+    private let pageChromePill = NSView()
     private let progressLabel = NSTextField(labelWithString: "")
-    /// Auto-advance (自动翻页) play/pause next to the page counter; shows
-    /// the pause symbol while the slideshow runs.
-    private let autoAdvanceButton = FrostedCircleButton(
-        symbolName: "play.fill", pointSize: CoveStyle.symbolSmall, accessibilityDescription: "自动翻页"
-    )
+    /// Auto-advance (自动翻页) play/pause inside the chrome pill; a bare
+    /// white symbol that reads as part of the pill (same treatment as the
+    /// strip's auto-scroll button). Shows the pause symbol while the
+    /// slideshow runs.
+    private let autoAdvanceButton = NSButton()
     // Resume hint: a window-level HUD capsule shown after a
     // resume-from-memory open moved the start off the tapped file. It is a
     // pure rendering surface — the coordinator decides when to show it and
@@ -92,7 +96,7 @@ final class PagedReaderWindowController: NSWindowController {
         window.title = viewModel.state.pageTitle
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
-        window.backgroundColor = .black
+        window.backgroundColor = CoveStyle.readerBackground
         window.isReleasedWhenClosed = false
         window.collectionBehavior = [.fullScreenPrimary]
 
@@ -128,7 +132,7 @@ final class PagedReaderWindowController: NSWindowController {
         window.contentView = rootView
 
         rootView.wantsLayer = true
-        rootView.layer?.backgroundColor = NSColor.black.cgColor
+        rootView.layer?.backgroundColor = CoveStyle.readerBackground.cgColor
         // Zoomed (panned) image frames may extend past the view bounds; the
         // layer clips them so the window never composes image pixels over
         // neighboring screens or the title bar.
@@ -154,16 +158,30 @@ final class PagedReaderWindowController: NSWindowController {
         nextButton.action = #selector(handleNext(_:))
         modeButton.target = self
         modeButton.action = #selector(handleModeSwitch(_:))
+
+        autoAdvanceButton.isBordered = false
+        autoAdvanceButton.focusRingType = .none
+        autoAdvanceButton.refusesFirstResponder = true
+        autoAdvanceButton.contentTintColor = CoveStyle.textOnMedia1
+        autoAdvanceButton.imageScaling = .scaleProportionallyUpOrDown
         autoAdvanceButton.target = self
         autoAdvanceButton.action = #selector(handleAutoAdvance(_:))
+        setAutoAdvanceSymbol(running: false)
 
         progressLabel.font = CoveStyle.monoDigitFont
-        progressLabel.textColor = .white
+        progressLabel.textColor = CoveStyle.textOnMedia1
+
+        // The chrome pill: same board recipe as the strip's scrubber pill
+        // (opaque surfaceOverlay, radius large).
+        pageChromePill.wantsLayer = true
+        pageChromePill.layer?.backgroundColor = CoveStyle.surfaceOverlay.cgColor
+        pageChromePill.layer?.cornerRadius = CoveStyle.radiusLarge
+        pageChromePill.layer?.masksToBounds = true
 
         // The zoom flash reads over bright pages thanks to the shadow
         // (same treatment as the strip's zoom flash).
         zoomFlashLabel.font = CoveStyle.overlayFlashFont
-        zoomFlashLabel.textColor = NSColor.white.withAlphaComponent(0.9)
+        zoomFlashLabel.textColor = CoveStyle.textOnMedia1
         zoomFlashLabel.alphaValue = 0
         let zoomShadow = NSShadow()
         zoomShadow.shadowColor = NSColor.black.withAlphaComponent(0.6)
@@ -176,8 +194,9 @@ final class PagedReaderWindowController: NSWindowController {
         rootView.addSubview(previousButton)
         rootView.addSubview(nextButton)
         rootView.addSubview(modeButton)
-        rootView.addSubview(progressLabel)
-        rootView.addSubview(autoAdvanceButton)
+        pageChromePill.addSubview(progressLabel)
+        pageChromePill.addSubview(autoAdvanceButton)
+        rootView.addSubview(pageChromePill)
         rootView.addSubview(zoomFlashLabel)
 
         // The imageView is deliberately unconstrained: zoom places it with
@@ -202,13 +221,19 @@ final class PagedReaderWindowController: NSWindowController {
             make.top.equalToSuperview().offset(16)
             make.size.equalTo(32)
         }
-        progressLabel.snp.makeConstraints { make in
+        pageChromePill.snp.makeConstraints { make in
             make.centerX.equalToSuperview()
             make.bottom.equalToSuperview().offset(-16)
+            make.height.equalTo(32)
+        }
+        progressLabel.snp.makeConstraints { make in
+            make.leading.equalToSuperview().offset(12)
+            make.centerY.equalToSuperview()
         }
         autoAdvanceButton.snp.makeConstraints { make in
-            make.leading.equalTo(progressLabel.snp.trailing).offset(10)
-            make.centerY.equalTo(progressLabel)
+            make.leading.equalTo(progressLabel.snp.trailing).offset(6)
+            make.trailing.equalToSuperview().offset(-8)
+            make.centerY.equalToSuperview()
             make.size.equalTo(24)
         }
         zoomFlashLabel.snp.makeConstraints { make in
@@ -248,10 +273,7 @@ final class PagedReaderWindowController: NSWindowController {
 
     private func render(_ state: ReaderViewModel.State) {
         progressLabel.stringValue = state.progressText
-        autoAdvanceButton.setSymbol(
-            state.isAutoAdvancing ? "pause.fill" : "play.fill",
-            accessibilityDescription: "自动翻页"
-        )
+        setAutoAdvanceSymbol(running: state.isAutoAdvancing)
         previousButton.isEnabled = state.canGoPrevious
         nextButton.isEnabled = state.canGoNext
         window?.title = state.pageTitle
@@ -291,6 +313,17 @@ final class PagedReaderWindowController: NSWindowController {
     @objc private func handleAutoAdvance(_ sender: NSButton) {
         viewModel.toggleAutoAdvance()
         window?.makeFirstResponder(rootView)
+    }
+
+    /// Swaps the auto-advance toggle's symbol (pause while the slideshow
+    /// runs, play otherwise).
+    private func setAutoAdvanceSymbol(running: Bool) {
+        autoAdvanceButton.image = NSImage(
+            systemSymbolName: running ? "pause.fill" : "play.fill",
+            accessibilityDescription: "自动翻页"
+        )?.withSymbolConfiguration(
+            NSImage.SymbolConfiguration(pointSize: CoveStyle.symbolSmall, weight: .semibold)
+        )
     }
 
     // MARK: - Zoom
@@ -458,8 +491,7 @@ final class PagedReaderWindowController: NSWindowController {
         statusLabel.isHidden = !visible || viewModel.state.errorMessage == nil
         previousButton.isHidden = !visible
         nextButton.isHidden = !visible
-        progressLabel.isHidden = !visible
-        autoAdvanceButton.isHidden = !visible
+        pageChromePill.isHidden = !visible
     }
 
     // MARK: - Resume hint
@@ -471,18 +503,16 @@ final class PagedReaderWindowController: NSWindowController {
     /// corner buttons and of the strip's bottom scrubber pill.
     private func assembleResumeHint() {
         resumeHintLabel.font = CoveStyle.monoDigitFont
-        resumeHintLabel.textColor = .white
+        resumeHintLabel.textColor = CoveStyle.textOnMedia1
 
         resumeReturnButton.refusesFirstResponder = true
         resumeReturnButton.target = self
         resumeReturnButton.action = #selector(handleResumeReturn(_:))
 
-        // The hint pill speaks the same HUD-capsule language as the
-        // scrubber pill.
-        resumeHintPill.material = .hudWindow
-        resumeHintPill.blendingMode = .withinWindow
-        resumeHintPill.state = .active
+        // The hint pill speaks the same chrome-pill language as the
+        // strip's scrubber pill and the paged chrome pill.
         resumeHintPill.wantsLayer = true
+        resumeHintPill.layer?.backgroundColor = CoveStyle.surfaceOverlay.cgColor
         resumeHintPill.layer?.cornerRadius = CoveStyle.radiusLarge
         resumeHintPill.layer?.masksToBounds = true
         resumeHintPill.alphaValue = 0
@@ -667,7 +697,7 @@ private final class PagedReaderRootView: NSView {
     }
 
     override func draw(_ dirtyRect: NSRect) {
-        NSColor.black.setFill()
+        CoveStyle.readerBackground.setFill()
         dirtyRect.fill()
     }
 }
@@ -764,13 +794,13 @@ enum PagedZoomLayout {
     }
 }
 
-/// The resume-hint capsule: HUD material with capsule corners, matching the
-/// strip's scrubber pill. While fully transparent it is also fully
-/// hit-test-transparent, so clicks and wheel events pass through to the
-/// reader surface beneath; while visible, only the embedded button accepts
-/// hits — the capsule body and label never block the page.
+/// The resume-hint capsule: opaque surfaceOverlay board with capsule
+/// corners, matching the reader chrome pills. While fully transparent it is
+/// also fully hit-test-transparent, so clicks and wheel events pass through
+/// to the reader surface beneath; while visible, only the embedded button
+/// accepts hits — the capsule body and label never block the page.
 @MainActor
-private final class ResumeHintPill: NSVisualEffectView {
+private final class ResumeHintPill: NSView {
     override func hitTest(_ point: NSPoint) -> NSView? {
         guard alphaValue > 0.01 else { return nil }
         let hit = super.hitTest(point)

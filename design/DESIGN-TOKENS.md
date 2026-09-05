@@ -14,13 +14,14 @@ Cove 跨平台 UI 一致性的图纸：所有色值/字号/间距/圆角/动效/
 |------|----|------|------|
 | surface-base | #2C2929 | 内容区底色（暖黑），列表/网格背后 | [现状] libraryBackground |
 | surface-raised | #333131 | 抬升面：工具条、卡片 hover 填充 | [现状] libraryToolbarBackground |
-| surface-overlay | 待定 | 媒体区 chrome 底板（阅读器/播放器 pill 与胶囊）。[提议] 暖黑系深化色 + 材质，具体值在 chrome 任务（audit P6）定稿；现状散点为纯黑 8 处 + #141414 + HUD 材质 | [提议] |
+| surface-overlay | #1E1C1C 不透明 | 媒体区 chrome 底板（阅读器 pill、播放器胶囊、codec chips、弹层内容底）。不透明暖黑：浅色内容上底板必须可见且深浅可控（透明材质正是现状病根，audit C1） | [已拍板] 2026-09-05 · TASK-media-chrome |
 | accent | #E0C020 | 金色点缀：激活标记、品牌点缀。**glyph 级使用，不做大面积填充** | [现状] accentGold |
 | selection | 系统蓝（macOS selectedContentBackgroundColor） | 选中填充。SenPlayer/IINA 均用系统色、品牌色只做点缀——与用户预期一致。维持系统蓝，金色不接管选中填充 | [已拍板] 2026-09-05 |
 | text-primary | labelColor | 主文字 | [现状] |
 | text-secondary | secondaryLabelColor | 副文字/元信息 | [现状] |
 | text-tertiary | tertiaryLabelColor | 占位符、单色图标 | [现状] |
-| text-on-media-1/2/3 | 白 1.0 / 0.7 / 0.5 | 媒体画面上的 overlay 文字三档。[提议] 由现状六档（0.35–1.0）收敛，P6 定稿 | [提议] |
+| text-on-media-1/2/3 | 白 1.0 / 0.7 / 0.5 | 媒体画面上的 overlay 文字三档，收敛原六档散点（0.35–1.0） | [已拍板] 2026-09-05 · TASK-media-chrome |
+| reader-bg | #1A1818 | 阅读区画面背景（单页/条带/PDF），暖黑近黑、比 surface-overlay 深一级；替代纯黑 8 处 + #141414 slot 底 | [已拍板] 2026-09-05 · TASK-media-chrome |
 | danger | systemRed | 破坏性操作按钮、错误提示 | [提议]（补 alert hasDestructiveAction 后生效） |
 | card-border | labelColor 8% alpha | 卡片细描边，让圆角形状在深色底上可读 | [已拍板] 2026-09-05 · TASK-grid-card-details（share 卡片已启用） |
 | hover-fill | quaternaryLabelColor | 内容表面 hover 反馈（卡片/网格项）；系统语义灰，与系统蓝选中同族 | [已拍板] 2026-09-05 · TASK-grid-card-details |
@@ -131,11 +132,11 @@ FrostedCircleButton 共用。
   播放器语境属主流）；轨道/填充精细化在 P6 做。
 
 ### 6.6 阅读器 chrome
-[提议]
 - pill 底板必须有可见底色（surface-overlay），禁止在浅色内容上裸浮
-  （audit C1）。
+  （audit C1）。[已拍板] 2026-09-05 · TASK-media-chrome
 - 关闭钮避开窗口红绿灯安全区（audit BUG-2）。
-- 单页与条带统一 chrome 语言（同一 pill 族）。
+- 单页与条带统一 chrome 语言（同一 pill 族）。[已拍板] 2026-09-05 ·
+  TASK-media-chrome（单页页码+play 钮收进同底板同配方的 chrome pill）
 
 ### 6.7 设置窗口
 结构 [已拍板] 2026-09-05：维持单窗口，分组卡片分区（不引入 tab/左栏）；
