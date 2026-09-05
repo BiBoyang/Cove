@@ -32,7 +32,7 @@ final class StatePlaceholderView: NSView {
         switch style {
         case .symbol(let name):
             iconView.image = NSImage(systemSymbolName: name, accessibilityDescription: nil)?
-                .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 36, weight: .light))
+                .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: CoveStyle.symbolHero, weight: .light))
             iconView.contentTintColor = .tertiaryLabelColor
         case .loading:
             spinner.style = .spinning

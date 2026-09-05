@@ -409,7 +409,7 @@ final class ContinuousReaderView: NSView {
             systemSymbolName: paused ? "play.fill" : "pause.fill",
             accessibilityDescription: "自动滚屏"
         )?.withSymbolConfiguration(
-            NSImage.SymbolConfiguration(pointSize: 12, weight: .semibold)
+            NSImage.SymbolConfiguration(pointSize: CoveStyle.symbolSmall, weight: .semibold)
         )
     }
 

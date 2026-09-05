@@ -192,7 +192,7 @@ extension ServerListViewController: NSTableViewDataSource, NSTableViewDelegate {
             headerAddButton.isBordered = false
             headerAddButton.image = NSImage(
                 systemSymbolName: "plus", accessibilityDescription: "添加服务器"
-            )?.withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 11, weight: .medium))
+            )?.withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: CoveStyle.symbolSmall, weight: .medium))
             headerAddButton.contentTintColor = .secondaryLabelColor
             headerAddButton.imagePosition = .imageOnly
             headerAddButton.title = ""
@@ -253,7 +253,7 @@ private final class ServerRowCellView: NSTableCellView {
         super.init(frame: frameRect)
 
         iconView.image = NSImage(systemSymbolName: "server.rack", accessibilityDescription: nil)?
-            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 14, weight: .regular))
+            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: CoveStyle.symbolMedium, weight: .regular))
         iconView.contentTintColor = .labelColor
 
         nameLabel.font = CoveStyle.bodyFont
@@ -310,7 +310,7 @@ private final class ServerRowCellView: NSTableCellView {
     /// Generic icon + title content (the vault row uses it too).
     func configure(symbol: String, title: String, tint: NSColor) {
         iconView.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
-            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 14, weight: .regular))
+            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: CoveStyle.symbolMedium, weight: .regular))
         iconView.contentTintColor = tint
         nameLabel.stringValue = title
     }

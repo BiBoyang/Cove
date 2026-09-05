@@ -196,7 +196,7 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
         // Play mode: symbol button reflecting the current mode.
         playModeButton.isBordered = false
         playModeButton.image = NSImage(systemSymbolName: "list.bullet", accessibilityDescription: "播放模式")?
-            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 14, weight: .medium))
+            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: CoveStyle.symbolMedium, weight: .medium))
         playModeButton.contentTintColor = NSColor.white.withAlphaComponent(0.8)
         playModeButton.target = self
         playModeButton.action = #selector(handlePlayModeTapped(_:))
@@ -211,8 +211,12 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
         timeLabel.textColor = NSColor.white.withAlphaComponent(0.8)
         timeLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
 
-        volumeIconView.image = NSImage(systemSymbolName: "speaker.wave.2.fill", accessibilityDescription: "音量")?
-            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 12, weight: .semibold))
+        volumeIconView.image = NSImage(
+            systemSymbolName: Self.volumeSymbolName(for: viewModel.volume),
+            accessibilityDescription: "音量"
+        )?.withSymbolConfiguration(
+            NSImage.SymbolConfiguration(pointSize: CoveStyle.symbolMedium, weight: .medium)
+        )
         volumeIconView.contentTintColor = NSColor.white.withAlphaComponent(0.8)
 
         volumeSlider.minValue = 0
@@ -334,7 +338,7 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
         button.image = NSImage(
             systemSymbolName: symbol,
             accessibilityDescription: accessibilityDescription
-        )?.withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 15, weight: .semibold))
+        )?.withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: CoveStyle.symbolMedium, weight: .semibold))
         button.contentTintColor = .white
         button.imageScaling = .scaleProportionallyUpOrDown
         button.target = self
@@ -368,7 +372,7 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
         guard let info = Self.playModeInfo.first(where: { $0.mode == mode }) else { return }
         playModeButton.image = NSImage(
             systemSymbolName: info.symbol, accessibilityDescription: "播放模式"
-        )?.withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 14, weight: .medium))
+        )?.withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: CoveStyle.symbolMedium, weight: .medium))
         playModeButton.toolTip = info.label
     }
 
@@ -436,6 +440,17 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
     /// Capsule text for a rate: "1x", "1.5x".
     private static func speedLabel(_ speed: Double) -> String {
         speed == speed.rounded() ? "\(Int(speed))x" : "\(speed)x"
+    }
+
+    /// Volume icon follows the level, system convention: muted at zero,
+    /// then one to three waves by thirds.
+    static func volumeSymbolName(for volume: Double) -> String {
+        switch volume {
+        case ..<1: return "speaker.slash.fill"
+        case 1..<34: return "speaker.wave.1.fill"
+        case 34..<67: return "speaker.wave.2.fill"
+        default: return "speaker.wave.3.fill"
+        }
     }
 
     // MARK: - Popovers
@@ -528,7 +543,7 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
     private func render() {
         let symbol = viewModel.showsPauseButton ? "pause.fill" : "play.fill"
         playPauseButton.image = NSImage(systemSymbolName: symbol, accessibilityDescription: "播放/暂停")?
-            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 15, weight: .semibold))
+            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: CoveStyle.symbolMedium, weight: .semibold))
         progressSlider.isEnabled = viewModel.isProgressEnabled
         progressSlider.maxValue = max(viewModel.duration, 1)
         if !viewModel.isScrubbing {
@@ -539,6 +554,12 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
         // own action, so the keyboard path used to leave it behind.
         volumeSlider.doubleValue = viewModel.volume
         volumeValueLabel.stringValue = "\(Int(viewModel.volume.rounded()))"
+        volumeIconView.image = NSImage(
+            systemSymbolName: Self.volumeSymbolName(for: viewModel.volume),
+            accessibilityDescription: "音量"
+        )?.withSymbolConfiguration(
+            NSImage.SymbolConfiguration(pointSize: CoveStyle.symbolMedium, weight: .medium)
+        )
         speedButton.title = Self.speedLabel(viewModel.speed)
         timeLabel.stringValue = viewModel.statusText ?? viewModel.timeText
         renderControlsVisibility()
@@ -970,7 +991,7 @@ private final class OptionListPopoverController: NSViewController {
         if option.checked {
             row.image = NSImage(
                 systemSymbolName: "checkmark", accessibilityDescription: nil
-            )?.withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 12, weight: .semibold))
+            )?.withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: CoveStyle.symbolSmall, weight: .semibold))
             row.imagePosition = .imageTrailing
         }
         return row
@@ -1098,7 +1119,7 @@ private final class PlaylistRowCellView: NSTableCellView {
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         iconView.image = NSImage(systemSymbolName: "speaker.wave.2.fill", accessibilityDescription: nil)?
-            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 11, weight: .semibold))
+            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: CoveStyle.symbolSmall, weight: .semibold))
         iconView.contentTintColor = CoveStyle.accentGold
         iconView.isHidden = true
 

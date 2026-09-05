@@ -163,7 +163,7 @@ final class ShareCardItem: NSCollectionViewItem {
 
         let folderIcon = NSImage(systemSymbolName: "folder", accessibilityDescription: nil)?
             .withSymbolConfiguration(
-                NSImage.SymbolConfiguration(pointSize: 36, weight: .regular)
+                NSImage.SymbolConfiguration(pointSize: CoveStyle.symbolHero, weight: .regular)
             )
         iconView.image = folderIcon
         iconView.contentTintColor = .labelColor

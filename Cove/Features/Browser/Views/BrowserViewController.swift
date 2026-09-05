@@ -67,18 +67,18 @@ final class BrowserViewController: NSViewController {
     /// The state placeholder (loading / empty folder), swapped per render.
     private var placeholderView: StatePlaceholderView?
     private let backButton = PillButton(
-        symbolName: "chevron.left", pointSize: 15, style: .secondary,
+        symbolName: "chevron.left", pointSize: CoveStyle.symbolMedium, style: .secondary,
         accessibilityDescription: "返回"
     )
     private let preheatButton = PillButton(
-        symbolName: "arrow.down.circle", pointSize: 15, style: .secondary,
+        symbolName: "arrow.down.circle", pointSize: CoveStyle.symbolMedium, style: .secondary,
         accessibilityDescription: "预热此文件夹（含子文件夹）"
     )
     private let preheatProgressLabel = NSTextField(labelWithString: "")
     private let locationLabel = NSTextField(labelWithString: "")
     private let downloadLabel = NSTextField(labelWithString: "")
     private let downloadCancelButton = PillButton(
-        symbolName: "xmark", pointSize: 11, style: .secondary,
+        symbolName: "xmark", pointSize: CoveStyle.symbolSmall, style: .secondary,
         accessibilityDescription: "取消下载"
     )
 
@@ -569,7 +569,7 @@ private final class BrowserRowCellView: NSTableCellView {
         // Placeholders stay monochrome so the loaded thumbnail is the only
         // saturated element on the row.
         badgeImageView.image = NSImage(systemSymbolName: Self.placeholderSymbol(for: item), accessibilityDescription: nil)?
-            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 18, weight: .regular))
+            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: CoveStyle.symbolLarge, weight: .regular))
         badgeImageView.contentTintColor = .tertiaryLabelColor
         badgeImageView.isHidden = false
         thumbnailImageView.image = nil

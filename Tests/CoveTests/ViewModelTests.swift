@@ -1756,3 +1756,19 @@ struct BrowserRightClickSelectionTests {
         )
     }
 }
+
+
+@Suite("Player volume symbol")
+@MainActor
+struct VolumeSymbolTests {
+    @Test("icon follows volume thirds with a muted zero")
+    func tiers() {
+        #expect(PlayerWindowController.volumeSymbolName(for: 0) == "speaker.slash.fill")
+        #expect(PlayerWindowController.volumeSymbolName(for: 1) == "speaker.wave.1.fill")
+        #expect(PlayerWindowController.volumeSymbolName(for: 33) == "speaker.wave.1.fill")
+        #expect(PlayerWindowController.volumeSymbolName(for: 34) == "speaker.wave.2.fill")
+        #expect(PlayerWindowController.volumeSymbolName(for: 66) == "speaker.wave.2.fill")
+        #expect(PlayerWindowController.volumeSymbolName(for: 67) == "speaker.wave.3.fill")
+        #expect(PlayerWindowController.volumeSymbolName(for: 100) == "speaker.wave.3.fill")
+    }
+}

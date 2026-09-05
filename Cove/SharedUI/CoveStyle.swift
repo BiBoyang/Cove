@@ -32,6 +32,17 @@ enum CoveStyle {
     /// Hairline border for overlay buttons.
     static var overlayButtonBorder: NSColor { NSColor.white.withAlphaComponent(0.18) }
 
+    // MARK: Symbol sizes
+
+    /// Small affordances (tags, compact controls).
+    static let symbolSmall: CGFloat = 12
+    /// Toolbar and transport controls.
+    static let symbolMedium: CGFloat = 14
+    /// List-row badges.
+    static let symbolLarge: CGFloat = 18
+    /// Cards and placeholders.
+    static let symbolHero: CGFloat = 36
+
     // MARK: Fonts
 
     /// Row/card titles.

@@ -25,19 +25,19 @@ final class PagedReaderWindowController: NSWindowController {
     private let imageView = NonInteractiveImageView()
     private let statusLabel = NSTextField(labelWithString: "")
     private let previousButton = FrostedCircleButton(
-        symbolName: "chevron.left", pointSize: 16, accessibilityDescription: "上一张"
+        symbolName: "chevron.left", pointSize: CoveStyle.symbolMedium, accessibilityDescription: "上一张"
     )
     private let nextButton = FrostedCircleButton(
-        symbolName: "chevron.right", pointSize: 16, accessibilityDescription: "下一张"
+        symbolName: "chevron.right", pointSize: CoveStyle.symbolMedium, accessibilityDescription: "下一张"
     )
     private let modeButton = FrostedCircleButton(
-        symbolName: "scroll", pointSize: 13, accessibilityDescription: "切换到条带模式"
+        symbolName: "scroll", pointSize: CoveStyle.symbolMedium, accessibilityDescription: "切换到条带模式"
     )
     private let progressLabel = NSTextField(labelWithString: "")
     /// Auto-advance (自动翻页) play/pause next to the page counter; shows
     /// the pause symbol while the slideshow runs.
     private let autoAdvanceButton = FrostedCircleButton(
-        symbolName: "play.fill", pointSize: 10, accessibilityDescription: "自动翻页"
+        symbolName: "play.fill", pointSize: CoveStyle.symbolSmall, accessibilityDescription: "自动翻页"
     )
     // Resume hint: a window-level HUD capsule shown after a
     // resume-from-memory open moved the start off the tapped file. It is a
