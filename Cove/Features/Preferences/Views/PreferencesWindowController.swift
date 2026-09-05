@@ -84,14 +84,16 @@ final class PreferencesWindowController: NSWindowController {
         configureNumberField(rateLimitField, allowsFloat: true)
 
         for label in [originalUsageLabel, displayUsageLabel] {
-            label.font = .systemFont(ofSize: 11)
+            label.font = CoveStyle.captionFont
             label.textColor = .secondaryLabelColor
         }
 
         preheatCheckbox.target = self
         preheatCheckbox.action = #selector(preheatToggled(_:))
+        preheatCheckbox.font = CoveStyle.formLabelFont
         readerResumeCheckbox.target = self
         readerResumeCheckbox.action = #selector(readerResumeToggled(_:))
+        readerResumeCheckbox.font = CoveStyle.formLabelFont
         clearButton.target = self
         clearButton.action = #selector(clearCache(_:))
         clearButton.bezelStyle = .rounded
@@ -102,7 +104,7 @@ final class PreferencesWindowController: NSWindowController {
         removeFolderButton.action = #selector(removeFolder(_:))
         removeFolderButton.bezelStyle = .rounded
 
-        vaultPathLabel.font = .systemFont(ofSize: 11)
+        vaultPathLabel.font = CoveStyle.captionFont
         vaultPathLabel.textColor = .secondaryLabelColor
         vaultPathLabel.lineBreakMode = .byTruncatingMiddle
         vaultPathLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
@@ -152,7 +154,7 @@ final class PreferencesWindowController: NSWindowController {
         stack.addArrangedSubview(makeHeader("预热"))
         stack.addArrangedSubview(preheatCheckbox)
         stack.addArrangedSubview(makeRow(makeLabel("限速 (MB/s，0 为不限)"), rateLimitField))
-        stack.addArrangedSubview(makeLabel("预热文件夹（含共享名，如 公共空间/动漫/xxx；仅对当前连接的共享生效）"))
+        stack.addArrangedSubview(makeAuxLabel("预热文件夹（含共享名，如 公共空间/动漫/xxx；仅对当前连接的共享生效）"))
         stack.addArrangedSubview(folderScrollView)
         let inputRow = makeRow(folderField, addFolderButton, removeFolderButton)
         stack.addArrangedSubview(inputRow)
@@ -174,7 +176,7 @@ final class PreferencesWindowController: NSWindowController {
         stack.addArrangedSubview(makeHeader("本地仓库"))
         let vaultRow = makeRow(makeLabel("位置"), vaultPathLabel, chooseVaultButton, revealVaultButton)
         stack.addArrangedSubview(vaultRow)
-        stack.addArrangedSubview(makeLabel("更改位置只影响新下载，旧位置的文件不会迁移。"))
+        stack.addArrangedSubview(makeAuxLabel("更改位置只影响新下载，旧位置的文件不会迁移。"))
         vaultRow.snp.makeConstraints { make in
             make.width.equalTo(stack)
         }
@@ -193,13 +195,21 @@ final class PreferencesWindowController: NSWindowController {
 
     private func makeHeader(_ text: String) -> NSTextField {
         let label = NSTextField(labelWithString: text)
-        label.font = .systemFont(ofSize: 13, weight: .bold)
+        label.font = CoveStyle.sectionHeaderFont
         return label
     }
 
     private func makeLabel(_ text: String) -> NSTextField {
         let label = NSTextField(labelWithString: text)
-        label.font = .systemFont(ofSize: 12)
+        label.font = CoveStyle.formLabelFont
+        return label
+    }
+
+    /// Explanatory copy under a setting: quieter than a form label.
+    private func makeAuxLabel(_ text: String) -> NSTextField {
+        let label = NSTextField(wrappingLabelWithString: text)
+        label.font = CoveStyle.captionFont
+        label.textColor = .secondaryLabelColor
         return label
     }
 

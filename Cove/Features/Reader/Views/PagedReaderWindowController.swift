@@ -144,7 +144,7 @@ final class PagedReaderWindowController: NSWindowController {
         // points). Zoom just scales that fitted rect by the tier.
 
         statusLabel.alignment = .center
-        statusLabel.font = .systemFont(ofSize: 13)
+        statusLabel.font = CoveStyle.bodyFont
         statusLabel.textColor = .secondaryLabelColor
         statusLabel.isHidden = true
 
@@ -157,12 +157,12 @@ final class PagedReaderWindowController: NSWindowController {
         autoAdvanceButton.target = self
         autoAdvanceButton.action = #selector(handleAutoAdvance(_:))
 
-        progressLabel.font = .monospacedDigitSystemFont(ofSize: 12, weight: .medium)
+        progressLabel.font = CoveStyle.monoDigitFont
         progressLabel.textColor = .white
 
         // The zoom flash reads over bright pages thanks to the shadow
         // (same treatment as the strip's zoom flash).
-        zoomFlashLabel.font = .systemFont(ofSize: 15, weight: .semibold)
+        zoomFlashLabel.font = CoveStyle.overlayFlashFont
         zoomFlashLabel.textColor = NSColor.white.withAlphaComponent(0.9)
         zoomFlashLabel.alphaValue = 0
         let zoomShadow = NSShadow()
@@ -470,7 +470,7 @@ final class PagedReaderWindowController: NSWindowController {
     /// hit-test-transparent) until shown. Top-center keeps it clear of the
     /// corner buttons and of the strip's bottom scrubber pill.
     private func assembleResumeHint() {
-        resumeHintLabel.font = .monospacedDigitSystemFont(ofSize: 12, weight: .medium)
+        resumeHintLabel.font = CoveStyle.monoDigitFont
         resumeHintLabel.textColor = .white
 
         resumeReturnButton.refusesFirstResponder = true

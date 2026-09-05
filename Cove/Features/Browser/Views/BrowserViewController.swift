@@ -306,7 +306,7 @@ final class BrowserViewController: NSViewController {
             .foregroundColor: NSColor.labelColor,
         ]
         let parentAttributes: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 12),
+            .font: CoveStyle.formLabelFont,
             .foregroundColor: NSColor.secondaryLabelColor,
         ]
         let components = path.split(separator: "/", omittingEmptySubsequences: true)

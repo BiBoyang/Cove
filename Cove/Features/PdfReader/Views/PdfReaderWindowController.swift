@@ -75,7 +75,7 @@ final class PdfReaderWindowController: NSWindowController {
         pdfView.isHidden = true
 
         statusLabel.alignment = .center
-        statusLabel.font = .systemFont(ofSize: 13)
+        statusLabel.font = CoveStyle.bodyFont
         statusLabel.textColor = .secondaryLabelColor
 
 

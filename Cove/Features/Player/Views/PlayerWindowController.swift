@@ -188,7 +188,7 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
         // Playback rate: text button ("1x"), popover with fixed rates.
         speedButton.isBordered = false
         speedButton.title = "1x"
-        speedButton.font = .monospacedDigitSystemFont(ofSize: 12, weight: .medium)
+        speedButton.font = CoveStyle.monoDigitFont
         speedButton.contentTintColor = NSColor.white.withAlphaComponent(0.8)
         speedButton.target = self
         speedButton.action = #selector(handleSpeedTapped(_:))
@@ -207,7 +207,7 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
         progressSlider.target = self
         progressSlider.action = #selector(handleProgressSlider(_:))
 
-        timeLabel.font = .monospacedDigitSystemFont(ofSize: 12, weight: .medium)
+        timeLabel.font = CoveStyle.monoDigitFont
         timeLabel.textColor = NSColor.white.withAlphaComponent(0.8)
         timeLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
 
@@ -816,7 +816,7 @@ private final class UpNextOverlayView: NSView {
         // width cap because of a long name.
         titleLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
-        countdownLabel.font = .systemFont(ofSize: 12)
+        countdownLabel.font = CoveStyle.formLabelFont
         countdownLabel.textColor = NSColor.white.withAlphaComponent(0.7)
 
         styleButton(playNowButton, emphasized: true)

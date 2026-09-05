@@ -42,6 +42,12 @@ enum CoveStyle {
     static let captionFont = NSFont.systemFont(ofSize: 11)
     /// Small section headers (sidebar groups).
     static let sectionHeaderFont = NSFont.systemFont(ofSize: 11, weight: .semibold)
+    /// Form labels and auxiliary copy (preferences, breadcrumb chain).
+    static let formLabelFont = NSFont.systemFont(ofSize: 12)
+    /// Monospaced digits for timecodes and page numbers.
+    static let monoDigitFont = NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .medium)
+    /// Reader zoom-factor flash overlay.
+    static let overlayFlashFont = NSFont.systemFont(ofSize: 15, weight: .semibold)
 
     // MARK: Colors
 

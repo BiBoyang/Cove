@@ -143,11 +143,11 @@ final class ContinuousReaderView: NSView {
         }
         setAutoScrollSymbol(paused: true)
 
-        speedLabel.font = .monospacedDigitSystemFont(ofSize: 9, weight: .medium)
+        speedLabel.font = CoveStyle.monoDigitFont
         speedLabel.textColor = NSColor.white.withAlphaComponent(0.7)
         updateSpeedLabel()
 
-        progressLabel.font = .monospacedDigitSystemFont(ofSize: 12, weight: .medium)
+        progressLabel.font = CoveStyle.monoDigitFont
         progressLabel.textColor = .white
 
         // The scrubber pill speaks the player's HUD-capsule language.
@@ -169,7 +169,7 @@ final class ContinuousReaderView: NSView {
         scrubberPill.addSubview(scrubberSlider)
         scrubberPill.addSubview(progressLabel)
         // The zoom flash reads over bright pages thanks to the shadow.
-        zoomLabel.font = .systemFont(ofSize: 15, weight: .semibold)
+        zoomLabel.font = CoveStyle.overlayFlashFont
         zoomLabel.textColor = NSColor.white.withAlphaComponent(0.9)
         zoomLabel.alphaValue = 0
         let zoomShadow = NSShadow()

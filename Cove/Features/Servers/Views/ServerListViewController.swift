@@ -260,7 +260,7 @@ private final class ServerRowCellView: NSTableCellView {
         nameLabel.textColor = .labelColor
         nameLabel.lineBreakMode = .byTruncatingMiddle
 
-        endpointTagLabel.font = .systemFont(ofSize: 10, weight: .medium)
+        endpointTagLabel.font = CoveStyle.captionFont
         endpointTagLabel.textColor = .secondaryLabelColor
         endpointTagLabel.isHidden = true
         endpointTagLabel.setContentHuggingPriority(.required, for: .horizontal)
