@@ -61,6 +61,9 @@ final class PlayerViewModel {
     /// Auto-hide only ever engages during smooth playback; see
     /// `updateIdlePolicy`.
     private(set) var controlsVisible = true
+    /// Failure detail behind `.error`, rendered by the central failure
+    /// placeholder; nil otherwise.
+    private(set) var errorDetail: String?
 
     private var isPointerOverControls = false
     private var idleHideTask: Task<Void, Never>?
@@ -121,6 +124,7 @@ final class PlayerViewModel {
             onEnded?()
         case .playbackFailed(let detail):
             hasFailed = true
+            errorDetail = detail
             onError?(detail)
         }
         attemptResumeIfReady()

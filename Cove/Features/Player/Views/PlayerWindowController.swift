@@ -47,6 +47,8 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
     /// Up-next overlay intents, wired by the coordinator.
     var onUpNextPlayNow: (() -> Void)?
     var onUpNextCancel: (() -> Void)?
+    /// Failure-placeholder retry intent, wired by the coordinator.
+    var onRetry: (() -> Void)?
 
     private let rootView = PlayerRootView()
     private let previousTrackButton = NSButton()
@@ -71,6 +73,13 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
     private let codecChipsRow = NSStackView()
     private var videoHost: VideoLayerHostView?
     private var renderedControlsVisible = true
+    /// Central loading/buffering/failure presentation over the video
+    /// surface (tokens §6.1/§6.2), replacing the old time-slot text swap.
+    /// Nil (and absent from the hierarchy) during normal playback.
+    private var stateOverlay: StatePlaceholderView?
+    /// Presented-content guard: `render()` ticks once a second, so the
+    /// overlay is only rebuilt when what it says actually changes.
+    private var renderedStateOverlayID: String?
     /// Chips content guard: `render()` fires every second on time ticks,
     /// so the chip views are rebuilt only when the info actually changes.
     private var renderedVideoInfo: VideoTrackInfo?
@@ -581,7 +590,54 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
         speedButton.title = Self.speedLabel(viewModel.speed)
         timeLabel.stringValue = viewModel.statusText ?? viewModel.timeText
         renderCodecChips()
+        renderStateOverlay()
         renderControlsVisibility()
+    }
+
+    /// Swaps the central state presentation for the session's state:
+    /// a spinner for loading/buffering, a failure placeholder with a
+    /// retry action for errors, nothing during playback. Sits above the
+    /// video surface and below the floating chrome (capsule stays usable,
+    /// e.g. prev/next out of a dead track).
+    private func renderStateOverlay() {
+        let presentation: (
+            style: StatePlaceholderView.Style, title: String, message: String, action: String?
+        )?
+        switch viewModel.state {
+        case .loading:
+            presentation = (.loading, "加载中", "正在打开视频", nil)
+        case .buffering:
+            presentation = (.loading, "缓冲中", "正在等待数据", nil)
+        case .error:
+            presentation = (
+                .symbol("exclamationmark.triangle"),
+                "播放失败",
+                viewModel.errorDetail ?? "无法播放该视频",
+                "重试"
+            )
+        case .playing, .paused:
+            presentation = nil
+        }
+        let id = presentation.map { "\($0.title)|\($0.message)|\($0.action ?? "-")" } ?? ""
+        guard id != renderedStateOverlayID else { return }
+        renderedStateOverlayID = id
+        stateOverlay?.removeFromSuperview()
+        stateOverlay = nil
+        guard let presentation else { return }
+        let overlay = StatePlaceholderView(
+            style: presentation.style,
+            title: presentation.title,
+            message: presentation.message,
+            actionTitle: presentation.action
+        )
+        if presentation.action != nil {
+            overlay.onAction = { [weak self] in self?.onRetry?() }
+        }
+        rootView.addSubview(overlay, positioned: .below, relativeTo: controlsCapsule)
+        overlay.snp.makeConstraints { make in
+            make.edges.equalToSuperview()
+        }
+        stateOverlay = overlay
     }
 
     /// Rebuilds the codec chips when the video info changes (see

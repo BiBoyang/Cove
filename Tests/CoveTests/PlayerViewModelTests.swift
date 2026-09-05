@@ -81,10 +81,30 @@ struct PlayerViewModelTests {
         viewModel.apply(.playbackFailed("stream error"))
         #expect(viewModel.state == .error)
         #expect(reported == "stream error")
+        // The central failure placeholder renders this detail verbatim.
+        #expect(viewModel.errorDetail == "stream error")
         #expect(viewModel.isProgressEnabled == false)
 
         viewModel.apply(.pauseChanged(false))
         #expect(viewModel.state == .error)
+    }
+
+    @Test("video info from reconfigs lands for the codec chips")
+    func videoInfoLands() {
+        let (viewModel, _) = makeViewModel()
+        #expect(viewModel.videoInfo == nil)
+
+        let info = VideoTrackInfo(
+            hardwareDecoded: true, codec: "hevc", width: 1920, height: 1080, bitrate: 8_000_000
+        )
+        viewModel.apply(.videoInfoChanged(info))
+        #expect(viewModel.videoInfo == info)
+
+        let software = VideoTrackInfo(
+            hardwareDecoded: false, codec: "mpeg4", width: 720, height: 576, bitrate: 0
+        )
+        viewModel.apply(.videoInfoChanged(software))
+        #expect(viewModel.videoInfo == software)
     }
 
     @Test("clean EOF fires the auto-advance hook")

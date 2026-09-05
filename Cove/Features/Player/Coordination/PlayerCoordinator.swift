@@ -71,6 +71,12 @@ final class PlayerCoordinator {
             controller.onSelectTrack = { [weak self] in self?.jump(toPath: $0) }
             controller.onPlayModeSelected = { [weak self] in self?.selectPlayMode($0) }
             controller.onSpeedSelected = { [weak self] in self?.selectSpeed($0) }
+            controller.onRetry = { [weak self] in
+                guard let self else { return }
+                // Rebuild the session for the queue's current item: a fresh
+                // bridge + mpv handle over the same reader.
+                self.moveTo(index: self.playlist.currentIndex)
+            }
             windowController = controller
             controller.show()
         }
