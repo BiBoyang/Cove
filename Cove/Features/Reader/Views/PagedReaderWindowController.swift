@@ -30,9 +30,6 @@ final class PagedReaderWindowController: NSWindowController {
     private let nextButton = FrostedCircleButton(
         symbolName: "chevron.right", pointSize: 16, accessibilityDescription: "下一张"
     )
-    private let exitButton = FrostedCircleButton(
-        symbolName: "xmark", pointSize: 12, accessibilityDescription: "退出阅读器"
-    )
     private let modeButton = FrostedCircleButton(
         symbolName: "scroll", pointSize: 13, accessibilityDescription: "切换到条带模式"
     )
@@ -155,8 +152,6 @@ final class PagedReaderWindowController: NSWindowController {
         previousButton.action = #selector(handlePrevious(_:))
         nextButton.target = self
         nextButton.action = #selector(handleNext(_:))
-        exitButton.target = self
-        exitButton.action = #selector(handleExit(_:))
         modeButton.target = self
         modeButton.action = #selector(handleModeSwitch(_:))
         autoAdvanceButton.target = self
@@ -180,7 +175,6 @@ final class PagedReaderWindowController: NSWindowController {
         rootView.addSubview(statusLabel)
         rootView.addSubview(previousButton)
         rootView.addSubview(nextButton)
-        rootView.addSubview(exitButton)
         rootView.addSubview(modeButton)
         rootView.addSubview(progressLabel)
         rootView.addSubview(autoAdvanceButton)
@@ -202,11 +196,6 @@ final class PagedReaderWindowController: NSWindowController {
             make.trailing.equalToSuperview().offset(-16)
             make.centerY.equalToSuperview()
             make.size.equalTo(44)
-        }
-        exitButton.snp.makeConstraints { make in
-            make.leading.equalToSuperview().offset(16)
-            make.top.equalToSuperview().offset(16)
-            make.size.equalTo(32)
         }
         modeButton.snp.makeConstraints { make in
             make.trailing.equalToSuperview().offset(-16)
@@ -292,10 +281,6 @@ final class PagedReaderWindowController: NSWindowController {
     @objc private func handleNext(_ sender: NSButton) {
         viewModel.goNext()
         window?.makeFirstResponder(rootView)
-    }
-
-    @objc private func handleExit(_ sender: NSButton) {
-        close()
     }
 
     @objc private func handleModeSwitch(_ sender: NSButton) {

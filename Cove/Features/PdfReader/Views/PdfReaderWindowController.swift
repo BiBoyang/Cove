@@ -18,9 +18,6 @@ final class PdfReaderWindowController: NSWindowController {
     private let rootView = PdfReaderRootView()
     private let pdfView = PDFView()
     private let statusLabel = NSTextField(labelWithString: "")
-    private let exitButton = FrostedCircleButton(
-        symbolName: "xmark", pointSize: 12, accessibilityDescription: "退出阅读器"
-    )
 
     /// True while the document bytes are still on the way; the coordinator
     /// uses this to treat the open as pending (navigation cancels it).
@@ -81,23 +78,15 @@ final class PdfReaderWindowController: NSWindowController {
         statusLabel.font = .systemFont(ofSize: 13)
         statusLabel.textColor = .secondaryLabelColor
 
-        exitButton.target = self
-        exitButton.action = #selector(handleExit(_:))
 
         rootView.addSubview(pdfView)
         rootView.addSubview(statusLabel)
-        rootView.addSubview(exitButton)
 
         pdfView.snp.makeConstraints { make in
             make.edges.equalToSuperview()
         }
         statusLabel.snp.makeConstraints { make in
             make.center.equalToSuperview()
-        }
-        exitButton.snp.makeConstraints { make in
-            make.leading.equalToSuperview().offset(16)
-            make.top.equalToSuperview().offset(16)
-            make.size.equalTo(32)
         }
 
         rootView.onKeyDown = { [weak self] event in
@@ -135,10 +124,6 @@ final class PdfReaderWindowController: NSWindowController {
             statusLabel.isHidden = false
             pdfView.isHidden = true
         }
-    }
-
-    @objc private func handleExit(_ sender: NSButton) {
-        close()
     }
 
     // MARK: - Keyboard
