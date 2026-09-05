@@ -574,7 +574,7 @@ private final class BrowserRowCellView: NSTableCellView {
         case .video: return "film.fill"
         case .image: return "photo"
         case .pdf: return "doc.richtext.fill"
-        case .comic: return "books.closed.fill"
+        case .comic: return "book.closed.fill"
         case .text: return "doc.text.fill"
         case .other: return "doc.fill"
         }
