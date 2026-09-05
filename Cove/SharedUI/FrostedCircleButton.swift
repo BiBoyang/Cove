@@ -66,13 +66,13 @@ final class FrostedCircleButton: NSButton {
     override func mouseExited(with event: NSEvent) { isHovering = false }
 
     private func updateFill() {
-        layer?.backgroundColor = NSColor.black.withAlphaComponent(isHovering ? 0.55 : 0.35).cgColor
+        layer?.backgroundColor = (isHovering ? CoveStyle.overlayButtonFillHover : CoveStyle.overlayButtonFill).cgColor
     }
 
     /// Border and fill are fixed dark-scheme colors (the button only ever
     /// sits on media); re-resolved here so the layer never goes stale.
     private func updateAppearanceColors() {
-        layer?.borderColor = NSColor.white.withAlphaComponent(0.18).cgColor
+        layer?.borderColor = CoveStyle.overlayButtonBorder.cgColor
         updateFill()
     }
 }

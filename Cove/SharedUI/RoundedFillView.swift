@@ -15,7 +15,7 @@ final class RoundedFillView: NSView {
         didSet { needsDisplay = true }
     }
 
-    var cornerRadius: CGFloat = 8 {
+    var cornerRadius: CGFloat = CoveStyle.radiusMedium {
         didSet { layer?.cornerRadius = cornerRadius }
     }
 

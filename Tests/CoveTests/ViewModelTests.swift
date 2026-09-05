@@ -1723,3 +1723,36 @@ struct BrowserLoadingStateTests {
         #expect(viewModel.state.items == [item])
     }
 }
+
+
+@Suite("Browser right-click selection")
+@MainActor
+struct BrowserRightClickSelectionTests {
+    @Test("right-click on an unselected row moves the selection to it")
+    func movesSelection() {
+        #expect(
+            BrowserViewController.selectionOnRightClick(
+                clickedRow: 2, current: IndexSet(integer: 0), itemCount: 5
+            ) == IndexSet(integer: 2)
+        )
+    }
+
+    @Test("right-click on a selected row or empty space leaves the selection alone")
+    func keepsSelection() {
+        #expect(
+            BrowserViewController.selectionOnRightClick(
+                clickedRow: 2, current: IndexSet(integer: 2), itemCount: 5
+            ) == nil
+        )
+        #expect(
+            BrowserViewController.selectionOnRightClick(
+                clickedRow: -1, current: IndexSet(integer: 0), itemCount: 5
+            ) == nil
+        )
+        #expect(
+            BrowserViewController.selectionOnRightClick(
+                clickedRow: 5, current: IndexSet(integer: 0), itemCount: 5
+            ) == nil
+        )
+    }
+}

@@ -13,6 +13,24 @@ enum CoveStyle {
     static let radiusMedium: CGFloat = 12
     /// Panels and floating bars (e.g. overlay controls).
     static let radiusLarge: CGFloat = 14
+    /// Table row selection highlight (a hair wider than radiusSmall so the
+    /// rounded rect reads as a row, not a badge).
+    static let radiusRowSelection: CGFloat = 8
+
+    // MARK: Interaction fills
+
+    /// Hover feedback on content surfaces (cards, grid items) — system
+    /// semantic gray, same family as the system-blue selection.
+    static var hoverFillColor: NSColor { .quaternaryLabelColor }
+
+    // MARK: Overlay button recipe (buttons floating on media/dark surfaces)
+
+    /// Translucent dark fill for overlay buttons, rest state.
+    static var overlayButtonFill: NSColor { NSColor.black.withAlphaComponent(0.35) }
+    /// Brightened overlay fill on hover.
+    static var overlayButtonFillHover: NSColor { NSColor.black.withAlphaComponent(0.55) }
+    /// Hairline border for overlay buttons.
+    static var overlayButtonBorder: NSColor { NSColor.white.withAlphaComponent(0.18) }
 
     // MARK: Fonts
 

@@ -623,16 +623,35 @@ private final class RoundedSelectionRowView: NSTableRowView {
             ? NSColor.selectedContentBackgroundColor
             : NSColor.unemphasizedSelectedContentBackgroundColor
         color.setFill()
-        NSBezierPath(roundedRect: bounds.insetBy(dx: 12, dy: 2), xRadius: 8, yRadius: 8).fill()
+        NSBezierPath(
+            roundedRect: bounds.insetBy(dx: 12, dy: 2),
+            xRadius: CoveStyle.radiusRowSelection, yRadius: CoveStyle.radiusRowSelection
+        ).fill()
     }
 }
 
 extension BrowserViewController: NSMenuDelegate {
+    /// Finder-style right-click: clicking an unselected row moves the
+    /// selection to it before the menu appears; clicking a row inside the
+    /// current selection (or empty space) leaves the selection alone, so
+    /// the menu never acts on a row that doesn't look selected.
+    static func selectionOnRightClick(clickedRow: Int, current: IndexSet, itemCount: Int) -> IndexSet? {
+        guard clickedRow >= 0, clickedRow < itemCount, !current.contains(clickedRow) else { return nil }
+        return IndexSet(integer: clickedRow)
+    }
+
     /// Builds the right-click menu on demand: exactly one item, chosen by
     /// `contextMenuIntent` from the browse mode and clicked row. An empty
     /// menu (header/empty space) simply does not appear.
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
+        if let selection = Self.selectionOnRightClick(
+            clickedRow: tableView.clickedRow,
+            current: tableView.selectedRowIndexes,
+            itemCount: viewModel.state.items.count
+        ) {
+            tableView.selectRowIndexes(selection, byExtendingSelection: false)
+        }
         guard let intent = Self.contextMenuIntent(
             mode: browseMode, clickedRow: tableView.clickedRow, items: viewModel.state.items
         ) else { return }

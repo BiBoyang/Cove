@@ -119,7 +119,7 @@ final class PillButton: NSButton {
             }
             layer?.backgroundColor = fill.cgColor
         case .secondary:
-            layer?.backgroundColor = NSColor.black.withAlphaComponent(isHovering ? 0.55 : 0.35).cgColor
+            layer?.backgroundColor = (isHovering ? CoveStyle.overlayButtonFillHover : CoveStyle.overlayButtonFill).cgColor
         }
     }
 
@@ -131,7 +131,7 @@ final class PillButton: NSButton {
             layer?.borderWidth = 0
         case .secondary:
             layer?.borderWidth = 1
-            layer?.borderColor = NSColor.white.withAlphaComponent(0.18).cgColor
+            layer?.borderColor = CoveStyle.overlayButtonBorder.cgColor
         }
         updateFill()
     }

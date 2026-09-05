@@ -157,6 +157,9 @@ final class ShareCardItem: NSCollectionViewItem {
 
     override func loadView() {
         cardView.cornerRadius = CoveStyle.radiusMedium
+        // Rest-state hairline so cards read as cards on the warm dark
+        // background (tokens §6.4); kept on hover/selection.
+        cardView.borderColor = CoveStyle.cardBorderColor
 
         let folderIcon = NSImage(systemSymbolName: "folder", accessibilityDescription: nil)?
             .withSymbolConfiguration(
@@ -223,7 +226,7 @@ final class ShareCardItem: NSCollectionViewItem {
         if isSelected {
             cardView.fillColor = .selectedContentBackgroundColor
         } else if isHovering {
-            cardView.fillColor = .quaternaryLabelColor
+            cardView.fillColor = CoveStyle.hoverFillColor
         } else {
             cardView.fillColor = .clear
         }
