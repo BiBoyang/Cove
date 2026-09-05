@@ -22,7 +22,8 @@ Cove 跨平台 UI 一致性的图纸：所有色值/字号/间距/圆角/动效/
 | text-tertiary | tertiaryLabelColor | 占位符、单色图标 | [现状] |
 | text-on-media-1/2/3 | 白 1.0 / 0.7 / 0.5 | 媒体画面上的 overlay 文字三档。[提议] 由现状六档（0.35–1.0）收敛，P6 定稿 | [提议] |
 | danger | systemRed | 破坏性操作按钮、错误提示 | [提议]（补 alert hasDestructiveAction 后生效） |
-| card-border | labelColor 8% alpha | 卡片细描边，让圆角形状在深色底上可读 | [现状] cardBorderColor（**目前零调用，P2 启用**） |
+| card-border | labelColor 8% alpha | 卡片细描边，让圆角形状在深色底上可读 | [已拍板] 2026-09-05 · TASK-grid-card-details（share 卡片已启用） |
+| hover-fill | quaternaryLabelColor | 内容表面 hover 反馈（卡片/网格项）；系统语义灰，与系统蓝选中同族 | [已拍板] 2026-09-05 · TASK-grid-card-details |
 
 ## 2. 字（刻度表）
 
@@ -57,7 +58,7 @@ Cove 跨平台 UI 一致性的图纸：所有色值/字号/间距/圆角/动效/
 | small | 6 | badge、chips、瓷贴 | [现状] radiusSmall |
 | medium | 12 | 卡片、网格项 | [现状] radiusMedium |
 | large | 14 | 浮层、胶囊控制条 | [现状] radiusLarge |
-| —（散点） | 8 | 浏览器选中行、RoundedFillView 默认值 | [提议] 收敛进 small（P2 定） |
+| row-selection | 8 | 列表行选中高亮圆角（散点正名升格） | [已拍板] 2026-09-05 · TASK-grid-card-details |
 
 ## 5. 动效（克制）
 
@@ -89,10 +90,17 @@ spinner（平台原生指示器）+ 一行说明（caption）。**禁止静态�
 长名尾部截断。
 
 ### 6.4 卡片（Card）
-[提议，借 SenPlayer 服务器卡片 02]
-rest 态带 card-border 描边；hover = surface-raised 填充 + 描边；选中 =
+[已拍板] 2026-09-05 · TASK-grid-card-details（借 SenPlayer 服务器卡片 02）
+rest 态带 card-border 描边；hover = hover-fill 填充 + 描边；选中 =
 selection 填充。卡片可承载元信息（类型标签 + 相对时间）；share 卡片是否
-升级为信息卡片 [待定拍板]（P2 任务立项时再定）。
+升级为信息卡片 [待定拍板]（后续任务立项时再定）。
+
+### 6.8 覆盖层按钮配方（Overlay Buttons）
+[已拍板] 2026-09-05 · TASK-grid-card-details（供 P6 媒体 chrome 复用）
+浮于媒体/深色表面上的按钮统一配方：填充 = 黑 0.35（rest）/ 黑 0.55（hover），
+描边 = 白 0.18 发丝线。Mac 端实现：`CoveStyle.overlayButtonFill /
+overlayButtonFillHover / overlayButtonBorder`，PillButton.secondary 与
+FrostedCircleButton 共用。
 
 ### 6.5 播放器 chrome
 [提议，借 IINA OSC 01/02 + SenPlayer 控制条 11]
