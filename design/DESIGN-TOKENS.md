@@ -78,13 +78,13 @@ Cove 跨平台 UI 一致性的图纸：所有色值/字号/间距/圆角/动效/
 
 | 角色 | 值 | 用途 | 状态 |
 |------|----|------|------|
-| fast | 0.15s ease-out | 缩略图淡入、share 卡片 hover/选中 fill 过渡、占位淡入 | [已拍板] 2026-09-05 · TASK-restrained-motion |
-| medium | 0.25s ease-out | 面板/弹层出现（预留，暂无调用点） | [已拍板] 2026-09-05 · TASK-restrained-motion（预留） |
+| fast | 0.15s ease-out | 缩略图淡入、share 卡片 hover/选中 fill 过渡、占位淡入、缩放倍数闪现（淡入） | [已拍板] 2026-09-05 · TASK-restrained-motion |
+| medium | 0.25s ease-out | 媒体 chrome 显隐（播放器胶囊/codec chips/Up Next、阅读器 resume hint）、缩放倍数闪现淡出 | [已拍板] 2026-09-05 · TASK-restrained-motion；调用点归位 TASK-media-chrome |
 
 原则：只为状态反馈服务（出现/消失/hover/选中），不做装饰性动效；一律
 ease-out（起速快、缓收尾，反馈跟手不漂浮）。列表行选中不做过渡（Finder
-亦无）；弹层/NSPopover 用系统自带动画；媒体 chrome 显隐 fade 属 P6 范畴
-（现状 0.2/0.3s 散点，届时归位）。
+亦无）；弹层/NSPopover 用系统自带动画。媒体 chrome 显隐 fade 已随
+TASK-media-chrome 归位两档令牌（原 0.1/0.15/0.2/0.3s 散点）。
 
 ## 6. 组件配方（跨平台要同一效果；平台实现细节另注）
 
@@ -126,8 +126,9 @@ FrostedCircleButton 共用。
 - 当前播放项标记：glyph（▶/speaker）+ accent 色；其余弹层当前项统一为
   accent 色 glyph，**废除白色 checkmark**（收编两套现状）。[已拍板] 2026-09-05。
 - codec 信息 chips（HW/编码/分辨率/码率）：**采纳** [已拍板] 2026-09-05——
-  播放时画面左上角瓷贴显示，在 chrome 任务（P6）落地，同时根治 mpv 原生
-  OSD 泄漏（audit BUG-3）。
+  画面左上角瓷贴显示（surfaceOverlay 底、圆角 small），**仅控制条可见时
+  显示**（跟随 controlsVisible 生命周期）；mpv 原生 OSD 已关（osd-level=0，
+  audit BUG-3）。落地：TASK-media-chrome。
 - 进度条/音量条：**保留系统蓝** [已拍板] 2026-09-05（IINA/SenPlayer 均蓝，
   播放器语境属主流）；轨道/填充精细化在 P6 做。
 

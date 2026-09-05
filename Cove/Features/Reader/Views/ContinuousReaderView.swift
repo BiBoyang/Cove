@@ -421,14 +421,16 @@ final class ContinuousReaderView: NSView {
         zoomHideGeneration += 1
         let generation = zoomHideGeneration
         NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.1
+            context.duration = CoveStyle.motionFast
+            context.timingFunction = CoveStyle.motionTimingFunction
             zoomLabel.animator().alphaValue = 1
         }
         Task { [weak self] in
             try? await Task.sleep(for: .milliseconds(800))
             guard let self, self.zoomHideGeneration == generation else { return }
             NSAnimationContext.beginGrouping()
-            NSAnimationContext.current.duration = 0.3
+            NSAnimationContext.current.duration = CoveStyle.motionMedium
+            NSAnimationContext.current.timingFunction = CoveStyle.motionTimingFunction
             self.zoomLabel.animator().alphaValue = 0
             NSAnimationContext.endGrouping()
         }

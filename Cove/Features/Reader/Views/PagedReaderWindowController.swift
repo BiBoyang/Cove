@@ -427,14 +427,16 @@ final class PagedReaderWindowController: NSWindowController {
         zoomFlashGeneration += 1
         let generation = zoomFlashGeneration
         NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.1
+            context.duration = CoveStyle.motionFast
+            context.timingFunction = CoveStyle.motionTimingFunction
             zoomFlashLabel.animator().alphaValue = 1
         }
         Task { [weak self] in
             try? await Task.sleep(for: .milliseconds(800))
             guard let self, self.zoomFlashGeneration == generation else { return }
             NSAnimationContext.beginGrouping()
-            NSAnimationContext.current.duration = 0.3
+            NSAnimationContext.current.duration = CoveStyle.motionMedium
+            NSAnimationContext.current.timingFunction = CoveStyle.motionTimingFunction
             self.zoomFlashLabel.animator().alphaValue = 0
             NSAnimationContext.endGrouping()
         }
@@ -565,7 +567,8 @@ final class PagedReaderWindowController: NSWindowController {
 
     private func setResumeHintVisible(_ visible: Bool) {
         NSAnimationContext.runAnimationGroup { context in
-            context.duration = visible ? 0.15 : 0.3
+            context.duration = CoveStyle.motionMedium
+            context.timingFunction = CoveStyle.motionTimingFunction
             resumeHintPill.animator().alphaValue = visible ? 1 : 0
         }
     }

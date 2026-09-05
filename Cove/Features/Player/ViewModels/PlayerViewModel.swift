@@ -48,6 +48,9 @@ final class PlayerViewModel {
     private(set) var state: State = .loading
     private(set) var currentTime: Double = 0
     private(set) var duration: Double = 0
+    /// Codec-chip facts for the current video; nil until the track's first
+    /// reconfig lands.
+    private(set) var videoInfo: VideoTrackInfo?
     /// While true, incoming time-pos updates are ignored so the slider the
     /// user is dragging does not fight playback position updates.
     private(set) var isScrubbing = false
@@ -106,6 +109,8 @@ final class PlayerViewModel {
             if paused { persistProgress(currentTime) }
         case .bufferingChanged(let buffering):
             isBuffering = buffering
+        case .videoInfoChanged(let info):
+            videoInfo = info
         case .ended:
             // A finished video is forgotten so a replay starts from the
             // top; the coordinator then decides whether to auto-advance

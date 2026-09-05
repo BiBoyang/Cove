@@ -65,8 +65,15 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
     private let centerTitleLabel = NSTextField(labelWithString: "")
     private let controlsCapsule = ControlsCapsuleView()
     private let upNextOverlay = UpNextOverlayView()
+    /// Top-left codec chips (HW / codec / resolution / bitrate): small
+    /// surfaceOverlay tiles that ride the controls' visibility lifecycle —
+    /// the frame stays clean while the capsule is hidden.
+    private let codecChipsRow = NSStackView()
     private var videoHost: VideoLayerHostView?
     private var renderedControlsVisible = true
+    /// Chips content guard: `render()` fires every second on time ticks,
+    /// so the chip views are rebuilt only when the info actually changes.
+    private var renderedVideoInfo: VideoTrackInfo?
     /// Mirrors the overlay's visibility for keyboard routing only; the
     /// countdown decisions stay in the coordinator.
     private var isUpNextShown = false
@@ -145,6 +152,16 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
         centerTitleLabel.lineBreakMode = .byTruncatingMiddle
         centerTitleLabel.alignment = .center
         rootView.addSubview(centerTitleLabel)
+
+        // Codec chips top-left, below the traffic-light safety zone (the
+        // full-size content view puts the lights at the very top-left).
+        codecChipsRow.orientation = .horizontal
+        codecChipsRow.spacing = 6
+        rootView.addSubview(codecChipsRow)
+        codecChipsRow.snp.makeConstraints { make in
+            make.leading.equalToSuperview().offset(16)
+            make.top.equalToSuperview().offset(40)
+        }
 
         // The capsule carries the shadow on its own (unclipped) layer; the
         // material view inside clips to the corner radius.
@@ -518,7 +535,8 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
         isUpNextShown = true
         upNextOverlay.isHidden = false
         NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.15
+            context.duration = CoveStyle.motionMedium
+            context.timingFunction = CoveStyle.motionTimingFunction
             upNextOverlay.animator().alphaValue = 1
         }
     }
@@ -562,20 +580,69 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
         )
         speedButton.title = Self.speedLabel(viewModel.speed)
         timeLabel.stringValue = viewModel.statusText ?? viewModel.timeText
+        renderCodecChips()
         renderControlsVisibility()
     }
 
-    /// Fades the capsule in/out and hides the cursor alongside it.
-    /// Hit-testing on the capsule is cut while hidden so the invisible
-    /// controls cannot catch clicks.
+    /// Rebuilds the codec chips when the video info changes (see
+    /// `renderedVideoInfo` for why this is guarded per render pass).
+    private func renderCodecChips() {
+        let info = viewModel.videoInfo
+        guard info != renderedVideoInfo else { return }
+        renderedVideoInfo = info
+        codecChipsRow.arrangedSubviews.forEach { $0.removeFromSuperview() }
+        guard let info else { return }
+        for text in Self.codecChipTexts(info) {
+            codecChipsRow.addArrangedSubview(makeCodecChip(text))
+        }
+    }
+
+    /// One surfaceOverlay tile: radius-small board, mono-digit text at the
+    /// secondary media tier.
+    private func makeCodecChip(_ text: String) -> NSView {
+        let chip = RoundedFillView()
+        chip.fillColor = CoveStyle.surfaceOverlay
+        chip.cornerRadius = CoveStyle.radiusSmall
+        let label = NSTextField(labelWithString: text)
+        label.font = CoveStyle.monoDigitFont
+        label.textColor = CoveStyle.textOnMedia2
+        chip.addSubview(label)
+        chip.snp.makeConstraints { make in
+            make.height.equalTo(20)
+        }
+        label.snp.makeConstraints { make in
+            make.leading.equalToSuperview().offset(8)
+            make.trailing.equalToSuperview().offset(-8)
+            make.centerY.equalToSuperview()
+        }
+        return chip
+    }
+
+    /// The four chips' texts: decode path, codec family, dimensions, and
+    /// instantaneous bitrate (an em dash while mpv reports no bitrate).
+    private static func codecChipTexts(_ info: VideoTrackInfo) -> [String] {
+        [
+            info.hardwareDecoded ? "HW" : "SW",
+            info.codec.uppercased(),
+            "\(info.width)×\(info.height)",
+            info.bitrate > 0 ? String(format: "%.1f Mbps", info.bitrate / 1_000_000) : "—",
+        ]
+    }
+
+    /// Fades the capsule (and the codec chips, which ride the same
+    /// lifecycle) in/out and hides the cursor alongside it. Hit-testing on
+    /// the capsule is cut while hidden so the invisible controls cannot
+    /// catch clicks.
     private func renderControlsVisibility() {
         let visible = viewModel.controlsVisible
         guard visible != renderedControlsVisible else { return }
         renderedControlsVisible = visible
         controlsCapsule.isInteractable = visible
         NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.15
+            context.duration = CoveStyle.motionMedium
+            context.timingFunction = CoveStyle.motionTimingFunction
             controlsCapsule.animator().alphaValue = visible ? 1 : 0
+            codecChipsRow.animator().alphaValue = visible ? 1 : 0
         }
         if !visible {
             hideCursorIfInsideWindow()

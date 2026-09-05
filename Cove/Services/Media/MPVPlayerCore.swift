@@ -31,10 +31,27 @@ enum PlayerCoreEvent {
     /// mpv's `paused-for-cache`: playback is stalled waiting for the
     /// demuxer cache to refill (the v1 buffering signal).
     case bufferingChanged(Bool)
+    /// Video parameters settled after a (re)config; carries the facts the
+    /// codec chips render.
+    case videoInfoChanged(VideoTrackInfo)
     /// Clean end of file.
     case ended
     /// Playback died with an mpv error (end-file with a negative error code).
     case playbackFailed(String)
+}
+
+/// One video track's display-relevant facts, rendered as the player's
+/// codec chips. Pure values only (tokens: no platform UI types past the
+/// view model boundary).
+struct VideoTrackInfo: Equatable, Sendable {
+    /// True while a hardware decoder is active (mpv `hwdec-current`).
+    let hardwareDecoded: Bool
+    /// Codec family, e.g. "h264", "hevc" (mpv `video-format`).
+    let codec: String
+    let width: Int
+    let height: Int
+    /// Instantaneous video bitrate in bits per second; 0 when unknown.
+    let bitrate: Double
 }
 
 /// Owns one mpv handle and its OpenGL render context for a single video.
@@ -60,6 +77,9 @@ final class MPVPlayerCore {
     /// Previous `eof-reached` value, for rising-edge detection of the
     /// clean-EOF signal (see `handlePropertyChange`).
     private var wasAtEOF = false
+    /// Last emitted video info; reconfig fires several times per track
+    /// (audio switches, format probes), so only real changes propagate.
+    private var lastVideoTrackInfo: VideoTrackInfo?
 
     /// Property-observation reply IDs, matched against `reply_userdata` in
     /// the drain loop.
@@ -101,6 +121,11 @@ final class MPVPlayerCore {
         // Buffering lives entirely in mpv's own cache (videos never enter
         // CacheKit); network streams get it explicitly.
         mpv_set_option_string(handle, "cache", "yes")
+        // The app draws its own chrome over the render layer, so mpv's
+        // native OSD is disabled at the master switch: osd-level 0 kills
+        // osd-bar and osd-msg elements alike, which is what leaked the
+        // orange timecode readout onto the frame (audit BUG-3).
+        mpv_set_option_string(handle, "osd-level", "0")
         // Park on the last frame at clean EOF instead of unloading the
         // file. Without this, EOF leaves mpv idle and every later seek
         // command (the user dragging the slider back after cancelling the
@@ -183,6 +208,44 @@ final class MPVPlayerCore {
         mpv_observe_property(handle, ObservedProperty.pause, "pause", MPV_FORMAT_FLAG)
         mpv_observe_property(handle, ObservedProperty.pausedForCache, "paused-for-cache", MPV_FORMAT_FLAG)
         mpv_observe_property(handle, ObservedProperty.eofReached, "eof-reached", MPV_FORMAT_FLAG)
+    }
+
+    /// Snapshots the codec-chip facts once a video track is configured.
+    /// Nil while no video is selected (properties missing or zero-sized).
+    private func readVideoTrackInfo() -> VideoTrackInfo? {
+        guard handle != nil else { return nil }
+        guard let codec = readStringProperty("video-format"), !codec.isEmpty else { return nil }
+        let width = readIntProperty("width")
+        let height = readIntProperty("height")
+        guard width > 0, height > 0 else { return nil }
+        let hwdec = readStringProperty("hwdec-current") ?? ""
+        return VideoTrackInfo(
+            hardwareDecoded: !hwdec.isEmpty,
+            codec: codec,
+            width: width,
+            height: height,
+            bitrate: max(0, readDoubleProperty("video-bitrate"))
+        )
+    }
+
+    /// Synchronous string read; nil when the property is unavailable.
+    private func readStringProperty(_ name: String) -> String? {
+        guard let cString = mpv_get_property_string(handle, name) else { return nil }
+        defer { mpv_free(cString) }
+        return String(cString: cString)
+    }
+
+    /// Synchronous numeric reads; 0 when the property is unavailable.
+    private func readIntProperty(_ name: String) -> Int {
+        var value = Int64()
+        mpv_get_property(handle, name, MPV_FORMAT_INT64, &value)
+        return Int(value)
+    }
+
+    private func readDoubleProperty(_ name: String) -> Double {
+        var value = Double()
+        mpv_get_property(handle, name, MPV_FORMAT_DOUBLE, &value)
+        return value
     }
 
     /// Reads one property-change event and forwards it. The observation ID
@@ -287,6 +350,13 @@ final class MPVPlayerCore {
                 onEvent?(.fileLoaded)
             case MPV_EVENT_VIDEO_RECONFIG:
                 logger.debug("mpv event: video reconfig")
+                let info = readVideoTrackInfo()
+                if info != lastVideoTrackInfo {
+                    lastVideoTrackInfo = info
+                    if let info {
+                        onEvent?(.videoInfoChanged(info))
+                    }
+                }
             case MPV_EVENT_AUDIO_RECONFIG:
                 logger.debug("mpv event: audio reconfig")
             case MPV_EVENT_PLAYBACK_RESTART:
