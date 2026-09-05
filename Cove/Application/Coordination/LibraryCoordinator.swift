@@ -23,6 +23,7 @@ final class LibraryCoordinator {
     let serverListViewController: ServerListViewController
     let shareGridViewController: ShareGridViewController
     let browserViewController: BrowserViewController
+    let settingsPaneViewController: SettingsPaneViewController
 
     private var currentServer: ServerConfig?
     private var currentShare: String?
@@ -67,6 +68,7 @@ final class LibraryCoordinator {
         serverListViewController = ServerListViewController(viewModel: serverListViewModel)
         shareGridViewController = ShareGridViewController(viewModel: shareGridViewModel)
         browserViewController = BrowserViewController(viewModel: browserViewModel)
+        settingsPaneViewController = SettingsPaneViewController()
         wireCallbacks()
         wirePreheat()
     }
@@ -93,6 +95,7 @@ final class LibraryCoordinator {
         serverListViewController.onSwitchEndpoint = { [weak self] in self?.switchEndpoint(of: $0) }
         serverListViewController.onRemove = { [weak self] in self?.confirmRemoveServer($0) }
         serverListViewController.onOpenVault = { [weak self] in self?.openVault() }
+        serverListViewController.onOpenSettings = { [weak self] in self?.showSettings() }
         shareGridViewController.onOpenShare = { [weak self] in self?.openShare($0) }
         shareGridViewController.onRetry = { [weak self] in self?.retryEnumeration() }
         shareGridViewController.onAddServer = { [weak self] in self?.presentAddServerSheet() }
@@ -483,6 +486,18 @@ final class LibraryCoordinator {
 
     private func cancelDownload() {
         downloadTask?.cancel()
+    }
+
+    // MARK: - Settings
+
+    /// Settings destination: swaps the detail pane to the settings page.
+    /// Leaving the on-screen directory cancels its in-flight loads and
+    /// directory preheat, the same discipline as opening a reader; the
+    /// SMB session itself stays connected.
+    private func showSettings() {
+        _ = beginNavigation()
+        onShowDetail?(settingsPaneViewController)
+        onTitleChange?("设置")
     }
 
     /// Deletes a vault item after confirmation. The wording must stay

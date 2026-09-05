@@ -232,26 +232,33 @@ struct ServerViewModelTests {
         #expect(viewModel.server(atTableRow: 2) == nil)
     }
 
-    @Test("the fixed vault rows trail the server list")
+    @Test("the fixed vault and settings rows trail the server list")
     func vaultRows() {
         let server = ServerConfig(id: UUID(), host: "nas", username: "user")
         let viewModel = ServerListViewModel()
 
-        // Empty list: header 0, "本地" header 1, vault row 2.
-        #expect(viewModel.rowCount == 3)
+        // Empty list: header 0, "本地" header 1, vault row 2, settings row 3.
+        #expect(viewModel.rowCount == 4)
         #expect(viewModel.isGroupRow(0))
         #expect(viewModel.isGroupRow(1))
         #expect(!viewModel.isGroupRow(2))
         #expect(viewModel.isVaultRow(2))
+        #expect(viewModel.isSettingsRow(3))
+        #expect(!viewModel.isSettingsRow(2))
         #expect(viewModel.server(atTableRow: 2) == nil)
+        #expect(viewModel.server(atTableRow: 3) == nil)
 
         viewModel.update(servers: [server])
-        #expect(viewModel.rowCount == 4)
+        #expect(viewModel.rowCount == 5)
         #expect(viewModel.vaultRow == 3)
+        #expect(viewModel.settingsRow == 4)
         #expect(viewModel.isVaultRow(3))
+        #expect(viewModel.isSettingsRow(4))
         #expect(!viewModel.isVaultRow(1))
+        #expect(!viewModel.isSettingsRow(3))
         #expect(viewModel.server(atTableRow: 1) == server)
         #expect(viewModel.server(atTableRow: 3) == nil)
+        #expect(viewModel.server(atTableRow: 4) == nil)
     }
 
     @Test("share placeholders reflect loading, empty, and content states")

@@ -14,6 +14,7 @@ final class ServerListViewController: NSViewController {
     var onSwitchEndpoint: ((ServerConfig) -> Void)?
     var onRemove: ((ServerConfig) -> Void)?
     var onOpenVault: (() -> Void)?
+    var onOpenSettings: (() -> Void)?
 
     private let tableView = NSTableView()
     private let scrollView = NSScrollView()
@@ -93,6 +94,10 @@ final class ServerListViewController: NSViewController {
             onOpenVault?()
             return
         }
+        if viewModel.isSettingsRow(row) {
+            onOpenSettings?()
+            return
+        }
         guard let server = viewModel.server(atTableRow: row) else { return }
         onConnect?(server)
     }
@@ -145,6 +150,15 @@ extension ServerListViewController: NSTableViewDataSource, NSTableViewDelegate {
         !viewModel.isGroupRow(row)
     }
 
+    /// The settings row is a destination, not an item: selecting it (click
+    /// or keyboard) navigates there, System-Settings style. Server and
+    /// vault rows keep their double-click-to-activate behavior.
+    func tableViewSelectionDidChange(_ notification: Notification) {
+        if viewModel.isSettingsRow(tableView.selectedRow) {
+            onOpenSettings?()
+        }
+    }
+
     func tableView(_ tableView: NSTableView, heightOfRow row: Int) -> CGFloat {
         // Sidebar rhythm: tight 20pt group headers, 32pt rows.
         viewModel.isGroupRow(row) ? 20 : 32
@@ -167,6 +181,8 @@ extension ServerListViewController: NSTableViewDataSource, NSTableViewDelegate {
         }
         if viewModel.isVaultRow(row) {
             cell.configure(symbol: "externaldrive.fill", title: "本地仓库", tint: CoveStyle.accentGold)
+        } else if viewModel.isSettingsRow(row) {
+            cell.configure(symbol: "gearshape", title: "设置", tint: .labelColor)
         } else if let server = viewModel.server(atTableRow: row) {
             cell.configure(with: server)
         }
