@@ -33,10 +33,10 @@ Cove 跨平台 UI 一致性的图纸：所有色值/字号/间距/圆角/动效/
 | body | 13 regular | 列表正文 | [现状] bodyFont |
 | caption | 11 regular | 元信息（日期/大小） | [现状] captionFont |
 | section-header | 11 semibold | 分区标题（侧栏组、设置分区） | [现状] sectionHeaderFont；设置窗口 13bold 偏离待回归（audit E1） |
-| form-label | 12 regular | 表单标签、面包屑、位置文本 | [提议] 新增，收敛现状 12pt 散点 |
-| mono-digit | 12 regular 等宽数字 | 时间码、页码 | [提议] 新增 |
-| overlay-flash | 15 semibold | 阅读器缩放倍数闪现 | [提议] 纳入刻度（现状两文件复制粘贴） |
-| —（废除） | 9pt / 10pt | 条带速度档、「远程」tag | [提议] 分别升入 caption / caption |
+| form-label | 12 regular | 表单标签、面包屑、位置文本 | [已拍板] 2026-09-05 · TASK-typography-scale |
+| mono-digit | 12 medium 等宽数字 | 时间码、页码、倍速档 | [已拍板] 2026-09-05 · TASK-typography-scale（medium 与线上视觉一致） |
+| overlay-flash | 15 semibold | 阅读器缩放倍数闪现（两文件复制已去重） | [已拍板] 2026-09-05 · TASK-typography-scale |
+| —（已废除） | 9pt / 10pt | 条带速度档→mono-digit 12、「远程」tag→caption 11 | [已拍板] 2026-09-05 · TASK-typography-scale |
 
 ## 3. 间距与尺寸（4pt 网格）
 
