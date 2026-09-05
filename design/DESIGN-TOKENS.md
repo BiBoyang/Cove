@@ -122,9 +122,15 @@ FrostedCircleButton 共用。
 ### 6.5 播放器 chrome
 [提议，借 IINA OSC 01/02 + SenPlayer 控制条 11]
 - 悬浮胶囊（圆角 large，底板 surface-overlay），底部居中，空闲自动隐藏。
+  [已拍板] 2026-09-05 · TASK-media-chrome（胶囊与 Up Next pill 均已换
+  surfaceOverlay 不透明底板）
 - 控制族：播放三键 + 音量 + 进度条 + 时间码（mono-digit）。
+- 弹层（倍速/模式/播放列表）底板 surfaceOverlay，与 darkAqua 箭头同色温；
+  Up Next 行动按钮 = PillButton primary/secondary。[已拍板] 2026-09-05 ·
+  TASK-media-chrome
 - 当前播放项标记：glyph（▶/speaker）+ accent 色；其余弹层当前项统一为
-  accent 色 glyph，**废除白色 checkmark**（收编两套现状）。[已拍板] 2026-09-05。
+  accent 色 glyph，**废除白色 checkmark**（收编两套现状）。[已拍板]
+  2026-09-05 · 落地 TASK-media-chrome。
 - codec 信息 chips（HW/编码/分辨率/码率）：**采纳** [已拍板] 2026-09-05——
   画面左上角瓷贴显示（surfaceOverlay 底、圆角 small），**仅控制条可见时
   显示**（跟随 controlsVisible 生命周期）；mpv 原生 OSD 已关（osd-level=0，

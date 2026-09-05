@@ -164,18 +164,18 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
         }
 
         // The capsule carries the shadow on its own (unclipped) layer; the
-        // material view inside clips to the corner radius.
+        // board view inside clips to the corner radius. Opaque warm black
+        // (surfaceOverlay) so the chrome reads the same over bright frames
+        // as over dark ones.
         controlsCapsule.onHoverChanged = { [weak self] over in
             self?.viewModel.setPointerOverControls(over)
         }
-        let capsuleMaterial = NSVisualEffectView()
-        capsuleMaterial.material = .hudWindow
-        capsuleMaterial.blendingMode = .withinWindow
-        capsuleMaterial.state = .active
-        capsuleMaterial.wantsLayer = true
-        capsuleMaterial.layer?.cornerRadius = CoveStyle.radiusLarge
-        capsuleMaterial.layer?.masksToBounds = true
-        controlsCapsule.addSubview(capsuleMaterial)
+        let capsuleBoard = NSView()
+        capsuleBoard.wantsLayer = true
+        capsuleBoard.layer?.backgroundColor = CoveStyle.surfaceOverlay.cgColor
+        capsuleBoard.layer?.cornerRadius = CoveStyle.radiusLarge
+        capsuleBoard.layer?.masksToBounds = true
+        controlsCapsule.addSubview(capsuleBoard)
         rootView.addSubview(controlsCapsule)
 
         configureButton(
@@ -247,17 +247,17 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
         volumeValueLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
         volumeValueLabel.setContentHuggingPriority(.required, for: .horizontal)
 
-        capsuleMaterial.addSubview(previousTrackButton)
-        capsuleMaterial.addSubview(playPauseButton)
-        capsuleMaterial.addSubview(nextTrackButton)
-        capsuleMaterial.addSubview(speedButton)
-        capsuleMaterial.addSubview(volumeIconView)
-        capsuleMaterial.addSubview(volumeSlider)
-        capsuleMaterial.addSubview(volumeValueLabel)
-        capsuleMaterial.addSubview(progressSlider)
-        capsuleMaterial.addSubview(timeLabel)
-        capsuleMaterial.addSubview(playlistButton)
-        capsuleMaterial.addSubview(playModeButton)
+        capsuleBoard.addSubview(previousTrackButton)
+        capsuleBoard.addSubview(playPauseButton)
+        capsuleBoard.addSubview(nextTrackButton)
+        capsuleBoard.addSubview(speedButton)
+        capsuleBoard.addSubview(volumeIconView)
+        capsuleBoard.addSubview(volumeSlider)
+        capsuleBoard.addSubview(volumeValueLabel)
+        capsuleBoard.addSubview(progressSlider)
+        capsuleBoard.addSubview(timeLabel)
+        capsuleBoard.addSubview(playlistButton)
+        capsuleBoard.addSubview(playModeButton)
 
         host.snp.makeConstraints { make in
             make.edges.equalToSuperview()
@@ -274,7 +274,7 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
             make.bottom.equalToSuperview().offset(-16)
             make.height.equalTo(48)
         }
-        capsuleMaterial.snp.makeConstraints { make in
+        capsuleBoard.snp.makeConstraints { make in
             make.edges.equalToSuperview()
         }
         previousTrackButton.snp.makeConstraints { make in
@@ -857,19 +857,20 @@ private final class ControlsCapsuleView: NSView {
 }
 
 /// The "Up Next" countdown pill: next-episode file name (truncated), the
-/// seconds readout, and the play-now / cancel actions. Same visual recipe
-/// as the controls capsule — drop shadow on its own unclipped layer, the
-/// HUD material inside clips itself to the corner radius. Pure rendering:
-/// no timer, no countdown decisions, callbacks are forwarded to the
-/// window controller which relays them to the coordinator.
+/// seconds readout, and the play-now / cancel actions as primary/secondary
+/// pill buttons. Same visual recipe as the controls capsule — drop shadow
+/// on its own unclipped layer, the opaque surfaceOverlay board inside
+/// clips itself to the corner radius. Pure rendering: no timer, no
+/// countdown decisions, callbacks are forwarded to the window controller
+/// which relays them to the coordinator.
 private final class UpNextOverlayView: NSView {
     var onPlayNow: (() -> Void)?
     var onCancel: (() -> Void)?
 
     private let titleLabel = NSTextField(labelWithString: "")
     private let countdownLabel = NSTextField(labelWithString: "")
-    private let playNowButton = NSButton(title: "立即播放", target: nil, action: nil)
-    private let cancelButton = NSButton(title: "取消", target: nil, action: nil)
+    private let playNowButton = PillButton(title: "立即播放", style: .primary)
+    private let cancelButton = PillButton(title: "取消", style: .secondary)
 
     init() {
         super.init(frame: .zero)
@@ -883,14 +884,12 @@ private final class UpNextOverlayView: NSView {
         shadow.shadowOffset = NSSize(width: 0, height: -2)
         self.shadow = shadow
 
-        let material = NSVisualEffectView()
-        material.material = .hudWindow
-        material.blendingMode = .withinWindow
-        material.state = .active
-        material.wantsLayer = true
-        material.layer?.cornerRadius = CoveStyle.radiusLarge
-        material.layer?.masksToBounds = true
-        addSubview(material)
+        let board = NSView()
+        board.wantsLayer = true
+        board.layer?.backgroundColor = CoveStyle.surfaceOverlay.cgColor
+        board.layer?.cornerRadius = CoveStyle.radiusLarge
+        board.layer?.masksToBounds = true
+        addSubview(board)
 
         titleLabel.lineBreakMode = .byTruncatingTail
         titleLabel.attributedStringValue = NSAttributedString(
@@ -907,19 +906,19 @@ private final class UpNextOverlayView: NSView {
         countdownLabel.font = CoveStyle.formLabelFont
         countdownLabel.textColor = CoveStyle.textOnMedia2
 
-        styleButton(playNowButton, emphasized: true)
-        styleButton(cancelButton, emphasized: false)
+        playNowButton.refusesFirstResponder = true
         playNowButton.target = self
         playNowButton.action = #selector(handlePlayNow)
+        cancelButton.refusesFirstResponder = true
         cancelButton.target = self
         cancelButton.action = #selector(handleCancel)
 
-        material.addSubview(titleLabel)
-        material.addSubview(countdownLabel)
-        material.addSubview(playNowButton)
-        material.addSubview(cancelButton)
+        board.addSubview(titleLabel)
+        board.addSubview(countdownLabel)
+        board.addSubview(playNowButton)
+        board.addSubview(cancelButton)
 
-        material.snp.makeConstraints { make in
+        board.snp.makeConstraints { make in
             make.edges.equalToSuperview()
         }
         titleLabel.snp.makeConstraints { make in
@@ -938,7 +937,7 @@ private final class UpNextOverlayView: NSView {
             make.centerY.equalToSuperview()
         }
         cancelButton.snp.makeConstraints { make in
-            make.leading.equalTo(playNowButton.snp.trailing).offset(2)
+            make.leading.equalTo(playNowButton.snp.trailing).offset(8)
             make.trailing.equalToSuperview().offset(-16)
             make.centerY.equalToSuperview()
         }
@@ -974,12 +973,6 @@ private final class UpNextOverlayView: NSView {
         countdownLabel.stringValue = "\(seconds) 秒后播放"
     }
 
-    private func styleButton(_ button: NSButton, emphasized: Bool) {
-        button.isBordered = false
-        button.font = .systemFont(ofSize: 13, weight: emphasized ? .semibold : .regular)
-        button.contentTintColor = emphasized ? .white : NSColor.white.withAlphaComponent(0.65)
-    }
-
     @objc private func handlePlayNow() { onPlayNow?() }
     @objc private func handleCancel() { onCancel?() }
 }
@@ -1012,7 +1005,10 @@ private final class OptionListPopoverController: NSViewController {
     override func loadView() {
         let root = NSView()
         root.wantsLayer = true
-        root.layer?.backgroundColor = CoveStyle.libraryBackground.cgColor
+        // surfaceOverlay (warm black) sits flush with the darkAqua popover
+        // chrome — the system arrow (≈#1E1E1E) and the content board read
+        // as one temperature instead of cold-gray vs warm-gray.
+        root.layer?.backgroundColor = CoveStyle.surfaceOverlay.cgColor
 
         let headerLabel = NSTextField(labelWithString: header)
         headerLabel.font = CoveStyle.sectionHeaderFont
@@ -1051,9 +1047,12 @@ private final class OptionListPopoverController: NSViewController {
     private func makeRow(_ option: Option) -> NSButton {
         let row = NSButton(title: option.label, target: self, action: #selector(handleSelect(_:)))
         row.isBordered = false
-        row.font = .systemFont(ofSize: 13)
+        row.font = .systemFont(ofSize: 13, weight: option.checked ? .semibold : .regular)
         row.alignment = .left
-        row.contentTintColor = .white
+        // The current option carries the accent-gold treatment — same
+        // semantics as the playlist's gold speaker row; the white
+        // checkmark is retired.
+        row.contentTintColor = option.checked ? CoveStyle.accentGold : CoveStyle.textOnMedia1
         row.identifier = NSUserInterfaceItemIdentifier(option.value)
         if option.checked {
             row.image = NSImage(
@@ -1099,7 +1098,9 @@ private final class PlaylistPopoverController: NSViewController {
     override func loadView() {
         let root = NSView()
         root.wantsLayer = true
-        root.layer?.backgroundColor = CoveStyle.libraryBackground.cgColor
+        // Same warm-black board as the picker popovers (see the comment in
+        // OptionListPopoverController.loadView).
+        root.layer?.backgroundColor = CoveStyle.surfaceOverlay.cgColor
 
         let headerLabel = NSTextField(labelWithString: "播放列表")
         headerLabel.font = CoveStyle.sectionHeaderFont
