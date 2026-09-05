@@ -244,6 +244,11 @@ final class BrowserViewController: NSViewController {
         // delete) must not yank the user's scroll position.
         if state.path != lastRenderedPath {
             lastRenderedPath = state.path
+            // reloadData lays out lazily: force the new directory's rows to
+            // exist before resetting the scroll, otherwise the reset lands on
+            // the previous listing's geometry and the first frame can show
+            // the list bottom (or nothing) until the next scroll event.
+            tableView.layoutSubtreeIfNeeded()
             scrollView.contentView.scroll(to: .zero)
             scrollView.reflectScrolledClipView(scrollView.contentView)
         }
