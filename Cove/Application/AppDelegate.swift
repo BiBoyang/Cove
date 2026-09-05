@@ -24,6 +24,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let progressStore = PlaybackProgressStore()
         let readingProgressStore = ReadingProgressStore()
         let vaultService = VaultService(settings: settingsService)
+        // One preferences session for the sidebar settings destination,
+        // built here because only the composition root sees all services.
+        // The legacy Cmd+, window keeps its own lazy instance until it is
+        // retired; onStateChange is a single slot, so they never share.
+        let preferencesViewModel = PreferencesViewModel(
+            settings: settingsService,
+            cache: PreferencesCacheAdapter(store: cacheService.store),
+            vault: vaultService
+        )
         let readerCoordinator = ReaderCoordinator(
             cache: cacheService.store,
             preheatService: preheatService,
@@ -36,6 +45,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             readerCoordinator: readerCoordinator,
             preheatService: preheatService,
             vaultService: vaultService,
+            preferencesViewModel: preferencesViewModel,
             progressStore: progressStore
         )
         self.settingsService = settingsService

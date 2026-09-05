@@ -56,6 +56,7 @@ final class LibraryCoordinator {
         readerCoordinator: ReaderCoordinator,
         preheatService: PreheatService,
         vaultService: VaultService,
+        preferencesViewModel: PreferencesViewModel,
         progressStore: PlaybackProgressStoring? = nil
     ) {
         self.sessionService = sessionService
@@ -68,7 +69,7 @@ final class LibraryCoordinator {
         serverListViewController = ServerListViewController(viewModel: serverListViewModel)
         shareGridViewController = ShareGridViewController(viewModel: shareGridViewModel)
         browserViewController = BrowserViewController(viewModel: browserViewModel)
-        settingsPaneViewController = SettingsPaneViewController()
+        settingsPaneViewController = SettingsPaneViewController(viewModel: preferencesViewModel)
         wireCallbacks()
         wirePreheat()
     }

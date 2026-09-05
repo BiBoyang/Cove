@@ -216,14 +216,20 @@ struct LibraryEndpointSwitchTests {
         let settings = SettingsService(defaults: UserDefaults(suiteName: settingsSuite)!)
         let cache = makeTestCache()
         let preheat = PreheatService(settings: settings, cacheStore: cache)
+        let vault = VaultService(
+            root: URL(fileURLWithPath: NSTemporaryDirectory())
+                .appendingPathComponent("CoveTests-\(UUID().uuidString)")
+        )
         let coordinator = LibraryCoordinator(
             sessionService: service,
             cache: cache,
             readerCoordinator: ReaderCoordinator(cache: cache, preheatService: preheat, settings: settings),
             preheatService: preheat,
-            vaultService: VaultService(
-                root: URL(fileURLWithPath: NSTemporaryDirectory())
-                    .appendingPathComponent("CoveTests-\(UUID().uuidString)")
+            vaultService: vault,
+            preferencesViewModel: PreferencesViewModel(
+                settings: settings,
+                cache: PreferencesCacheAdapter(store: cache),
+                vault: vault
             )
         )
         let cleanup: () -> Void = {
