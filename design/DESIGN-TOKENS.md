@@ -60,6 +60,19 @@ Cove 跨平台 UI 一致性的图纸：所有色值/字号/间距/圆角/动效/
 | large | 14 | 浮层、胶囊控制条 | [现状] radiusLarge |
 | row-selection | 8 | 列表行选中高亮圆角（散点正名升格） | [已拍板] 2026-09-05 · TASK-grid-card-details |
 
+## 4.5 符号（SF Symbols）
+
+| 角色 | 值 | 用途 | 状态 |
+|------|----|------|------|
+| symbol-small | 12 | 小控件、tag、紧凑按钮 | [已拍板] 2026-09-05 · TASK-symbol-consistency |
+| symbol-medium | 14 | 工具栏与 transport 控制族 | [已拍板] 2026-09-05 · TASK-symbol-consistency |
+| symbol-large | 18 | 列表行 badge | [已拍板] 2026-09-05 · TASK-symbol-consistency |
+| symbol-hero | 36 | 卡片、空态占位 | [已拍板] 2026-09-05 · TASK-symbol-consistency（占位 light、卡片 regular，两档并存） |
+
+**权重约定**：工具控件一律 semibold；内容 glyph（行 badge、侧栏行图标）
+用 regular/medium。语义图标跟随状态（如音量图标按 0/1-33/34-66/67-100
+分四档，2026-09-05 · TASK-symbol-consistency）。
+
 ## 5. 动效（克制）
 
 | 角色 | 值 | 用途 | 状态 |
