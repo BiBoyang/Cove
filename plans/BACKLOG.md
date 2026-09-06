@@ -4,7 +4,7 @@
 
 ## 进行中 / 待验收
 
-- [ ] UI 统一优化主线：选题池与证据见 plans/UI-AUDIT-2026-09-05.md（按 §4 性价比顺序推进），令牌图纸 design/DESIGN-TOKENS.md；候选下一张卡 = P5 克制的动效 / P6 媒体 chrome（用户点题，协作模式实施）
+- [ ] UI 统一优化主线：选题池与证据见 plans/UI-AUDIT-2026-09-05.md（按 §4 性价比顺序推进），令牌图纸 design/DESIGN-TOKENS.md；P1–P6 + 设置迁移全部落地（P5/P6 于 2026-09-07 真机通过）；候选下一张卡 = 播放器控制条布局重构（IINA 居中窄胶囊，TASK-media-chrome 外挂候选）或新选题（用户点题）
 
 ## 下一波（候选，未排期）
 
@@ -62,3 +62,5 @@
 - SF Symbols 一致性：symbolSmall/Medium/Large/Hero 四档尺寸令牌落地，音量图标随音量四档分档，权重约定入令牌文档 §4.5（见 plans/archive/TASK-symbol-consistency.md，2026-09-05 真机通过）
 - 设置迁移进 App：独立窗口退役，设置成为侧栏目的地（本地仓库同区），四分区迁入主区滚动页、NSOpenPanel 改挂主窗口、Cmd+, 重定向（协作模式三步，见 plans/archive/TASK-settings-in-app.md，2026-09-05 真机通过）
 - 阅读器自定义 X 关闭钮删除：与红绿灯重叠的冗余按钮，关闭收尾本就走 willCloseNotification（audit BUG-2，2026-09-05 真机通过）
+- 克制的动效：motionFast 0.15s / motionMedium 0.25s 两档动效令牌、share 卡片 hover/选中 fill 过渡、占位视图淡入（见 plans/archive/TASK-restrained-motion.md，2026-09-07 真机通过）
+- 媒体 chrome 整治：surfaceOverlay 不透明底板 / textOnMedia 三档 / readerBackground 令牌落地，条带 pill 可见性 + 单页 chrome pill 化，mpv 原生 OSD 根治 + codec chips 随控制条显隐，弹层暖黑化 + accent glyph 选中（废白 checkmark）+ Up Next pill 按钮，播放器中央加载/失败占位；验收修复音量读数定宽与 Up Next 立即播放接线（后者为功能首提交起的潜伏断线）（见 plans/archive/TASK-media-chrome.md，2026-09-07 真机通过）

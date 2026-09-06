@@ -26,10 +26,13 @@ chrome, dark player) regardless of the system appearance.
 - **Video playback**: double-click a video file (mp4, mkv, avi, mov, wmv,
   flv, webm, ts and more — anything mpv plays) to stream it straight off the
   NAS via [libmpv](https://mpv.io) bridged onto Cove's own SMB stack; nothing
-  is downloaded in advance. A floating frosted control capsule (play/pause,
+  is downloaded in advance. A floating warm-black control capsule (play/pause,
   seekable progress, volume with live readout) hides itself with the cursor
-  during playback and returns on mouse movement; the centered file title
-  stays put. Keyboard: space, ←/→ seek, ↑/↓ volume, Esc exits full screen.
+  during playback and returns on mouse movement, with codec info chips
+  (HW / codec / resolution / bitrate) riding the same visibility at the top
+  left; the centered file title stays put. Loading and buffering show a
+  centered spinner, failures a placeholder with retry. Keyboard: space,
+  ←/→ seek, ↑/↓ volume, Esc exits full screen.
   Each video's playback position is remembered and resumed on reopen
   (finished videos start over).
   - **Sibling-video playlist**: the videos alongside the opened one form a
