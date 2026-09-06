@@ -77,6 +77,8 @@ final class PlayerCoordinator {
                 // bridge + mpv handle over the same reader.
                 self.moveTo(index: self.playlist.currentIndex)
             }
+            controller.onUpNextPlayNow = { [weak self] in self?.fireUpNextCountdown() }
+            controller.onUpNextCancel = { [weak self] in self?.cancelUpNextCountdown() }
             windowController = controller
             controller.show()
         }
@@ -172,22 +174,35 @@ final class PlayerCoordinator {
             windowController.updateUpNext(seconds: remaining)
             return
         }
-        // Zero = fired this beat; `nil` is unreachable in practice (cancel
-        // paths nil the model and invalidate the timer) but tears down
-        // without advancing, just in case.
+        if countdown.didFire {
+            fireUpNextCountdown()
+            return
+        }
+        // Terminal without firing: unreachable in practice (cancel paths
+        // nil the model and invalidate the timer) but tears down without
+        // advancing, just in case.
         upNextCountdown = nil
         tearDownUpNextTimer()
         windowController.hideUpNext()
-        if countdown.didFire {
-            // The mode is re-read at fire time; a mode switch during the
-            // countdown is honored, and a mode that no longer advances just
-            // parks (autoAdvanceIndex == nil or current → replay).
-            if let next = playlist.autoAdvanceIndex(mode: playMode) {
-                if next == playlist.currentIndex {
-                    windowController.replayCurrentTrack()
-                } else {
-                    moveTo(index: next)
-                }
+    }
+
+    /// The single fire path: the timer's zero beat, the overlay's
+    /// play-now button, and the Return shortcut all land here. A nil
+    /// countdown means a cancel or a fire already won the race, so a
+    /// stale play-now is a no-op instead of a double advance. The mode is
+    /// re-read at fire time: a mode switch during the countdown is
+    /// honored, and a mode that no longer advances just parks
+    /// (autoAdvanceIndex == nil or current → replay).
+    private func fireUpNextCountdown() {
+        guard upNextCountdown != nil, let windowController else { return }
+        upNextCountdown = nil
+        tearDownUpNextTimer()
+        windowController.hideUpNext()
+        if let next = playlist.autoAdvanceIndex(mode: playMode) {
+            if next == playlist.currentIndex {
+                windowController.replayCurrentTrack()
+            } else {
+                moveTo(index: next)
             }
         }
     }
