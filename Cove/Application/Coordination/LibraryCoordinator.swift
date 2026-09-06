@@ -409,9 +409,12 @@ final class LibraryCoordinator {
     // MARK: - Vault
 
     /// Opens the vault as a virtual share: the same browser pipeline over a
-    /// LocalFileSource, no network, no preheat, no thumbnails (the
-    /// thumbnail pipeline would copy raw bytes into the original pool,
-    /// which the vault red line forbids).
+    /// LocalFileSource, no network, no preheat. Thumbnails are wired once
+    /// the local source is connected, exactly like an SMB share. Unlike the
+    /// reader (which keeps vault bytes out of the original pool), a
+    /// thumbnail miss does copy the file's bytes into that pool — accepted
+    /// for BUG-5 (2026-09-07): local reads are cheap and CacheKit bounds
+    /// the pool by capacity/TTL.
     private func openVault() {
         let generation = beginNavigation()
         browsingVault = true
@@ -419,6 +422,10 @@ final class LibraryCoordinator {
         currentShare = nil
         navigationPath.reset()
         onTitleChange?("本地仓库")
+        // Drop the previous share's provider up front so it cannot serve
+        // stale rows during the connect; the vault's own provider is
+        // installed only after `connectLocal` succeeds (same ordering as
+        // `openShare`).
         browserViewController.thumbnailProvider = nil
         browserViewController.browseMode = .vault
         onShowDetail?(browserViewController)
@@ -426,6 +433,11 @@ final class LibraryCoordinator {
             do {
                 try await sessionService.connectLocal(LocalFileSource(root: vaultService.rootURL))
                 guard generation == navigationGeneration else { return }
+                if let sourceID = sessionService.currentSourceID {
+                    browserViewController.thumbnailProvider = ThumbnailService(
+                        readFile: makeFileReader(), cache: cache, sourceID: sourceID
+                    )
+                }
                 try await loadDirectory(at: "/", generation: generation)
             } catch {
                 if Task.isCancelled || error is CancellationError { return }
