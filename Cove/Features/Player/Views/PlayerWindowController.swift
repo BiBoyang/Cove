@@ -381,9 +381,9 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
         rootView.addSubview(upNextOverlay)
         upNextOverlay.snp.makeConstraints { make in
             make.trailing.equalToSuperview().offset(-16)
-            // Magic offset above the bottom capsule, carried over from the
-            // single-row layout; the taller two-row capsule eats into it.
-            make.bottom.equalToSuperview().offset(-76)
+            // Anchored to the capsule top with a fixed 12pt gap, so the pill
+            // tracks the two-row capsule instead of overlapping it.
+            make.bottom.equalTo(controlsCapsule.snp.top).offset(-12)
             make.width.lessThanOrEqualTo(340)
         }
     }
