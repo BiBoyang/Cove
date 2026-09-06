@@ -4,7 +4,7 @@
 
 ## 进行中 / 待验收
 
-- [ ] UI 统一优化主线：选题池与证据见 plans/UI-AUDIT-2026-09-05.md（按 §4 性价比顺序推进），令牌图纸 design/DESIGN-TOKENS.md；P1–P6 + 设置迁移 + 播放器控制条胶囊重构全部落地（P5/P6/胶囊于 2026-09-07 真机通过）；候选下一张卡 = 新选题（用户点题）
+- [ ] UI 统一优化主线：选题池与证据见 plans/UI-AUDIT-2026-09-05.md（按 §4 性价比顺序推进），令牌图纸 design/DESIGN-TOKENS.md；P1–P6 + 设置迁移 + 播放器控制条胶囊重构 + audit 残余清扫全部落地（P5/P6/胶囊于 2026-09-07 真机通过）；残余待办 = U1 spacing 令牌族（另立卡）；候选下一张卡 = 新选题（用户点题）
 
 ## 下一波（候选，未排期）
 
@@ -65,3 +65,4 @@
 - 克制的动效：motionFast 0.15s / motionMedium 0.25s 两档动效令牌、share 卡片 hover/选中 fill 过渡、占位视图淡入（见 plans/archive/TASK-restrained-motion.md，2026-09-07 真机通过）
 - 媒体 chrome 整治：surfaceOverlay 不透明底板 / textOnMedia 三档 / readerBackground 令牌落地，条带 pill 可见性 + 单页 chrome pill 化，mpv 原生 OSD 根治 + codec chips 随控制条显隐，弹层暖黑化 + accent glyph 选中（废白 checkmark）+ Up Next pill 按钮，播放器中央加载/失败占位；验收修复音量读数定宽与 Up Next 立即播放接线（后者为功能首提交起的潜伏断线）（见 plans/archive/TASK-media-chrome.md，2026-09-07 真机通过）
 - 播放器控制条布局重构：IINA 式底部居中双排窄胶囊（上排音量组 + transport + 工具钮，下排进度条 + 两端时间码）+ 窗口 minSize 520×320，Up Next bottom 魔数 -76 → 锚定胶囊顶 +12（见 plans/archive/TASK-player-controls-capsule.md，2026-09-07 真机通过）
+- UI audit 残余清扫：vault 缩略图接通 ThumbnailService（BUG-5 判定漏接）、设置页五钮统一 PillButton 配方（E3）、U2/U3 复核销项 + U4 系统蓝拍板入 §6.8、vault 红线注释随缩略图缓存例外同步（见 plans/archive/TASK-ui-audit-sweep.md，2026-09-07 真机通过）
