@@ -246,7 +246,8 @@ final class SMBSessionService {
 
     /// Connects a local source (the vault's `LocalFileSource`), replacing
     /// any active session. No password, no preheat connection — local reads
-    /// are cheap and the vault never enters any cache pool.
+    /// are cheap. Thumbnail loads copy vault bytes through the cache pools
+    /// (BUG-5, 2026-09-07); the reader still bypasses the original pool.
     func connectLocal(_ newSource: any ContentSource) async throws {
         try await newSource.connect()
         logger.info("Connected local source \(newSource.sourceID)", privacy: .public)

@@ -119,6 +119,10 @@ selection 填充。卡片可承载元信息（类型标签 + 相对时间）；s
 overlayButtonFillHover / overlayButtonBorder`，PillButton.secondary 与
 FrostedCircleButton 共用。
 
+PillButton.primary 填充 = controlAccentColor 系统蓝（hover 提亮 15% 白）：
+主行动按钮沿用系统语义色，与 selection / 进度条蓝同族，accent 金仍只做
+glyph 级点缀。[已拍板] 2026-09-07 · TASK-ui-audit-sweep（audit U4 销项）
+
 ### 6.5 播放器 chrome
 [提议，借 IINA OSC 01/02 + SenPlayer 控制条 11]
 - 悬浮胶囊（圆角 large，底板 surface-overlay），底部居中，空闲自动隐藏。

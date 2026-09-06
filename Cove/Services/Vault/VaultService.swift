@@ -5,10 +5,12 @@ import TraceKit
 /// The local vault: permanent whole-file copies downloaded from SMB shares.
 ///
 /// Semantic boundary (task decision): the vault is ownership, not cache —
-/// vault files never enter the original pool, are never evicted, and
-/// deletion only ever touches the local copy. Downloads are atomic per
-/// file (write temp, then rename over the destination), report progress,
-/// and are cancellable with no partial files left behind.
+/// vault files are never evicted, and deletion only ever touches the local
+/// copy. Downloads are atomic per file (write temp, then rename over the
+/// destination), report progress, and are cancellable with no partial files
+/// left behind. Browsing thumbnails copy bytes through the cache pools
+/// (BUG-5, 2026-09-07); the vault files themselves stay outside cache
+/// management.
 @MainActor
 final class VaultService {
     /// Progress snapshot for one download run.
