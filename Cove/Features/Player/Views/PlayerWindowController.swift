@@ -253,8 +253,11 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
 
         volumeValueLabel.font = .monospacedDigitSystemFont(ofSize: 11, weight: .medium)
         volumeValueLabel.textColor = CoveStyle.textOnMedia2
-        volumeValueLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
-        volumeValueLabel.setContentHuggingPriority(.required, for: .horizontal)
+        // Left-aligned inside the fixed width below: digits stay glued to
+        // the slider they mirror while trailing padding absorbs the
+        // 1–3-digit swing ("0"–"100"), so the flexible progress bar never
+        // shifts with the digit count.
+        volumeValueLabel.alignment = .left
 
         capsuleBoard.addSubview(previousTrackButton)
         capsuleBoard.addSubview(playPauseButton)
@@ -319,6 +322,7 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
         volumeValueLabel.snp.makeConstraints { make in
             make.leading.equalTo(volumeSlider.snp.trailing).offset(4)
             make.centerY.equalToSuperview()
+            make.width.equalTo(Self.volumeReadoutWidth)
         }
         // The progress bar is the flexible element between volume and time.
         progressSlider.snp.makeConstraints { make in
@@ -467,6 +471,14 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
     private static func speedLabel(_ speed: Double) -> String {
         speed == speed.rounded() ? "\(Int(speed))x" : "\(speed)x"
     }
+
+    /// Fixed width for the live volume readout, measured from the widest
+    /// value ("100") in its font, so the capsule layout does not depend on
+    /// the digit count currently on screen.
+    private static let volumeReadoutWidth: CGFloat = {
+        let font = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .medium)
+        return ceil(("100" as NSString).size(withAttributes: [.font: font]).width)
+    }()
 
     /// Volume icon follows the level, system convention: muted at zero,
     /// then one to three waves by thirds.
