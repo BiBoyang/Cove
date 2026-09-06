@@ -63,7 +63,6 @@ struct PlayerViewModelTests {
 
         viewModel.apply(.bufferingChanged(true))
         #expect(viewModel.state == .buffering)
-        #expect(viewModel.statusText == "缓冲中…")
 
         viewModel.apply(.pauseChanged(true))
         #expect(viewModel.state == .buffering)
@@ -125,7 +124,9 @@ struct PlayerViewModelTests {
         viewModel.apply(.timePosChanged(10))
         #expect(viewModel.currentTime == 10)
         #expect(viewModel.duration == 120)
-        #expect(viewModel.timeText == "0:10 / 2:00")
+        // Split timecodes for the capsule's lower row.
+        #expect(viewModel.elapsedText == "0:10")
+        #expect(viewModel.totalText == "2:00")
 
         viewModel.beginScrubbing()
         viewModel.apply(.timePosChanged(40))

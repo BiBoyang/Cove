@@ -5,13 +5,14 @@ import SourceKit
 /// The player window: the mpv render layer fills
 /// the whole window under a transparent title bar, with the file name as a
 /// centered overlay title at the top (long names truncate from the middle
-/// so they stay centered). A floating frosted capsule at the bottom
-/// carries, in order: previous / play-pause / next, the playback-rate
-/// button ("1x", popover with speeds), volume icon + slider + live number,
-/// the draggable progress slider, the time readout, and the playlist
-/// button (popover listing the queue; tap a row to jump to it). The play
-/// mode (single / repeat-one / list / list-loop / shuffle) is a capsule
-/// button showing the current mode symbol with a popover picker.
+/// so they stay centered). A floating frosted capsule, bottom-centered and
+/// sized to its content, carries two rows: the upper row is the volume
+/// icon + slider + live number, then previous / play-pause / next, then
+/// the playback-rate button ("1x", popover with speeds), the play-mode
+/// button (single / repeat-one / list / list-loop / shuffle, symbol with a
+/// popover picker), and the playlist button (popover listing the queue;
+/// tap a row to jump to it); the lower row is the elapsed time, the
+/// draggable progress slider, and the total duration.
 ///
 /// During playback the capsule and cursor hide after a short idle timeout
 /// and come back on any mouse movement; the centered title stays put.
@@ -56,7 +57,9 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
     private let nextTrackButton = NSButton()
     private let speedButton = NSButton()
     private let progressSlider = NSSlider()
-    private let timeLabel = NSTextField(labelWithString: "")
+    /// Lower-row timecodes: elapsed at the left end, total at the right.
+    private let elapsedTimeLabel = NSTextField(labelWithString: "")
+    private let durationLabel = NSTextField(labelWithString: "")
     private let volumeIconView = NSImageView()
     private let volumeSlider = NSSlider()
     /// Live volume readout ("65") next to the slider; updates on drags and
@@ -115,6 +118,12 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
             defer: false
         )
         window.title = item.name
+        // The bottom capsule shrink-wraps its content and stays centered;
+        // the floor keeps a narrowed window clear of the capsule's sides
+        // (520 covers its natural width, ~370, with margin) and leaves a
+        // usable video area. No frame autosave exists, so nothing restores
+        // a smaller frame that would need clamping.
+        window.minSize = NSSize(width: 520, height: 320)
         // The centered overlay title below replaces the system title (long
         // names lean left in the system title bar; ours truncates from the
         // middle and stays centered).
@@ -233,9 +242,14 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
         progressSlider.target = self
         progressSlider.action = #selector(handleProgressSlider(_:))
 
-        timeLabel.font = CoveStyle.monoDigitFont
-        timeLabel.textColor = CoveStyle.textOnMedia2
-        timeLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
+        for timeReadout in [elapsedTimeLabel, durationLabel] {
+            timeReadout.font = CoveStyle.monoDigitFont
+            timeReadout.textColor = CoveStyle.textOnMedia2
+            timeReadout.setContentCompressionResistancePriority(.required, for: .horizontal)
+        }
+        // The total-length readout hugs the capsule's right edge, so width
+        // swings ("0:45" vs "1:23:45") grow leftward into the flexible bar.
+        durationLabel.alignment = .right
 
         volumeIconView.image = NSImage(
             systemSymbolName: Self.volumeSymbolName(for: viewModel.volume),
@@ -267,7 +281,8 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
         capsuleBoard.addSubview(volumeSlider)
         capsuleBoard.addSubview(volumeValueLabel)
         capsuleBoard.addSubview(progressSlider)
-        capsuleBoard.addSubview(timeLabel)
+        capsuleBoard.addSubview(elapsedTimeLabel)
+        capsuleBoard.addSubview(durationLabel)
         capsuleBoard.addSubview(playlistButton)
         capsuleBoard.addSubview(playModeButton)
 
@@ -282,67 +297,79 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
             make.trailing.lessThanOrEqualToSuperview().offset(-90)
         }
         controlsCapsule.snp.makeConstraints { make in
-            make.leading.trailing.equalToSuperview().inset(16)
+            make.centerX.equalToSuperview()
             make.bottom.equalToSuperview().offset(-16)
-            make.height.equalTo(48)
+            make.height.equalTo(68)
+            // The upper row below is a chain of fixed-size controls, so the
+            // capsule shrink-wraps to its content; the cap only guards a
+            // window narrower than the content (window.minSize prevents
+            // that in practice).
+            make.width.lessThanOrEqualToSuperview().offset(-32)
         }
         capsuleBoard.snp.makeConstraints { make in
             make.edges.equalToSuperview()
         }
-        previousTrackButton.snp.makeConstraints { make in
-            make.leading.equalToSuperview().offset(16)
-            make.centerY.equalToSuperview()
-            make.size.equalTo(28)
-        }
-        playPauseButton.snp.makeConstraints { make in
-            make.leading.equalTo(previousTrackButton.snp.trailing).offset(6)
-            make.centerY.equalToSuperview()
-            make.size.equalTo(28)
-        }
-        nextTrackButton.snp.makeConstraints { make in
-            make.leading.equalTo(playPauseButton.snp.trailing).offset(6)
-            make.centerY.equalToSuperview()
-            make.size.equalTo(28)
-        }
-        speedButton.snp.makeConstraints { make in
-            make.leading.equalTo(nextTrackButton.snp.trailing).offset(12)
-            make.centerY.equalToSuperview()
-            make.width.equalTo(38)
-        }
+        // Upper row: volume group | transport | tool buttons. Everything is
+        // fixed-size, so this chain defines the capsule's natural width.
         volumeIconView.snp.makeConstraints { make in
-            make.leading.equalTo(speedButton.snp.trailing).offset(8)
-            make.centerY.equalToSuperview()
+            make.leading.equalToSuperview().offset(16)
+            make.centerY.equalToSuperview().offset(Self.upperRowCenterY)
             make.size.equalTo(16)
         }
         volumeSlider.snp.makeConstraints { make in
             make.leading.equalTo(volumeIconView.snp.trailing).offset(4)
-            make.centerY.equalToSuperview()
+            make.centerY.equalToSuperview().offset(Self.upperRowCenterY)
             make.width.equalTo(64)
         }
         volumeValueLabel.snp.makeConstraints { make in
             make.leading.equalTo(volumeSlider.snp.trailing).offset(4)
-            make.centerY.equalToSuperview()
+            make.centerY.equalToSuperview().offset(Self.upperRowCenterY)
             make.width.equalTo(Self.volumeReadoutWidth)
         }
-        // The progress bar is the flexible element between volume and time.
-        progressSlider.snp.makeConstraints { make in
+        previousTrackButton.snp.makeConstraints { make in
             make.leading.equalTo(volumeValueLabel.snp.trailing).offset(12)
-            make.centerY.equalToSuperview()
+            make.centerY.equalToSuperview().offset(Self.upperRowCenterY)
+            make.size.equalTo(28)
         }
-        timeLabel.snp.makeConstraints { make in
-            make.leading.equalTo(progressSlider.snp.trailing).offset(10)
-            make.centerY.equalToSuperview()
+        playPauseButton.snp.makeConstraints { make in
+            make.leading.equalTo(previousTrackButton.snp.trailing).offset(6)
+            make.centerY.equalToSuperview().offset(Self.upperRowCenterY)
+            make.size.equalTo(28)
+        }
+        nextTrackButton.snp.makeConstraints { make in
+            make.leading.equalTo(playPauseButton.snp.trailing).offset(6)
+            make.centerY.equalToSuperview().offset(Self.upperRowCenterY)
+            make.size.equalTo(28)
+        }
+        speedButton.snp.makeConstraints { make in
+            make.leading.equalTo(nextTrackButton.snp.trailing).offset(12)
+            make.centerY.equalToSuperview().offset(Self.upperRowCenterY)
+            make.width.equalTo(38)
         }
         playModeButton.snp.makeConstraints { make in
-            make.leading.equalTo(timeLabel.snp.trailing).offset(10)
-            make.centerY.equalToSuperview()
+            make.leading.equalTo(speedButton.snp.trailing).offset(8)
+            make.centerY.equalToSuperview().offset(Self.upperRowCenterY)
             make.size.equalTo(28)
         }
         playlistButton.snp.makeConstraints { make in
-            make.leading.equalTo(playModeButton.snp.trailing).offset(4)
+            make.leading.equalTo(playModeButton.snp.trailing).offset(6)
             make.trailing.equalToSuperview().offset(-16)
-            make.centerY.equalToSuperview()
+            make.centerY.equalToSuperview().offset(Self.upperRowCenterY)
             make.size.equalTo(28)
+        }
+        // Lower row: elapsed time (left) + flexible progress + total (right).
+        elapsedTimeLabel.snp.makeConstraints { make in
+            make.leading.equalToSuperview().offset(16)
+            make.centerY.equalToSuperview().offset(Self.lowerRowCenterY)
+        }
+        progressSlider.snp.makeConstraints { make in
+            make.leading.equalTo(elapsedTimeLabel.snp.trailing).offset(10)
+            make.centerY.equalToSuperview().offset(Self.lowerRowCenterY)
+        }
+        durationLabel.snp.makeConstraints { make in
+            make.leading.equalTo(progressSlider.snp.trailing).offset(10)
+            make.trailing.equalToSuperview().offset(-16)
+            make.centerY.equalToSuperview().offset(Self.lowerRowCenterY)
         }
 
         // Up-next pill: same shadow/material recipe as the controls capsule,
@@ -354,7 +381,8 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
         rootView.addSubview(upNextOverlay)
         upNextOverlay.snp.makeConstraints { make in
             make.trailing.equalToSuperview().offset(-16)
-            // Above the 48pt capsule (bottom -16): 16 + 48 + 12 gap = 76.
+            // Magic offset above the bottom capsule, carried over from the
+            // single-row layout; the taller two-row capsule eats into it.
             make.bottom.equalToSuperview().offset(-76)
             make.width.lessThanOrEqualTo(340)
         }
@@ -480,6 +508,13 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
         return ceil(("100" as NSString).size(withAttributes: [.font: font]).width)
     }()
 
+    /// Row centers inside the two-row capsule, as offsets from the capsule's
+    /// vertical center (height 68 → center at 34): the transport row sits
+    /// 25pt from the top (34 - 9), the timecode/progress row 47pt from the
+    /// top (34 + 13).
+    private static let upperRowCenterY: CGFloat = -9
+    private static let lowerRowCenterY: CGFloat = 13
+
     /// Volume icon follows the level, system convention: muted at zero,
     /// then one to three waves by thirds.
     static func volumeSymbolName(for volume: Double) -> String {
@@ -600,7 +635,8 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
             NSImage.SymbolConfiguration(pointSize: CoveStyle.symbolMedium, weight: .medium)
         )
         speedButton.title = Self.speedLabel(viewModel.speed)
-        timeLabel.stringValue = viewModel.statusText ?? viewModel.timeText
+        elapsedTimeLabel.stringValue = viewModel.elapsedText
+        durationLabel.stringValue = viewModel.totalText
         renderCodecChips()
         renderStateOverlay()
         renderControlsVisibility()

@@ -302,23 +302,19 @@ final class PlayerViewModel {
         hasLoaded && !hasFailed
     }
 
-    /// Status text replacing the time readout outside normal playback.
-    var statusText: String? {
-        switch state {
-        case .loading: return "加载中…"
-        case .buffering: return "缓冲中…"
-        case .error: return "播放失败"
-        case .playing, .paused: return nil
-        }
-    }
-
     /// True while the transport button should offer pausing.
     var showsPauseButton: Bool {
         state == .playing || state == .buffering
     }
 
-    var timeText: String {
-        "\(Self.formatTime(currentTime)) / \(Self.formatTime(duration))"
+    /// Elapsed readout for the capsule's lower-left timecode.
+    var elapsedText: String {
+        Self.formatTime(currentTime)
+    }
+
+    /// Total-length readout for the capsule's lower-right timecode.
+    var totalText: String {
+        Self.formatTime(duration)
     }
 
     static func formatTime(_ seconds: Double) -> String {
