@@ -17,15 +17,15 @@ final class SettingsPaneViewController: NSViewController {
     private let ttlField = NSTextField()
     private let originalUsageLabel = NSTextField(labelWithString: "")
     private let displayUsageLabel = NSTextField(labelWithString: "")
-    private let clearButton = NSButton(title: "立即清理", target: nil, action: nil)
+    private let clearButton = PillButton(title: "立即清理", style: .secondary)
 
     // Preheat section
     private let preheatCheckbox = NSButton(checkboxWithTitle: "启用预热", target: nil, action: nil)
     private let rateLimitField = NSTextField()
     private let folderField = NSTextField()
     private let folderTableView = NSTableView()
-    private let addFolderButton = NSButton(title: "添加", target: nil, action: nil)
-    private let removeFolderButton = NSButton(title: "删除", target: nil, action: nil)
+    private let addFolderButton = PillButton(title: "添加", style: .primary)
+    private let removeFolderButton = PillButton(title: "删除", style: .secondary)
 
     // Reader section
     private let readerResumeCheckbox = NSButton(
@@ -34,8 +34,8 @@ final class SettingsPaneViewController: NSViewController {
 
     // Vault section
     private let vaultPathLabel = NSTextField(labelWithString: "")
-    private let chooseVaultButton = NSButton(title: "更改…", target: nil, action: nil)
-    private let revealVaultButton = NSButton(title: "在 Finder 中打开", target: nil, action: nil)
+    private let chooseVaultButton = PillButton(title: "更改…", style: .secondary)
+    private let revealVaultButton = PillButton(title: "在 Finder 中打开", style: .secondary)
 
     private let byteFormatter: ByteCountFormatter = {
         let formatter = ByteCountFormatter()
@@ -99,13 +99,10 @@ final class SettingsPaneViewController: NSViewController {
         readerResumeCheckbox.font = CoveStyle.formLabelFont
         clearButton.target = self
         clearButton.action = #selector(clearCache(_:))
-        clearButton.bezelStyle = .rounded
         addFolderButton.target = self
         addFolderButton.action = #selector(addFolder(_:))
-        addFolderButton.bezelStyle = .rounded
         removeFolderButton.target = self
         removeFolderButton.action = #selector(removeFolder(_:))
-        removeFolderButton.bezelStyle = .rounded
 
         vaultPathLabel.font = CoveStyle.captionFont
         vaultPathLabel.textColor = .secondaryLabelColor
@@ -113,10 +110,8 @@ final class SettingsPaneViewController: NSViewController {
         vaultPathLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         chooseVaultButton.target = self
         chooseVaultButton.action = #selector(chooseVaultLocation(_:))
-        chooseVaultButton.bezelStyle = .rounded
         revealVaultButton.target = self
         revealVaultButton.action = #selector(revealVaultLocation(_:))
-        revealVaultButton.bezelStyle = .rounded
 
         // Return in the input field adds the folder.
         folderField.placeholderString = "公共空间/动漫/xxx"
