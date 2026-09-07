@@ -62,7 +62,10 @@ struct ContinuousReaderViewModelTests {
         // the relayout the surviving slots trigger) comes near page 2.
         vm.updateScrollOffset(6000)
 
-        try await Task.sleep(for: .milliseconds(350))
+        // Wait until the cancelled load has run its course; only then has
+        // page 2's late image had its chance to land. A fixed sleep would
+        // bet on the cancelled task being scheduled in time under load.
+        try await waitUntil("cancelled load for page 2 never finished") { await loader.finishCount(for: 2) == 1 }
         #expect(!images.contains(2))
         #expect(await loader.callCount(for: 2) == 1)
     }
@@ -79,7 +82,9 @@ struct ContinuousReaderViewModelTests {
         vm.updateScrollOffset(0)    // re-create: fresh generation, new task
 
         try await waitUntil { images.contains(2) }
-        try await Task.sleep(for: .milliseconds(200))
+        // Both attempts on page 2 have run their course: the cancelled
+        // first-generation task and the landed second-generation load.
+        try await waitUntil("page 2's first-generation load never finished") { await loader.finishCount(for: 2) == 2 }
         // Exactly one landing — the stale first-generation task was
         // cancelled on destroy and its result would be discarded anyway.
         #expect(images.filter { $0 == 2 }.count == 1)
@@ -91,14 +96,22 @@ struct ContinuousReaderViewModelTests {
         let vm = makeViewModel(loader: RecordingStripLoader(delay: .milliseconds(10)))
         var images = 0
         var relayouts: [CGFloat] = []
+        // The six-measurement height is transient: once the resident pages
+        // shrink, the window admits pages 6-7 and their loads move the
+        // height on (7400 → 7200). Latch it at relayout time instead of
+        // polling for it.
+        var sawSixMeasuredHeight = false
         vm.onSlotImage = { _, _ in images += 1 }
-        vm.onRelayout = { relayouts.append($0) }
+        vm.onRelayout = { offset in
+            relayouts.append(offset)
+            if abs(vm.contentHeight - 7400) < 0.01 { sawSixMeasuredHeight = true }
+        }
         vm.updateViewport(width: 300, height: 550)
 
         // Six resident slots measure at aspect 1.0 (300pt); the other 14
-        // pages stay at the 400pt estimate.
-        try await waitUntil { images == 6 }
-        try await waitUntil { abs(vm.contentHeight - 7400) < 0.01 }
+        // pages stay at the 400pt estimate (6×300 + 14×400 = 7400).
+        try await waitUntil { images >= 6 }
+        try await waitUntil("the six-measurement batch never relaid out") { sawSixMeasuredHeight }
         #expect(!relayouts.isEmpty)
         // Anchor was page 0 at offset 0: the viewport does not move.
         #expect(abs((relayouts.last ?? -1) - 0) < 0.01)
@@ -247,6 +260,10 @@ struct ContinuousReaderViewModelTests {
 /// a 1:1 (300×300) display size after a configurable delay.
 private actor RecordingStripLoader: ReaderPageLoading {
     private var calls: [Int] = []
+    /// Attempts that ended, whether by returning or by throwing (e.g.
+    /// cancellation) — lets tests wait until a cancelled load has run its
+    /// course instead of betting on a fixed sleep.
+    private var finished: [Int] = []
     private let delay: Duration
 
     init(delay: Duration = .milliseconds(20)) {
@@ -255,12 +272,22 @@ private actor RecordingStripLoader: ReaderPageLoading {
 
     func load(pageAt index: Int) async throws -> ReaderLoadedImage {
         calls.append(index)
-        try await Task.sleep(for: delay)
+        do {
+            try await Task.sleep(for: delay)
+        } catch {
+            finished.append(index)
+            throw error
+        }
+        finished.append(index)
         return ReaderLoadedImage(image: makeStripImage(), size: CGSize(width: 300, height: 300))
     }
 
     func callCount(for index: Int) -> Int {
         calls.filter { $0 == index }.count
+    }
+
+    func finishCount(for index: Int) -> Int {
+        finished.filter { $0 == index }.count
     }
 }
 
@@ -292,6 +319,22 @@ private func waitUntil(
 ) async throws {
     let deadline = ContinuousClock.now + .seconds(10)
     while !condition() {
+        if ContinuousClock.now > deadline {
+            throw StripWaitTimeout(message: message())
+        }
+        try await Task.sleep(for: .milliseconds(5))
+    }
+}
+
+/// Async-condition variant of `waitUntil`, for conditions that must hop to
+/// another actor (the loader double) to be checked.
+@MainActor
+private func waitUntil(
+    _ message: @autoclosure () -> String = "condition not met before timeout",
+    _ condition: () async -> Bool
+) async throws {
+    let deadline = ContinuousClock.now + .seconds(10)
+    while await !condition() {
         if ContinuousClock.now > deadline {
             throw StripWaitTimeout(message: message())
         }
