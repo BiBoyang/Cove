@@ -23,10 +23,15 @@ xcuserdata/
 Pods/
 Carthage/Build/
 
-# Vendored libmpv forest (116MB of IINA-signed dylibs, licensing-sensitive).
-# Assemble locally with scripts/assemble-libmpv.sh; see
-# plans/SPIKE-video-playback.md.
-Vendor/libmpv/
+# Vendored libmpv dylib forests (licensing-sensitive, never committed):
+#   Vendor/libmpv/             active forest — self-built LGPL-clean chain
+#                              (scripts/build-libmpv.sh; license texts and
+#                              upstream source mapping live in LICENSES/)
+#   Vendor/libmpv-self/        build-libmpv.sh's own output/staging dir
+#   Vendor/libmpv-iina-backup/ rollback copy of the old IINA.app forest,
+#                              kept during acceptance (assemble-libmpv.sh,
+#                              deprecated)
+Vendor/
 
 # Local-only collaboration logs (AI-assisted dev process). Design knowledge
 # lives in plans/, which stays tracked.
