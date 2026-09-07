@@ -70,3 +70,4 @@
 - libmpv 供应链收敛：脱离 IINA 森林，scripts/build-libmpv.sh 自构建 LGPL 清洁链（mpv 0.41.0 `-Dgpl=false` + FFmpeg 7.1.5 解码裁剪+VideoToolbox，arm64；18 dylib/18MB vs 原 71/116MB），GPL 指纹与闭包自检入脚本、约束级回归测试入网、LICENSES/ 合规交付；embed 脚本修旧库残留（见 plans/archive/TASK-libmpv-supply-chain.md + plans/libmpv-license-audit-2026-09-07.md，2026-09-08 真机七项回归通过）
 - 播放器字幕轨开关：胶囊字幕钮 + 内嵌轨弹层（关闭/各轨，当前项对勾），无轨置灰、切集重置；track-list NODE 观察 + 纯值解析单测（见 plans/archive/TASK-subtitle-track-picker.md，2026-09-08 真机通过）
 - shadow 配方令牌化：阴影散点 5 处聚类收敛为两档——shadowTextOnMedia（黑 0.6/blur 3/(0,-1)，媒体文字可读性）与 shadowFloatingChrome（黑 0.35/blur 10/(0,-2)，胶囊/Up Next pill 浮层）；零视觉变化，入 §4.6（见 plans/archive/TASK-shadow-recipe.md，2026-09-08 验收通过）
+- share 卡片升级信息卡片：名称 + 备注（comment，有则显示）+「最近打开」相对时间（本地 ShareOpenStore 记录，删服务器即清）；Step 0 spike 实证 SMB 枚举仅 name/comment 两字段后拍板 A1+A2 叠加；无元信息时与现状像素级一致（见 plans/archive/TASK-share-info-card.md，2026-09-08 真机通过）
