@@ -16,6 +16,10 @@ final class MainWindowController: NSWindowController {
 
         sidebarItem = NSSplitViewItem(sidebarWithViewController: libraryCoordinator.serverListViewController)
         sidebarItem.minimumThickness = 200
+        // A detail pane with width opinions stronger than the default item
+        // holding priority (250) can drag the divider and grow the sidebar;
+        // the cap keeps any such leak bounded.
+        sidebarItem.maximumThickness = 320
         sidebarItem.preferredThicknessFraction = 0.25
         // There is no UI to bring a collapsed sidebar back, so collapsing
         // is disabled until a sidebar toggle exists.

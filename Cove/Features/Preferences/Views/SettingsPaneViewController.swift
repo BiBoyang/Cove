@@ -139,10 +139,16 @@ final class SettingsPaneViewController: NSViewController {
             make.top.equalToSuperview().offset(CoveStyle.space20)
             make.bottom.equalToSuperview().offset(-CoveStyle.space20)
             make.leading.equalToSuperview().offset(CoveStyle.space20)
-            // Fill the pane width up to a readable column, then stop; the
-            // offset is the 20pt content inset on both sides.
-            make.width.equalTo(content).offset(-2 * CoveStyle.space20).priority(999)
+            // Readable column: aim at the max width as a constant target and
+            // never exceed the pane. The target must not reference the pane
+            // width above the split items' holding priority — an optional
+            // pane-coupled fill dragged the divider on mount and grew the
+            // sidebar (2026-09-07 width-drift bug). A constant target pulls
+            // the column toward 560 against the required bounds only; the
+            // offsets are the 20pt content inset on both sides.
             make.width.lessThanOrEqualTo(560)
+            make.width.equalTo(560).priority(999)
+            make.width.lessThanOrEqualTo(content).offset(-2 * CoveStyle.space20)
         }
 
         stack.addArrangedSubview(makeHeader("缓存"))
