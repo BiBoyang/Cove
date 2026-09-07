@@ -13,11 +13,13 @@ final class LibraryCoordinator {
     private let readerCoordinator: ReaderCoordinator
     private let preheatService: PreheatService
     private let vaultService: VaultService
+    private let shareOpenStore: ShareOpenStore
 
     private let serverListViewModel = ServerListViewModel()
     /// Internal (not private) so the enumeration-failure placeholder wiring
-    /// is unit-testable, like `enumerateShares`.
-    let shareGridViewModel = ShareGridViewModel()
+    /// is unit-testable, like `enumerateShares`. Built in `init` because its
+    /// records lookup reads the share-open store.
+    let shareGridViewModel: ShareGridViewModel
     private let browserViewModel = BrowserViewModel()
 
     let serverListViewController: ServerListViewController
@@ -57,6 +59,7 @@ final class LibraryCoordinator {
         preheatService: PreheatService,
         vaultService: VaultService,
         preferencesViewModel: PreferencesViewModel,
+        shareOpenStore: ShareOpenStore,
         progressStore: PlaybackProgressStoring? = nil
     ) {
         self.sessionService = sessionService
@@ -64,8 +67,12 @@ final class LibraryCoordinator {
         self.readerCoordinator = readerCoordinator
         self.preheatService = preheatService
         self.vaultService = vaultService
+        self.shareOpenStore = shareOpenStore
         playerCoordinator = PlayerCoordinator(progressStore: progressStore)
         pdfReaderCoordinator = PdfReaderCoordinator(cache: cache)
+        shareGridViewModel = ShareGridViewModel(lastOpened: { [shareOpenStore] serverID, share in
+            shareOpenStore.lastOpened(forServer: serverID, share: share)
+        })
         serverListViewController = ServerListViewController(viewModel: serverListViewModel)
         shareGridViewController = ShareGridViewController(viewModel: shareGridViewModel)
         browserViewController = BrowserViewController(viewModel: browserViewModel)
@@ -229,6 +236,9 @@ final class LibraryCoordinator {
             do {
                 try sessionService.removeServer(id: server.id)
                 serverListViewModel.update(servers: sessionService.servers)
+                // The server's open records can never be shown again once
+                // its id is gone; prune them instead of letting them rot.
+                shareOpenStore.removeRecords(forServer: server.id)
                 if currentServer?.id == server.id { resetAfterRemovingCurrentServer() }
             } catch {
                 onError?(error, "删除服务器失败")
@@ -291,7 +301,7 @@ final class LibraryCoordinator {
                 let shares = try await sessionService.enumerateShares(for: server.id)
                 guard generation == navigationGeneration else { return }
                 currentShare = nil
-                shareGridViewModel.display(shares: shares)
+                shareGridViewModel.display(shares: shares, serverID: server.id)
             } catch {
                 if Task.isCancelled { return }
                 guard generation == navigationGeneration else { return }
@@ -318,6 +328,11 @@ final class LibraryCoordinator {
                 try await sessionService.connect(to: server, share: share.name)
                 guard generation == navigationGeneration else { return }
                 currentShare = share.name
+                // Record the open the moment the connection is established
+                // (decision record: success only — a failed open writes
+                // nothing; a later directory-load failure still counts as
+                // an opened share).
+                shareOpenStore.recordOpen(forServer: server.id, share: share.name)
                 browsingVault = false
                 browserViewController.browseMode = .remote
                 navigationPath.reset()
@@ -383,6 +398,9 @@ final class LibraryCoordinator {
         navigationPath.reset()
         onTitleChange?(currentServer?.displayName ?? "Cove")
         browserViewController.thumbnailProvider = nil
+        // The grid reappears with the open record just written; re-assemble
+        // the cards so the "last opened" lines are fresh.
+        shareGridViewModel.refreshCards()
         onShowDetail?(shareGridViewController)
         activeTask = Task { await sessionService.disconnect() }
     }

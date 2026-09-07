@@ -267,12 +267,12 @@ struct ServerViewModelTests {
         viewModel.showLoading()
         #expect(viewModel.state.placeholder?.kind == .loading)
 
-        viewModel.display(shares: [])
+        viewModel.display(shares: [], serverID: UUID())
         #expect(viewModel.state.placeholder?.kind == .info(symbol: "folder"))
 
         let share = SMBShareInfo(name: "media", comment: "")
-        viewModel.display(shares: [share])
-        #expect(viewModel.state.shares == [share])
+        viewModel.display(shares: [share], serverID: UUID())
+        #expect(viewModel.state.cards.map(\.share) == [share])
         #expect(viewModel.state.placeholder == nil)
     }
 }

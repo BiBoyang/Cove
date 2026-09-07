@@ -230,7 +230,8 @@ struct LibraryEndpointSwitchTests {
                 settings: settings,
                 cache: PreferencesCacheAdapter(store: cache),
                 vault: vault
-            )
+            ),
+            shareOpenStore: ShareOpenStore(defaults: UserDefaults(suiteName: settingsSuite)!)
         )
         let cleanup: () -> Void = {
             defaults.removePersistentDomain(forName: suiteName)

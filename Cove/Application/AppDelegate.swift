@@ -23,6 +23,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let sessionService = SMBSessionService()
         let progressStore = PlaybackProgressStore()
         let readingProgressStore = ReadingProgressStore()
+        let shareOpenStore = ShareOpenStore()
         let vaultService = VaultService(settings: settingsService)
         // One preferences session for the sidebar settings destination,
         // built here because only the composition root sees all services.
@@ -44,6 +45,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             preheatService: preheatService,
             vaultService: vaultService,
             preferencesViewModel: preferencesViewModel,
+            shareOpenStore: shareOpenStore,
             progressStore: progressStore
         )
         self.settingsService = settingsService

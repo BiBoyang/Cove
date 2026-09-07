@@ -26,13 +26,33 @@ final class ShareGridViewModel {
         let action: Action?
     }
 
+    /// One card's content: the share itself plus the locally recorded
+    /// "last opened" line. Pure values, no platform types (rule 16).
+    struct ShareCardInfo: Equatable, Sendable {
+        let share: SMBShareInfo
+        /// Text of the "last opened" line; nil hides the line.
+        let lastOpenedText: String?
+
+        /// Comment line text; an empty server remark hides the line.
+        var comment: String? {
+            share.comment.isEmpty ? nil : share.comment
+        }
+
+        /// Relative text in the system language (RelativeDateTimeFormatter).
+        /// A record newer than `now` (clock skew, migrated defaults) clamps
+        /// to now so the line never announces a future open.
+        static func relativeText(for date: Date, relativeTo now: Date) -> String {
+            RelativeDateTimeFormatter().localizedString(for: min(date, now), relativeTo: now)
+        }
+    }
+
     struct State: Sendable {
-        let shares: [SMBShareInfo]
+        let cards: [ShareCardInfo]
         let placeholder: Placeholder?
     }
 
     private(set) var state = State(
-        shares: [],
+        cards: [],
         placeholder: Placeholder(
             kind: .info(symbol: "externaldrive"),
             title: "双击左侧服务器以连接",
@@ -45,66 +65,69 @@ final class ShareGridViewModel {
         didSet { onStateChange?(state) }
     }
 
+    /// Reads the locally recorded open timestamp for a share; injected so
+    /// tests can substitute an in-memory lookup.
+    private let lastOpened: @MainActor (UUID, String) -> Date?
+
+    /// Assembly context of the cards on screen: `refreshCards()` re-runs
+    /// assembly against the records lookup so relative times stay fresh.
+    private var displayedShares: [SMBShareInfo] = []
+    private var displayedServerID: UUID?
+
+    init(lastOpened: @escaping @MainActor (UUID, String) -> Date? = { _, _ in nil }) {
+        self.lastOpened = lastOpened
+    }
+
     /// Idle guidance shown whenever no server is selected.
     func showIdlePlaceholder() {
-        update(
-            shares: [],
-            placeholder: Placeholder(
-                kind: .info(symbol: "externaldrive"),
-                title: "双击左侧服务器以连接",
-                message: "",
-                action: nil
-            )
-        )
+        showPlaceholder(Placeholder(
+            kind: .info(symbol: "externaldrive"),
+            title: "双击左侧服务器以连接",
+            message: "",
+            action: nil
+        ))
     }
 
     /// First-run guidance: no servers configured at all, so the placeholder
     /// earns a primary "add server" action instead of pointing at an empty
     /// sidebar.
     func showEmptyServerGuidance() {
-        update(
-            shares: [],
-            placeholder: Placeholder(
-                kind: .info(symbol: "server.rack"),
-                title: "还没有添加服务器",
-                message: "添加一台 NAS，浏览它的共享文件夹。",
-                action: .addServer
-            )
-        )
+        showPlaceholder(Placeholder(
+            kind: .info(symbol: "server.rack"),
+            title: "还没有添加服务器",
+            message: "添加一台 NAS，浏览它的共享文件夹。",
+            action: .addServer
+        ))
     }
 
     func showLoading() {
-        update(
-            shares: [],
-            placeholder: Placeholder(
-                kind: .loading,
-                title: "正在获取共享列表…",
-                message: "",
-                action: nil
-            )
-        )
+        showPlaceholder(Placeholder(
+            kind: .loading,
+            title: "正在获取共享列表…",
+            message: "",
+            action: nil
+        ))
     }
 
     /// Share enumeration failed. The placeholder carries the retry affordance
     /// (and the remote-endpoint hint when the server has one), so no modal
     /// alert fires alongside it.
     func showEnumerationFailure(canSwitchToRemote: Bool) {
-        update(
-            shares: [],
-            placeholder: Placeholder(
-                kind: .failure(symbol: "exclamationmark.triangle"),
-                title: "获取共享列表失败",
-                message: canSwitchToRemote
-                    ? "请检查网络后重试。\n该服务器已配置远程地址，也可右键服务器切换后重试。"
-                    : "请检查网络后重试。",
-                action: .retry
-            )
-        )
+        showPlaceholder(Placeholder(
+            kind: .failure(symbol: "exclamationmark.triangle"),
+            title: "获取共享列表失败",
+            message: canSwitchToRemote
+                ? "请检查网络后重试。\n该服务器已配置远程地址，也可右键服务器切换后重试。"
+                : "请检查网络后重试。",
+            action: .retry
+        ))
     }
 
-    func display(shares: [SMBShareInfo]) {
+    func display(shares: [SMBShareInfo], serverID: UUID) {
+        displayedShares = shares
+        displayedServerID = serverID
         update(
-            shares: shares,
+            cards: assembleCards(),
             placeholder: shares.isEmpty
                 ? Placeholder(
                     kind: .info(symbol: "folder"),
@@ -116,8 +139,35 @@ final class ShareGridViewModel {
         )
     }
 
-    private func update(shares: [SMBShareInfo], placeholder: Placeholder?) {
-        state = State(shares: shares, placeholder: placeholder)
+    /// Re-assembles the visible cards: the grid reappears after an open,
+    /// and the "last opened" lines must reflect the record just written.
+    /// A placeholder state owns no cards, so refreshing there is a no-op.
+    func refreshCards() {
+        guard displayedServerID != nil, !displayedShares.isEmpty else { return }
+        update(cards: assembleCards(), placeholder: nil)
+    }
+
+    private func assembleCards() -> [ShareCardInfo] {
+        let now = Date()
+        return displayedShares.map { share in
+            let opened = displayedServerID.flatMap { lastOpened($0, share.name) }
+            return ShareCardInfo(
+                share: share,
+                lastOpenedText: opened.map { ShareCardInfo.relativeText(for: $0, relativeTo: now) }
+            )
+        }
+    }
+
+    /// Placeholder states own no cards; the assembly context is dropped so
+    /// a later refresh cannot revive stale content.
+    private func showPlaceholder(_ placeholder: Placeholder) {
+        displayedShares = []
+        displayedServerID = nil
+        update(cards: [], placeholder: placeholder)
+    }
+
+    private func update(cards: [ShareCardInfo], placeholder: Placeholder?) {
+        state = State(cards: cards, placeholder: placeholder)
         onStateChange?(state)
     }
 }

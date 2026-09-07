@@ -113,14 +113,14 @@ final class ShareGridViewController: NSViewController {
     @objc private func handleDoubleClick(_ gesture: NSClickGestureRecognizer) {
         let point = gesture.location(in: collectionView)
         guard let indexPath = collectionView.indexPathForItem(at: point),
-              indexPath.item < viewModel.state.shares.count else { return }
-        onOpenShare?(viewModel.state.shares[indexPath.item])
+              indexPath.item < viewModel.state.cards.count else { return }
+        onOpenShare?(viewModel.state.cards[indexPath.item].share)
     }
 }
 
 extension ShareGridViewController: NSCollectionViewDataSource {
     func collectionView(_ collectionView: NSCollectionView, numberOfItemsInSection section: Int) -> Int {
-        viewModel.state.shares.count
+        viewModel.state.cards.count
     }
 
     func collectionView(
@@ -131,14 +131,15 @@ extension ShareGridViewController: NSCollectionViewDataSource {
             withIdentifier: ShareCardItem.identifier,
             for: indexPath
         )
-        let shares = viewModel.state.shares
-        guard let card = item as? ShareCardItem, indexPath.item < shares.count else { return item }
-        card.configure(with: shares[indexPath.item])
+        let cards = viewModel.state.cards
+        guard let card = item as? ShareCardItem, indexPath.item < cards.count else { return item }
+        card.configure(with: cards[indexPath.item])
         return card
     }
 }
 
-/// One card in the share grid: outline folder icon, share name, remark.
+/// One card in the share grid: outline folder icon, share name, plus the
+/// optional metadata lines (server remark, last-opened relative time).
 /// Borderless by default (Finder/Infuse-style icon grid); a rounded fill
 /// appears on hover and lights up while selected.
 @MainActor
@@ -149,6 +150,7 @@ final class ShareCardItem: NSCollectionViewItem {
     private let iconView = NSImageView()
     private let nameLabel = NSTextField(labelWithString: "")
     private let commentLabel = NSTextField(labelWithString: "")
+    private let lastOpenedLabel = NSTextField(labelWithString: "")
     private var trackingAreaRef: NSTrackingArea?
     private var isHovering = false {
         didSet {
@@ -184,15 +186,24 @@ final class ShareCardItem: NSCollectionViewItem {
         commentLabel.alignment = .center
         commentLabel.font = CoveStyle.captionFont
         commentLabel.textColor = .secondaryLabelColor
-        commentLabel.lineBreakMode = .byTruncatingTail
+        commentLabel.lineBreakMode = .byTruncatingMiddle
 
-        // Icon + labels as one vertically centered group; the stack collapses
-        // the remark line cleanly when a share has no comment.
-        let contentStack = NSStackView(views: [iconView, nameLabel, commentLabel])
+        lastOpenedLabel.alignment = .center
+        lastOpenedLabel.font = CoveStyle.captionFont
+        lastOpenedLabel.textColor = .secondaryLabelColor
+        lastOpenedLabel.lineBreakMode = .byTruncatingMiddle
+
+        // Icon + labels as one vertically centered group; the stack
+        // collapses each metadata line cleanly when the share has no
+        // remark or no open record, keeping bare cards identical to the
+        // pre-metadata layout. At most three text rows (name + two
+        // metadata lines), all truncating in the middle.
+        let contentStack = NSStackView(views: [iconView, nameLabel, commentLabel, lastOpenedLabel])
         contentStack.orientation = .vertical
         contentStack.alignment = .centerX
         contentStack.spacing = CoveStyle.space8
         contentStack.setCustomSpacing(CoveStyle.space4, after: nameLabel)
+        contentStack.setCustomSpacing(CoveStyle.space4, after: commentLabel)
 
         cardView.addSubview(contentStack)
         contentStack.snp.makeConstraints { make in
@@ -202,6 +213,9 @@ final class ShareCardItem: NSCollectionViewItem {
             make.width.equalTo(cardView).offset(-CoveStyle.space16)
         }
         commentLabel.snp.makeConstraints { make in
+            make.width.lessThanOrEqualTo(cardView).offset(-CoveStyle.space16)
+        }
+        lastOpenedLabel.snp.makeConstraints { make in
             make.width.lessThanOrEqualTo(cardView).offset(-CoveStyle.space16)
         }
 
@@ -223,10 +237,12 @@ final class ShareCardItem: NSCollectionViewItem {
     override func mouseEntered(with event: NSEvent) { isHovering = true }
     override func mouseExited(with event: NSEvent) { isHovering = false }
 
-    func configure(with share: SMBShareInfo) {
-        nameLabel.stringValue = share.name
-        commentLabel.stringValue = share.comment
-        commentLabel.isHidden = share.comment.isEmpty
+    func configure(with info: ShareGridViewModel.ShareCardInfo) {
+        nameLabel.stringValue = info.share.name
+        commentLabel.stringValue = info.comment ?? ""
+        commentLabel.isHidden = info.comment == nil
+        lastOpenedLabel.stringValue = info.lastOpenedText ?? ""
+        lastOpenedLabel.isHidden = info.lastOpenedText == nil
     }
 
     // `RoundedFillView` re-resolves the fill on appearance changes, so the
