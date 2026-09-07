@@ -506,16 +506,12 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
     /// The centered file name: white text with a shadow so it stays
     /// readable on bright frames.
     private static func makeCenterTitle(_ title: String) -> NSAttributedString {
-        let shadow = NSShadow()
-        shadow.shadowColor = NSColor.black.withAlphaComponent(0.6)
-        shadow.shadowBlurRadius = 3
-        shadow.shadowOffset = NSSize(width: 0, height: -1)
         return NSAttributedString(
             string: title,
             attributes: [
                 .font: NSFont.systemFont(ofSize: 13, weight: .medium),
                 .foregroundColor: CoveStyle.textOnMedia1,
-                .shadow: shadow,
+                .shadow: CoveStyle.shadowTextOnMedia,
             ]
         )
     }
@@ -970,11 +966,7 @@ private final class ControlsCapsuleView: NSView {
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         wantsLayer = true
-        let shadow = NSShadow()
-        shadow.shadowColor = NSColor.black.withAlphaComponent(0.35)
-        shadow.shadowBlurRadius = 10
-        shadow.shadowOffset = NSSize(width: 0, height: -2)
-        self.shadow = shadow
+        self.shadow = CoveStyle.shadowFloatingChrome
     }
 
     @available(*, unavailable)
@@ -1034,11 +1026,7 @@ private final class UpNextOverlayView: NSView {
         isHidden = true
         alphaValue = 0
         wantsLayer = true
-        let shadow = NSShadow()
-        shadow.shadowColor = NSColor.black.withAlphaComponent(0.35)
-        shadow.shadowBlurRadius = 10
-        shadow.shadowOffset = NSSize(width: 0, height: -2)
-        self.shadow = shadow
+        self.shadow = CoveStyle.shadowFloatingChrome
 
         let board = NSView()
         board.wantsLayer = true

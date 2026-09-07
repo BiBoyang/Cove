@@ -120,7 +120,8 @@ spacing 刻度 + 组件尺寸角色两族分立：间距走数值档（空间距
   已有局部常量（PlayerWindowController.swift:515-516）。
 - volumeReadoutWidth：音量百分比读数宽度，字体实测值
   （PlayerWindowController.swift:506）。
-- 阴影参数（shadowOffset 0/-1、0/-2 等）：另立 shadow 配方候选，本卡不动。
+- 阴影参数：已升格为 shadow 配方两档（text-on-media / floating-chrome），
+  见 §4.6。[已拍板] 2026-09-08 · TASK-shadow-recipe
 - 窗口/分栏尺寸：窗口 contentRect / minSize / sheet 尺寸等窗口配置。
 - 像素域常量：thumbnailPixelSize 等 Services 层常量。
 
@@ -145,6 +146,18 @@ spacing 刻度 + 组件尺寸角色两族分立：间距走数值档（空间距
 **权重约定**：工具控件一律 semibold；内容 glyph（行 badge、侧栏行图标）
 用 regular/medium。语义图标跟随状态（如音量图标按 0/1-33/34-66/67-100
 分四档，2026-09-05 · TASK-symbol-consistency）。
+
+## 4.6 阴影（shadow 配方）
+
+[已拍板] 2026-09-08 · TASK-shadow-recipe。NSShadow 可变，代码侧以计算属性
+每次新建实例，不跨调用点共享。
+
+| 角色 | 代码（CoveStyle） | color / blur / offset | 用途 | 状态 |
+|------|------------------|----------------------|------|------|
+| text-on-media | shadowTextOnMedia | 黑 0.6 / 3 / (0,-1) | 媒体画面上白色 overlay 文字的可读性阴影（播放器中央文件名、单页/条带阅读器缩放倍数闪现） | [已拍板] 2026-09-08 · TASK-shadow-recipe |
+| floating-chrome | shadowFloatingChrome | 黑 0.35 / 10 / (0,-2) | 浮于媒体的 chrome 底板投影（播放器控制胶囊、Up Next pill），挂在未裁剪的自有 layer 上 | [已拍板] 2026-09-08 · TASK-shadow-recipe |
+
+倍速/模式/播放队列弹层走 NSPopover 系统自带阴影，不进配方。
 
 ## 5. 动效（克制）
 

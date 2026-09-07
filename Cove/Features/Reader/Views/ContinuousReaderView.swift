@@ -173,11 +173,7 @@ final class ContinuousReaderView: NSView {
         zoomLabel.font = CoveStyle.overlayFlashFont
         zoomLabel.textColor = CoveStyle.textOnMedia1
         zoomLabel.alphaValue = 0
-        let zoomShadow = NSShadow()
-        zoomShadow.shadowColor = NSColor.black.withAlphaComponent(0.6)
-        zoomShadow.shadowBlurRadius = 3
-        zoomShadow.shadowOffset = NSSize(width: 0, height: -1)
-        zoomLabel.shadow = zoomShadow
+        zoomLabel.shadow = CoveStyle.shadowTextOnMedia
         addSubview(scrollView)
         addSubview(scrubberPill)
         addSubview(zoomLabel)

@@ -141,6 +141,33 @@ enum CoveStyle {
         srgbRed: 0x1A / 255.0, green: 0x18 / 255.0, blue: 0x18 / 255.0, alpha: 1
     )
 
+    // MARK: Shadow recipes (tokens §4.6)
+
+    // NSShadow is mutable, so each recipe returns a fresh instance per
+    // call instead of sharing one across call sites.
+
+    /// Legibility shadow for white overlay text on media (the player's
+    /// center title, the readers' zoom flashes): keeps the glyphs readable
+    /// on bright frames and pages.
+    static var shadowTextOnMedia: NSShadow {
+        let shadow = NSShadow()
+        shadow.shadowColor = NSColor.black.withAlphaComponent(0.6)
+        shadow.shadowBlurRadius = 3
+        shadow.shadowOffset = NSSize(width: 0, height: -1)
+        return shadow
+    }
+
+    /// Drop shadow for chrome boards floating over media (the player
+    /// controls capsule, the Up Next pill): a soft low halo that separates
+    /// the opaque board from the frame underneath.
+    static var shadowFloatingChrome: NSShadow {
+        let shadow = NSShadow()
+        shadow.shadowColor = NSColor.black.withAlphaComponent(0.35)
+        shadow.shadowBlurRadius = 10
+        shadow.shadowOffset = NSSize(width: 0, height: -2)
+        return shadow
+    }
+
     // MARK: Motion (tokens §5)
 
     /// Motion serves state feedback only (hover/selection/fade-ins), never

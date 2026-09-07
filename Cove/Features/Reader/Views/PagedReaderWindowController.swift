@@ -183,11 +183,7 @@ final class PagedReaderWindowController: NSWindowController {
         zoomFlashLabel.font = CoveStyle.overlayFlashFont
         zoomFlashLabel.textColor = CoveStyle.textOnMedia1
         zoomFlashLabel.alphaValue = 0
-        let zoomShadow = NSShadow()
-        zoomShadow.shadowColor = NSColor.black.withAlphaComponent(0.6)
-        zoomShadow.shadowBlurRadius = 3
-        zoomShadow.shadowOffset = NSSize(width: 0, height: -1)
-        zoomFlashLabel.shadow = zoomShadow
+        zoomFlashLabel.shadow = CoveStyle.shadowTextOnMedia
 
         rootView.addSubview(imageView)
         rootView.addSubview(statusLabel)
