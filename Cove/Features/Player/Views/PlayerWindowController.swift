@@ -177,7 +177,7 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
         codecChipsRow.spacing = 6
         rootView.addSubview(codecChipsRow)
         codecChipsRow.snp.makeConstraints { make in
-            make.leading.equalToSuperview().offset(16)
+            make.leading.equalToSuperview().offset(CoveStyle.space16)
             make.top.equalToSuperview().offset(40)
         }
 
@@ -298,13 +298,13 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
         }
         controlsCapsule.snp.makeConstraints { make in
             make.centerX.equalToSuperview()
-            make.bottom.equalToSuperview().offset(-16)
-            make.height.equalTo(68)
+            make.bottom.equalToSuperview().offset(-CoveStyle.space16)
+            make.height.equalTo(CoveStyle.capsulePlayer)
             // The upper row below is a chain of fixed-size controls, so the
             // capsule shrink-wraps to its content; the cap only guards a
             // window narrower than the content (window.minSize prevents
             // that in practice).
-            make.width.lessThanOrEqualToSuperview().offset(-32)
+            make.width.lessThanOrEqualToSuperview().offset(-CoveStyle.space32)
         }
         capsuleBoard.snp.makeConstraints { make in
             make.edges.equalToSuperview()
@@ -312,54 +312,54 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
         // Upper row: volume group | transport | tool buttons. Everything is
         // fixed-size, so this chain defines the capsule's natural width.
         volumeIconView.snp.makeConstraints { make in
-            make.leading.equalToSuperview().offset(16)
+            make.leading.equalToSuperview().offset(CoveStyle.space16)
             make.centerY.equalToSuperview().offset(Self.upperRowCenterY)
             make.size.equalTo(16)
         }
         volumeSlider.snp.makeConstraints { make in
-            make.leading.equalTo(volumeIconView.snp.trailing).offset(4)
+            make.leading.equalTo(volumeIconView.snp.trailing).offset(CoveStyle.space4)
             make.centerY.equalToSuperview().offset(Self.upperRowCenterY)
-            make.width.equalTo(64)
+            make.width.equalTo(CoveStyle.sliderVolume)
         }
         volumeValueLabel.snp.makeConstraints { make in
-            make.leading.equalTo(volumeSlider.snp.trailing).offset(4)
+            make.leading.equalTo(volumeSlider.snp.trailing).offset(CoveStyle.space4)
             make.centerY.equalToSuperview().offset(Self.upperRowCenterY)
             make.width.equalTo(Self.volumeReadoutWidth)
         }
         previousTrackButton.snp.makeConstraints { make in
-            make.leading.equalTo(volumeValueLabel.snp.trailing).offset(12)
+            make.leading.equalTo(volumeValueLabel.snp.trailing).offset(CoveStyle.space12)
             make.centerY.equalToSuperview().offset(Self.upperRowCenterY)
-            make.size.equalTo(28)
+            make.size.equalTo(CoveStyle.controlTransport)
         }
         playPauseButton.snp.makeConstraints { make in
             make.leading.equalTo(previousTrackButton.snp.trailing).offset(6)
             make.centerY.equalToSuperview().offset(Self.upperRowCenterY)
-            make.size.equalTo(28)
+            make.size.equalTo(CoveStyle.controlTransport)
         }
         nextTrackButton.snp.makeConstraints { make in
             make.leading.equalTo(playPauseButton.snp.trailing).offset(6)
             make.centerY.equalToSuperview().offset(Self.upperRowCenterY)
-            make.size.equalTo(28)
+            make.size.equalTo(CoveStyle.controlTransport)
         }
         speedButton.snp.makeConstraints { make in
-            make.leading.equalTo(nextTrackButton.snp.trailing).offset(12)
+            make.leading.equalTo(nextTrackButton.snp.trailing).offset(CoveStyle.space12)
             make.centerY.equalToSuperview().offset(Self.upperRowCenterY)
             make.width.equalTo(38)
         }
         playModeButton.snp.makeConstraints { make in
-            make.leading.equalTo(speedButton.snp.trailing).offset(8)
+            make.leading.equalTo(speedButton.snp.trailing).offset(CoveStyle.space8)
             make.centerY.equalToSuperview().offset(Self.upperRowCenterY)
-            make.size.equalTo(28)
+            make.size.equalTo(CoveStyle.controlTransport)
         }
         playlistButton.snp.makeConstraints { make in
             make.leading.equalTo(playModeButton.snp.trailing).offset(6)
-            make.trailing.equalToSuperview().offset(-16)
+            make.trailing.equalToSuperview().offset(-CoveStyle.space16)
             make.centerY.equalToSuperview().offset(Self.upperRowCenterY)
-            make.size.equalTo(28)
+            make.size.equalTo(CoveStyle.controlTransport)
         }
         // Lower row: elapsed time (left) + flexible progress + total (right).
         elapsedTimeLabel.snp.makeConstraints { make in
-            make.leading.equalToSuperview().offset(16)
+            make.leading.equalToSuperview().offset(CoveStyle.space16)
             make.centerY.equalToSuperview().offset(Self.lowerRowCenterY)
         }
         progressSlider.snp.makeConstraints { make in
@@ -368,7 +368,7 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
         }
         durationLabel.snp.makeConstraints { make in
             make.leading.equalTo(progressSlider.snp.trailing).offset(10)
-            make.trailing.equalToSuperview().offset(-16)
+            make.trailing.equalToSuperview().offset(-CoveStyle.space16)
             make.centerY.equalToSuperview().offset(Self.lowerRowCenterY)
         }
 
@@ -380,10 +380,10 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
         upNextOverlay.onCancel = { [weak self] in self?.onUpNextCancel?() }
         rootView.addSubview(upNextOverlay)
         upNextOverlay.snp.makeConstraints { make in
-            make.trailing.equalToSuperview().offset(-16)
+            make.trailing.equalToSuperview().offset(-CoveStyle.space16)
             // Anchored to the capsule top with a fixed 12pt gap, so the pill
             // tracks the two-row capsule instead of overlapping it.
-            make.bottom.equalTo(controlsCapsule.snp.top).offset(-12)
+            make.bottom.equalTo(controlsCapsule.snp.top).offset(-CoveStyle.space12)
             make.width.lessThanOrEqualTo(340)
         }
     }
@@ -712,11 +712,11 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
         label.textColor = CoveStyle.textOnMedia2
         chip.addSubview(label)
         chip.snp.makeConstraints { make in
-            make.height.equalTo(20)
+            make.height.equalTo(CoveStyle.chipCodec)
         }
         label.snp.makeConstraints { make in
-            make.leading.equalToSuperview().offset(8)
-            make.trailing.equalToSuperview().offset(-8)
+            make.leading.equalToSuperview().offset(CoveStyle.space8)
+            make.trailing.equalToSuperview().offset(-CoveStyle.space8)
             make.centerY.equalToSuperview()
         }
         return chip
@@ -1026,23 +1026,23 @@ private final class UpNextOverlayView: NSView {
             make.edges.equalToSuperview()
         }
         titleLabel.snp.makeConstraints { make in
-            make.leading.equalToSuperview().offset(16)
+            make.leading.equalToSuperview().offset(CoveStyle.space16)
             make.top.equalToSuperview().offset(10)
             make.width.lessThanOrEqualTo(220)
         }
         countdownLabel.snp.makeConstraints { make in
-            make.leading.equalToSuperview().offset(16)
+            make.leading.equalToSuperview().offset(CoveStyle.space16)
             make.top.equalTo(titleLabel.snp.bottom).offset(3)
             make.bottom.equalToSuperview().offset(-10)
         }
         playNowButton.snp.makeConstraints { make in
-            make.leading.greaterThanOrEqualTo(titleLabel.snp.trailing).offset(12)
-            make.leading.greaterThanOrEqualTo(countdownLabel.snp.trailing).offset(12)
+            make.leading.greaterThanOrEqualTo(titleLabel.snp.trailing).offset(CoveStyle.space12)
+            make.leading.greaterThanOrEqualTo(countdownLabel.snp.trailing).offset(CoveStyle.space12)
             make.centerY.equalToSuperview()
         }
         cancelButton.snp.makeConstraints { make in
-            make.leading.equalTo(playNowButton.snp.trailing).offset(8)
-            make.trailing.equalToSuperview().offset(-16)
+            make.leading.equalTo(playNowButton.snp.trailing).offset(CoveStyle.space8)
+            make.trailing.equalToSuperview().offset(-CoveStyle.space16)
             make.centerY.equalToSuperview()
         }
     }
@@ -1136,9 +1136,9 @@ private final class OptionListPopoverController: NSViewController {
             make.leading.top.equalToSuperview().inset(14)
         }
         stack.snp.makeConstraints { make in
-            make.leading.trailing.equalToSuperview().inset(8)
+            make.leading.trailing.equalToSuperview().inset(CoveStyle.space8)
             make.top.equalTo(headerLabel.snp.bottom).offset(6)
-            make.bottom.equalToSuperview().offset(-8)
+            make.bottom.equalToSuperview().offset(-CoveStyle.space8)
         }
         // Same as the playlist panel: the popover sizes from
         // preferredContentSize, and a zero size renders as nothing.
@@ -1242,10 +1242,10 @@ private final class PlaylistPopoverController: NSViewController {
             make.leading.top.equalToSuperview().inset(14)
         }
         scrollView.snp.makeConstraints { make in
-            make.leading.equalToSuperview().offset(8)
-            make.trailing.equalToSuperview().offset(-8)
+            make.leading.equalToSuperview().offset(CoveStyle.space8)
+            make.trailing.equalToSuperview().offset(-CoveStyle.space8)
             make.top.equalTo(headerLabel.snp.bottom).offset(6)
-            make.bottom.equalToSuperview().offset(-8)
+            make.bottom.equalToSuperview().offset(-CoveStyle.space8)
         }
 
         // NSPopover sizes from preferredContentSize; without it the panel
@@ -1302,13 +1302,13 @@ private final class PlaylistRowCellView: NSTableCellView {
         addSubview(iconView)
         addSubview(nameLabel)
         iconView.snp.makeConstraints { make in
-            make.leading.equalToSuperview().offset(8)
+            make.leading.equalToSuperview().offset(CoveStyle.space8)
             make.centerY.equalToSuperview()
             make.size.equalTo(14)
         }
         nameLabel.snp.makeConstraints { make in
             make.leading.equalTo(iconView.snp.trailing).offset(6)
-            make.trailing.equalToSuperview().offset(-8)
+            make.trailing.equalToSuperview().offset(-CoveStyle.space8)
             make.centerY.equalToSuperview()
         }
     }

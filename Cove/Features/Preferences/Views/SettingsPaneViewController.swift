@@ -133,12 +133,12 @@ final class SettingsPaneViewController: NSViewController {
         let stack = NSStackView()
         stack.orientation = .vertical
         stack.alignment = .leading
-        stack.spacing = 8
+        stack.spacing = CoveStyle.space8
         content.addSubview(stack)
         stack.snp.makeConstraints { make in
-            make.top.equalToSuperview().offset(20)
-            make.bottom.equalToSuperview().offset(-20)
-            make.leading.equalToSuperview().offset(20)
+            make.top.equalToSuperview().offset(CoveStyle.space20)
+            make.bottom.equalToSuperview().offset(-CoveStyle.space20)
+            make.leading.equalToSuperview().offset(CoveStyle.space20)
             // Fill the pane width up to a readable column, then stop.
             make.width.equalTo(content).offset(-40).priority(999)
             make.width.lessThanOrEqualTo(560)
@@ -153,7 +153,7 @@ final class SettingsPaneViewController: NSViewController {
         stack.addArrangedSubview(displayUsageLabel)
         stack.addArrangedSubview(clearButton)
 
-        stack.setCustomSpacing(16, after: clearButton)
+        stack.setCustomSpacing(CoveStyle.space16, after: clearButton)
         stack.addArrangedSubview(makeHeader("预热"))
         stack.addArrangedSubview(preheatCheckbox)
         stack.addArrangedSubview(makeRow(makeLabel("限速 (MB/s，0 为不限)"), rateLimitField))
@@ -165,17 +165,17 @@ final class SettingsPaneViewController: NSViewController {
         // These two span the full width; everything else hugs its content.
         folderScrollView.snp.makeConstraints { make in
             make.width.equalTo(stack)
-            make.height.equalTo(150)
+            make.height.equalTo(CoveStyle.tablePreheatFolder)
         }
         inputRow.snp.makeConstraints { make in
             make.width.equalTo(stack)
         }
 
-        stack.setCustomSpacing(16, after: inputRow)
+        stack.setCustomSpacing(CoveStyle.space16, after: inputRow)
         stack.addArrangedSubview(makeHeader("阅读器"))
         stack.addArrangedSubview(readerResumeCheckbox)
 
-        stack.setCustomSpacing(16, after: readerResumeCheckbox)
+        stack.setCustomSpacing(CoveStyle.space16, after: readerResumeCheckbox)
         stack.addArrangedSubview(makeHeader("本地仓库"))
         let vaultRow = makeRow(makeLabel("位置"), vaultPathLabel, chooseVaultButton, revealVaultButton)
         stack.addArrangedSubview(vaultRow)
@@ -204,7 +204,7 @@ final class SettingsPaneViewController: NSViewController {
         field.formatter = formatter
         field.delegate = self
         field.snp.makeConstraints { make in
-            make.width.equalTo(64)
+            make.width.equalTo(CoveStyle.fieldNumeric)
         }
     }
 
@@ -231,7 +231,7 @@ final class SettingsPaneViewController: NSViewController {
     private func makeRow(_ views: NSView...) -> NSStackView {
         let row = NSStackView(views: views)
         row.orientation = .horizontal
-        row.spacing = 8
+        row.spacing = CoveStyle.space8
         row.alignment = .centerY
         return row
     }

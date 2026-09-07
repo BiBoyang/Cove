@@ -207,34 +207,34 @@ final class PagedReaderWindowController: NSWindowController {
             make.center.equalToSuperview()
         }
         previousButton.snp.makeConstraints { make in
-            make.leading.equalToSuperview().offset(16)
+            make.leading.equalToSuperview().offset(CoveStyle.space16)
             make.centerY.equalToSuperview()
-            make.size.equalTo(44)
+            make.size.equalTo(CoveStyle.circleNav)
         }
         nextButton.snp.makeConstraints { make in
-            make.trailing.equalToSuperview().offset(-16)
+            make.trailing.equalToSuperview().offset(-CoveStyle.space16)
             make.centerY.equalToSuperview()
-            make.size.equalTo(44)
+            make.size.equalTo(CoveStyle.circleNav)
         }
         modeButton.snp.makeConstraints { make in
-            make.trailing.equalToSuperview().offset(-16)
-            make.top.equalToSuperview().offset(16)
+            make.trailing.equalToSuperview().offset(-CoveStyle.space16)
+            make.top.equalToSuperview().offset(CoveStyle.space16)
             make.size.equalTo(32)
         }
         pageChromePill.snp.makeConstraints { make in
             make.centerX.equalToSuperview()
-            make.bottom.equalToSuperview().offset(-16)
-            make.height.equalTo(32)
+            make.bottom.equalToSuperview().offset(-CoveStyle.space16)
+            make.height.equalTo(CoveStyle.pillReaderChrome)
         }
         progressLabel.snp.makeConstraints { make in
-            make.leading.equalToSuperview().offset(12)
+            make.leading.equalToSuperview().offset(CoveStyle.space12)
             make.centerY.equalToSuperview()
         }
         autoAdvanceButton.snp.makeConstraints { make in
             make.leading.equalTo(progressLabel.snp.trailing).offset(6)
-            make.trailing.equalToSuperview().offset(-8)
+            make.trailing.equalToSuperview().offset(-CoveStyle.space8)
             make.centerY.equalToSuperview()
-            make.size.equalTo(24)
+            make.size.equalTo(CoveStyle.controlPillAccessory)
         }
         zoomFlashLabel.snp.makeConstraints { make in
             make.center.equalToSuperview()
@@ -524,8 +524,8 @@ final class PagedReaderWindowController: NSWindowController {
         rootView.addSubview(resumeHintPill)
         resumeHintPill.snp.makeConstraints { make in
             make.centerX.equalToSuperview()
-            make.top.equalToSuperview().offset(16)
-            make.height.equalTo(32)
+            make.top.equalToSuperview().offset(CoveStyle.space16)
+            make.height.equalTo(CoveStyle.pillReaderChrome)
         }
         resumeHintLabel.snp.makeConstraints { make in
             make.leading.equalToSuperview().offset(14)

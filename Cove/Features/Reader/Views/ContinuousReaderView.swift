@@ -186,13 +186,13 @@ final class ContinuousReaderView: NSView {
         }
         scrubberPill.snp.makeConstraints { make in
             make.centerX.equalToSuperview()
-            make.bottom.equalToSuperview().offset(-16)
-            make.height.equalTo(32)
+            make.bottom.equalToSuperview().offset(-CoveStyle.space16)
+            make.height.equalTo(CoveStyle.pillReaderChrome)
         }
         autoScrollButton.snp.makeConstraints { make in
-            make.leading.equalToSuperview().offset(8)
+            make.leading.equalToSuperview().offset(CoveStyle.space8)
             make.centerY.equalToSuperview()
-            make.size.equalTo(24)
+            make.size.equalTo(CoveStyle.controlPillAccessory)
         }
         speedLabel.snp.makeConstraints { make in
             make.leading.equalTo(autoScrollButton.snp.trailing).offset(2)
@@ -201,7 +201,7 @@ final class ContinuousReaderView: NSView {
         scrubberSlider.snp.makeConstraints { make in
             make.leading.equalTo(speedLabel.snp.trailing).offset(6)
             make.centerY.equalToSuperview()
-            make.width.equalTo(220)
+            make.width.equalTo(CoveStyle.sliderScrubber)
         }
         progressLabel.snp.makeConstraints { make in
             make.leading.equalTo(scrubberSlider.snp.trailing).offset(10)

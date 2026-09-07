@@ -169,7 +169,7 @@ extension ServerListViewController: NSTableViewDataSource, NSTableViewDelegate {
 
     func tableView(_ tableView: NSTableView, heightOfRow row: Int) -> CGFloat {
         // Sidebar rhythm: tight 20pt group headers, 32pt rows.
-        viewModel.isGroupRow(row) ? 20 : 32
+        viewModel.isGroupRow(row) ? CoveStyle.rowSidebarGroup : CoveStyle.rowSidebar
     }
 
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
@@ -226,11 +226,11 @@ extension ServerListViewController: NSTableViewDataSource, NSTableViewDelegate {
             cell.addSubview(headerAddButton)
 
             textField.snp.makeConstraints { make in
-                make.leading.equalToSuperview().inset(4)
+                make.leading.equalToSuperview().inset(CoveStyle.space4)
                 make.centerY.equalToSuperview()
             }
             headerAddButton.snp.makeConstraints { make in
-                make.trailing.equalToSuperview().inset(4)
+                make.trailing.equalToSuperview().inset(CoveStyle.space4)
                 make.centerY.equalToSuperview()
                 make.size.equalTo(16)
             }
@@ -255,7 +255,7 @@ extension ServerListViewController: NSTableViewDataSource, NSTableViewDelegate {
             cell.addSubview(textField)
             cell.textField = textField
             textField.snp.makeConstraints { make in
-                make.leading.equalToSuperview().inset(4)
+                make.leading.equalToSuperview().inset(CoveStyle.space4)
                 make.centerY.equalToSuperview()
             }
         }
@@ -303,8 +303,8 @@ private final class ServerRowCellView: NSTableCellView {
             make.centerY.equalToSuperview()
         }
         nameLabel.snp.makeConstraints { make in
-            make.leading.equalTo(iconView.snp.trailing).offset(8)
-            make.trailing.equalToSuperview().offset(-4)
+            make.leading.equalTo(iconView.snp.trailing).offset(CoveStyle.space8)
+            make.trailing.equalToSuperview().offset(-CoveStyle.space4)
             make.centerY.equalToSuperview()
         }
     }
@@ -321,12 +321,12 @@ private final class ServerRowCellView: NSTableCellView {
         let showsRemoteTag = server.activeEndpoint == .remote && server.remoteHost != nil
         endpointTagLabel.isHidden = !showsRemoteTag
         nameLabel.snp.remakeConstraints { make in
-            make.leading.equalTo(iconView.snp.trailing).offset(8)
+            make.leading.equalTo(iconView.snp.trailing).offset(CoveStyle.space8)
             make.centerY.equalToSuperview()
             if showsRemoteTag {
                 make.trailing.lessThanOrEqualTo(endpointTagLabel.snp.leading).offset(-6)
             } else {
-                make.trailing.equalToSuperview().offset(-4)
+                make.trailing.equalToSuperview().offset(-CoveStyle.space4)
             }
         }
     }

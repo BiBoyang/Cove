@@ -39,8 +39,11 @@ final class ShareGridViewController: NSViewController {
         let layout = NSCollectionViewFlowLayout()
         layout.itemSize = NSSize(width: 160, height: 130)
         layout.minimumInteritemSpacing = 14
-        layout.minimumLineSpacing = 16
-        layout.sectionInset = NSEdgeInsets(top: 20, left: 20, bottom: 20, right: 20)
+        layout.minimumLineSpacing = CoveStyle.space16
+        layout.sectionInset = NSEdgeInsets(
+            top: CoveStyle.space20, left: CoveStyle.space20,
+            bottom: CoveStyle.space20, right: CoveStyle.space20
+        )
 
         collectionView.collectionViewLayout = layout
         collectionView.dataSource = self
@@ -188,18 +191,18 @@ final class ShareCardItem: NSCollectionViewItem {
         let contentStack = NSStackView(views: [iconView, nameLabel, commentLabel])
         contentStack.orientation = .vertical
         contentStack.alignment = .centerX
-        contentStack.spacing = 8
-        contentStack.setCustomSpacing(4, after: nameLabel)
+        contentStack.spacing = CoveStyle.space8
+        contentStack.setCustomSpacing(CoveStyle.space4, after: nameLabel)
 
         cardView.addSubview(contentStack)
         contentStack.snp.makeConstraints { make in
             make.center.equalToSuperview()
         }
         nameLabel.snp.makeConstraints { make in
-            make.width.equalTo(cardView).offset(-16)
+            make.width.equalTo(cardView).offset(-CoveStyle.space16)
         }
         commentLabel.snp.makeConstraints { make in
-            make.width.lessThanOrEqualTo(cardView).offset(-16)
+            make.width.lessThanOrEqualTo(cardView).offset(-CoveStyle.space16)
         }
 
         view = cardView

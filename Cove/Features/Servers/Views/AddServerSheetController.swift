@@ -104,7 +104,7 @@ final class AddServerSheetController: NSWindowController {
         let grid = NSGridView(views: rows)
         grid.column(at: 0).xPlacement = .trailing
         grid.rowSpacing = 10
-        grid.columnSpacing = 8
+        grid.columnSpacing = CoveStyle.space8
 
         // Validation feedback: specific, red, hidden until needed. Any edit
         // hides it again (see controlTextDidChange).
@@ -124,13 +124,13 @@ final class AddServerSheetController: NSWindowController {
 
         let buttonRow = NSStackView(views: [cancelButton, confirmButton])
         buttonRow.orientation = .horizontal
-        buttonRow.spacing = 12
+        buttonRow.spacing = CoveStyle.space12
 
         contentView.addSubview(grid)
         contentView.addSubview(hintLabel)
         contentView.addSubview(buttonRow)
         grid.snp.makeConstraints { make in
-            make.top.equalToSuperview().offset(16)
+            make.top.equalToSuperview().offset(CoveStyle.space16)
             make.centerX.equalToSuperview()
         }
         hintLabel.snp.makeConstraints { make in

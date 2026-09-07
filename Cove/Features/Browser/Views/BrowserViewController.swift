@@ -159,23 +159,23 @@ final class BrowserViewController: NSViewController {
         toolbarView.addSubview(downloadLabel)
         toolbarView.addSubview(downloadCancelButton)
         backButton.snp.makeConstraints { make in
-            make.leading.equalToSuperview().offset(20)
+            make.leading.equalToSuperview().offset(CoveStyle.space20)
             make.centerY.equalToSuperview()
-            make.size.equalTo(28)
+            make.size.equalTo(CoveStyle.controlTransport)
         }
         preheatButton.snp.makeConstraints { make in
-            make.leading.equalTo(backButton.snp.trailing).offset(8)
+            make.leading.equalTo(backButton.snp.trailing).offset(CoveStyle.space8)
             make.centerY.equalToSuperview()
-            make.size.equalTo(28)
+            make.size.equalTo(CoveStyle.controlTransport)
         }
         preheatProgressLabel.snp.makeConstraints { make in
-            make.leading.equalTo(preheatButton.snp.trailing).offset(8)
+            make.leading.equalTo(preheatButton.snp.trailing).offset(CoveStyle.space8)
             make.centerY.equalToSuperview()
         }
         locationLabel.snp.makeConstraints { make in
             make.center.equalToSuperview()
-            make.leading.greaterThanOrEqualTo(preheatProgressLabel.snp.trailing).offset(8)
-            make.trailing.lessThanOrEqualTo(downloadLabel.snp.leading).offset(-8)
+            make.leading.greaterThanOrEqualTo(preheatProgressLabel.snp.trailing).offset(CoveStyle.space8)
+            make.trailing.lessThanOrEqualTo(downloadLabel.snp.leading).offset(-CoveStyle.space8)
         }
         downloadLabel.snp.makeConstraints { make in
             make.trailing.equalTo(downloadCancelButton.snp.leading).offset(-6)
@@ -183,7 +183,7 @@ final class BrowserViewController: NSViewController {
             make.width.lessThanOrEqualTo(320)
         }
         downloadCancelButton.snp.makeConstraints { make in
-            make.trailing.equalToSuperview().offset(-20)
+            make.trailing.equalToSuperview().offset(-CoveStyle.space20)
             make.centerY.equalToSuperview()
             make.size.equalTo(20)
         }
@@ -218,7 +218,7 @@ final class BrowserViewController: NSViewController {
         toolbarView.snp.makeConstraints { make in
             make.top.leading.trailing.equalToSuperview()
             // Toolbar rhythm: a 52pt strip over the content list.
-            make.height.equalTo(52)
+            make.height.equalTo(CoveStyle.barBrowserToolbar)
         }
         scrollView.snp.makeConstraints { make in
             make.top.equalTo(toolbarView.snp.bottom)
@@ -437,7 +437,7 @@ extension BrowserViewController: NSTableViewDataSource, NSTableViewDelegate {
 
     func tableView(_ tableView: NSTableView, heightOfRow row: Int) -> CGFloat {
         // 40-pt thumbnail + 8 pt of breathing room above and below.
-        56
+        CoveStyle.rowList
     }
 
     func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? {
@@ -526,9 +526,9 @@ private final class BrowserRowCellView: NSTableCellView {
         addSubview(nameLabel)
         addSubview(subtitleLabel)
         badgeView.snp.makeConstraints { make in
-            make.leading.equalToSuperview().offset(20)
+            make.leading.equalToSuperview().offset(CoveStyle.space20)
             make.centerY.equalToSuperview()
-            make.width.height.equalTo(40)
+            make.width.height.equalTo(CoveStyle.badgeTile)
         }
         badgeImageView.snp.makeConstraints { make in
             make.center.equalToSuperview()
@@ -539,13 +539,13 @@ private final class BrowserRowCellView: NSTableCellView {
         // The two text lines sit as a pair centered on the row: the name
         // ends just above the midpoint, the subtitle starts just below.
         nameLabel.snp.makeConstraints { make in
-            make.leading.equalTo(badgeView.snp.trailing).offset(12)
-            make.trailing.lessThanOrEqualToSuperview().offset(-20)
-            make.bottom.equalTo(self.snp.centerY).offset(-4)
+            make.leading.equalTo(badgeView.snp.trailing).offset(CoveStyle.space12)
+            make.trailing.lessThanOrEqualToSuperview().offset(-CoveStyle.space20)
+            make.bottom.equalTo(self.snp.centerY).offset(-CoveStyle.space4)
         }
         subtitleLabel.snp.makeConstraints { make in
             make.leading.trailing.equalTo(nameLabel)
-            make.top.equalTo(self.snp.centerY).offset(4)
+            make.top.equalTo(self.snp.centerY).offset(CoveStyle.space4)
         }
     }
 
