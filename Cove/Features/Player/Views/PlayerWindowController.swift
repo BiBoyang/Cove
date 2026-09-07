@@ -174,7 +174,7 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
         // Codec chips top-left, below the traffic-light safety zone (the
         // full-size content view puts the lights at the very top-left).
         codecChipsRow.orientation = .horizontal
-        codecChipsRow.spacing = 6
+        codecChipsRow.spacing = CoveStyle.space6
         rootView.addSubview(codecChipsRow)
         codecChipsRow.snp.makeConstraints { make in
             make.leading.equalToSuperview().offset(CoveStyle.space16)
@@ -332,12 +332,12 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
             make.size.equalTo(CoveStyle.controlTransport)
         }
         playPauseButton.snp.makeConstraints { make in
-            make.leading.equalTo(previousTrackButton.snp.trailing).offset(6)
+            make.leading.equalTo(previousTrackButton.snp.trailing).offset(CoveStyle.space6)
             make.centerY.equalToSuperview().offset(Self.upperRowCenterY)
             make.size.equalTo(CoveStyle.controlTransport)
         }
         nextTrackButton.snp.makeConstraints { make in
-            make.leading.equalTo(playPauseButton.snp.trailing).offset(6)
+            make.leading.equalTo(playPauseButton.snp.trailing).offset(CoveStyle.space6)
             make.centerY.equalToSuperview().offset(Self.upperRowCenterY)
             make.size.equalTo(CoveStyle.controlTransport)
         }
@@ -352,7 +352,7 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
             make.size.equalTo(CoveStyle.controlTransport)
         }
         playlistButton.snp.makeConstraints { make in
-            make.leading.equalTo(playModeButton.snp.trailing).offset(6)
+            make.leading.equalTo(playModeButton.snp.trailing).offset(CoveStyle.space6)
             make.trailing.equalToSuperview().offset(-CoveStyle.space16)
             make.centerY.equalToSuperview().offset(Self.upperRowCenterY)
             make.size.equalTo(CoveStyle.controlTransport)
@@ -363,11 +363,11 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
             make.centerY.equalToSuperview().offset(Self.lowerRowCenterY)
         }
         progressSlider.snp.makeConstraints { make in
-            make.leading.equalTo(elapsedTimeLabel.snp.trailing).offset(10)
+            make.leading.equalTo(elapsedTimeLabel.snp.trailing).offset(CoveStyle.space10)
             make.centerY.equalToSuperview().offset(Self.lowerRowCenterY)
         }
         durationLabel.snp.makeConstraints { make in
-            make.leading.equalTo(progressSlider.snp.trailing).offset(10)
+            make.leading.equalTo(progressSlider.snp.trailing).offset(CoveStyle.space10)
             make.trailing.equalToSuperview().offset(-CoveStyle.space16)
             make.centerY.equalToSuperview().offset(Self.lowerRowCenterY)
         }
@@ -1027,13 +1027,13 @@ private final class UpNextOverlayView: NSView {
         }
         titleLabel.snp.makeConstraints { make in
             make.leading.equalToSuperview().offset(CoveStyle.space16)
-            make.top.equalToSuperview().offset(10)
+            make.top.equalToSuperview().offset(CoveStyle.space10)
             make.width.lessThanOrEqualTo(220)
         }
         countdownLabel.snp.makeConstraints { make in
             make.leading.equalToSuperview().offset(CoveStyle.space16)
             make.top.equalTo(titleLabel.snp.bottom).offset(3)
-            make.bottom.equalToSuperview().offset(-10)
+            make.bottom.equalToSuperview().offset(-CoveStyle.space10)
         }
         playNowButton.snp.makeConstraints { make in
             make.leading.greaterThanOrEqualTo(titleLabel.snp.trailing).offset(CoveStyle.space12)
@@ -1133,16 +1133,17 @@ private final class OptionListPopoverController: NSViewController {
         root.addSubview(headerLabel)
         root.addSubview(stack)
         headerLabel.snp.makeConstraints { make in
-            make.leading.top.equalToSuperview().inset(14)
+            make.leading.top.equalToSuperview().inset(CoveStyle.space14)
         }
         stack.snp.makeConstraints { make in
             make.leading.trailing.equalToSuperview().inset(CoveStyle.space8)
-            make.top.equalTo(headerLabel.snp.bottom).offset(6)
+            make.top.equalTo(headerLabel.snp.bottom).offset(CoveStyle.space6)
             make.bottom.equalToSuperview().offset(-CoveStyle.space8)
         }
         // Same as the playlist panel: the popover sizes from
         // preferredContentSize, and a zero size renders as nothing.
-        let height = CGFloat(options.count) * 26 + 54
+        // The row term is the control-pill height (tokens §3.4).
+        let height = CGFloat(options.count) * CoveStyle.controlPill + 54
         preferredContentSize = NSSize(width: 190, height: height)
         root.setFrameSize(preferredContentSize)
         view = root
@@ -1213,7 +1214,7 @@ private final class PlaylistPopoverController: NSViewController {
         let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("name"))
         tableView.addTableColumn(column)
         tableView.headerView = nil
-        tableView.rowHeight = 32
+        tableView.rowHeight = CoveStyle.rowPlaylist
         tableView.intercellSpacing = .zero
         tableView.backgroundColor = .clear
         tableView.focusRingType = .none
@@ -1239,19 +1240,20 @@ private final class PlaylistPopoverController: NSViewController {
         root.addSubview(headerLabel)
         root.addSubview(scrollView)
         headerLabel.snp.makeConstraints { make in
-            make.leading.top.equalToSuperview().inset(14)
+            make.leading.top.equalToSuperview().inset(CoveStyle.space14)
         }
         scrollView.snp.makeConstraints { make in
             make.leading.equalToSuperview().offset(CoveStyle.space8)
             make.trailing.equalToSuperview().offset(-CoveStyle.space8)
-            make.top.equalTo(headerLabel.snp.bottom).offset(6)
+            make.top.equalTo(headerLabel.snp.bottom).offset(CoveStyle.space6)
             make.bottom.equalToSuperview().offset(-CoveStyle.space8)
         }
 
         // NSPopover sizes from preferredContentSize; without it the panel
         // collapses to zero. Natural height up to a generous cap so a long
         // queue still fits on screen; the table scrolls past it.
-        let naturalHeight = CGFloat(items.count) * 32 + 62
+        // The row term is the playlist row-height role (tokens §3.4).
+        let naturalHeight = CGFloat(items.count) * CoveStyle.rowPlaylist + 62
         preferredContentSize = NSSize(width: 320, height: min(naturalHeight, 480))
         root.setFrameSize(preferredContentSize)
         view = root
@@ -1304,10 +1306,10 @@ private final class PlaylistRowCellView: NSTableCellView {
         iconView.snp.makeConstraints { make in
             make.leading.equalToSuperview().offset(CoveStyle.space8)
             make.centerY.equalToSuperview()
-            make.size.equalTo(14)
+            make.size.equalTo(CoveStyle.space14)
         }
         nameLabel.snp.makeConstraints { make in
-            make.leading.equalTo(iconView.snp.trailing).offset(6)
+            make.leading.equalTo(iconView.snp.trailing).offset(CoveStyle.space6)
             make.trailing.equalToSuperview().offset(-CoveStyle.space8)
             make.centerY.equalToSuperview()
         }

@@ -139,8 +139,9 @@ final class SettingsPaneViewController: NSViewController {
             make.top.equalToSuperview().offset(CoveStyle.space20)
             make.bottom.equalToSuperview().offset(-CoveStyle.space20)
             make.leading.equalToSuperview().offset(CoveStyle.space20)
-            // Fill the pane width up to a readable column, then stop.
-            make.width.equalTo(content).offset(-40).priority(999)
+            // Fill the pane width up to a readable column, then stop; the
+            // offset is the 20pt content inset on both sides.
+            make.width.equalTo(content).offset(-2 * CoveStyle.space20).priority(999)
             make.width.lessThanOrEqualTo(560)
         }
 
@@ -381,8 +382,8 @@ extension SettingsPaneViewController: NSTableViewDataSource, NSTableViewDelegate
             cell.addSubview(label)
             cell.textField = label
             label.snp.makeConstraints { make in
-                make.leading.equalToSuperview().offset(6)
-                make.trailing.equalToSuperview().offset(-6)
+                make.leading.equalToSuperview().offset(CoveStyle.space6)
+                make.trailing.equalToSuperview().offset(-CoveStyle.space6)
                 make.centerY.equalToSuperview()
             }
         }

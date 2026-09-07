@@ -38,7 +38,7 @@ final class ShareGridViewController: NSViewController {
 
         let layout = NSCollectionViewFlowLayout()
         layout.itemSize = NSSize(width: 160, height: 130)
-        layout.minimumInteritemSpacing = 14
+        layout.minimumInteritemSpacing = CoveStyle.space14
         layout.minimumLineSpacing = CoveStyle.space16
         layout.sectionInset = NSEdgeInsets(
             top: CoveStyle.space20, left: CoveStyle.space20,

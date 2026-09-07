@@ -103,7 +103,7 @@ final class AddServerSheetController: NSWindowController {
 
         let grid = NSGridView(views: rows)
         grid.column(at: 0).xPlacement = .trailing
-        grid.rowSpacing = 10
+        grid.rowSpacing = CoveStyle.space10
         grid.columnSpacing = CoveStyle.space8
 
         // Validation feedback: specific, red, hidden until needed. Any edit
@@ -134,13 +134,13 @@ final class AddServerSheetController: NSWindowController {
             make.centerX.equalToSuperview()
         }
         hintLabel.snp.makeConstraints { make in
-            make.top.equalTo(grid.snp.bottom).offset(6)
+            make.top.equalTo(grid.snp.bottom).offset(CoveStyle.space6)
             make.leading.equalTo(firstField)
         }
         buttonRow.snp.makeConstraints { make in
-            make.top.equalTo(hintLabel.snp.bottom).offset(10)
+            make.top.equalTo(hintLabel.snp.bottom).offset(CoveStyle.space10)
             make.trailing.equalTo(grid)
-            make.bottom.equalToSuperview().offset(-14)
+            make.bottom.equalToSuperview().offset(-CoveStyle.space14)
         }
     }
 

@@ -294,12 +294,12 @@ private final class ServerRowCellView: NSTableCellView {
         addSubview(nameLabel)
         addSubview(endpointTagLabel)
         iconView.snp.makeConstraints { make in
-            make.leading.equalToSuperview().offset(6)
+            make.leading.equalToSuperview().offset(CoveStyle.space6)
             make.centerY.equalToSuperview()
             make.width.height.equalTo(18)
         }
         endpointTagLabel.snp.makeConstraints { make in
-            make.trailing.equalToSuperview().offset(-6)
+            make.trailing.equalToSuperview().offset(-CoveStyle.space6)
             make.centerY.equalToSuperview()
         }
         nameLabel.snp.makeConstraints { make in
@@ -324,7 +324,7 @@ private final class ServerRowCellView: NSTableCellView {
             make.leading.equalTo(iconView.snp.trailing).offset(CoveStyle.space8)
             make.centerY.equalToSuperview()
             if showsRemoteTag {
-                make.trailing.lessThanOrEqualTo(endpointTagLabel.snp.leading).offset(-6)
+                make.trailing.lessThanOrEqualTo(endpointTagLabel.snp.leading).offset(-CoveStyle.space6)
             } else {
                 make.trailing.equalToSuperview().offset(-CoveStyle.space4)
             }

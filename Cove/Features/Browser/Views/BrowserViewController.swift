@@ -178,14 +178,14 @@ final class BrowserViewController: NSViewController {
             make.trailing.lessThanOrEqualTo(downloadLabel.snp.leading).offset(-CoveStyle.space8)
         }
         downloadLabel.snp.makeConstraints { make in
-            make.trailing.equalTo(downloadCancelButton.snp.leading).offset(-6)
+            make.trailing.equalTo(downloadCancelButton.snp.leading).offset(-CoveStyle.space6)
             make.centerY.equalToSuperview()
             make.width.lessThanOrEqualTo(320)
         }
         downloadCancelButton.snp.makeConstraints { make in
             make.trailing.equalToSuperview().offset(-CoveStyle.space20)
             make.centerY.equalToSuperview()
-            make.size.equalTo(20)
+            make.size.equalTo(CoveStyle.controlBarAccessory)
         }
 
         let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("item"))
@@ -625,7 +625,7 @@ private final class RoundedSelectionRowView: NSTableRowView {
             : NSColor.unemphasizedSelectedContentBackgroundColor
         color.setFill()
         NSBezierPath(
-            roundedRect: bounds.insetBy(dx: 12, dy: 2),
+            roundedRect: bounds.insetBy(dx: CoveStyle.space12, dy: 2),
             xRadius: CoveStyle.radiusRowSelection, yRadius: CoveStyle.radiusRowSelection
         ).fill()
     }

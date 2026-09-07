@@ -219,7 +219,7 @@ final class PagedReaderWindowController: NSWindowController {
         modeButton.snp.makeConstraints { make in
             make.trailing.equalToSuperview().offset(-CoveStyle.space16)
             make.top.equalToSuperview().offset(CoveStyle.space16)
-            make.size.equalTo(32)
+            make.size.equalTo(CoveStyle.circleMode)
         }
         pageChromePill.snp.makeConstraints { make in
             make.centerX.equalToSuperview()
@@ -231,7 +231,7 @@ final class PagedReaderWindowController: NSWindowController {
             make.centerY.equalToSuperview()
         }
         autoAdvanceButton.snp.makeConstraints { make in
-            make.leading.equalTo(progressLabel.snp.trailing).offset(6)
+            make.leading.equalTo(progressLabel.snp.trailing).offset(CoveStyle.space6)
             make.trailing.equalToSuperview().offset(-CoveStyle.space8)
             make.centerY.equalToSuperview()
             make.size.equalTo(CoveStyle.controlPillAccessory)
@@ -528,12 +528,12 @@ final class PagedReaderWindowController: NSWindowController {
             make.height.equalTo(CoveStyle.pillReaderChrome)
         }
         resumeHintLabel.snp.makeConstraints { make in
-            make.leading.equalToSuperview().offset(14)
+            make.leading.equalToSuperview().offset(CoveStyle.space14)
             make.centerY.equalToSuperview()
         }
         resumeReturnButton.snp.makeConstraints { make in
-            make.leading.equalTo(resumeHintLabel.snp.trailing).offset(10)
-            make.trailing.equalToSuperview().offset(-10)
+            make.leading.equalTo(resumeHintLabel.snp.trailing).offset(CoveStyle.space10)
+            make.trailing.equalToSuperview().offset(-CoveStyle.space10)
             make.centerY.equalToSuperview()
         }
     }

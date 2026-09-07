@@ -49,7 +49,8 @@ enum CoveStyle {
     /// Player controls capsule height (upper control row + lower progress
     /// row).
     static let capsulePlayer: CGFloat = 68
-    /// Square transport/tool buttons in the player capsule's upper row.
+    /// Square action buttons on horizontal control bars (the player
+    /// capsule's transport row, the browser toolbar).
     static let controlTransport: CGFloat = 28
     /// Codec info chip height (HW / codec / resolution / bitrate).
     static let chipCodec: CGFloat = 20
@@ -70,6 +71,19 @@ enum CoveStyle {
     static let fieldNumeric: CGFloat = 64
     /// Settings preheat-folder table height.
     static let tablePreheatFolder: CGFloat = 150
+    /// Queue row height in the player's playlist popover (same value as
+    /// `rowSidebar`, different meaning — separate role); the popover's
+    /// height formula takes its row term from this role.
+    static let rowPlaylist: CGFloat = 32
+    /// Reader mode-toggle circle (paged/strip), the smaller sibling of the
+    /// `circleNav` prev/next circles (same value as `rowSidebar`,
+    /// different meaning — separate role).
+    static let circleMode: CGFloat = 32
+    /// Mini accessory action button on a horizontal chrome bar (the
+    /// browser toolbar's download-cancel button); deliberately smaller
+    /// than the `controlPill` standard (same value as `chipCodec`,
+    /// different meaning — separate role).
+    static let controlBarAccessory: CGFloat = 20
 
     // MARK: Corner radii
 

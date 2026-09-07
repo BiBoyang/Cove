@@ -53,7 +53,7 @@ final class StatePlaceholderView: NSView {
         let stack = NSStackView()
         stack.orientation = .vertical
         stack.alignment = .centerX
-        stack.spacing = 10
+        stack.spacing = CoveStyle.space10
         stack.addArrangedSubview(style == .loading ? spinner : iconView)
         stack.addArrangedSubview(titleLabel)
         stack.addArrangedSubview(messageLabel)

@@ -77,7 +77,7 @@ spacing 刻度 + 组件尺寸角色两族分立：间距走数值档（空间距
 | badge-tile | badgeTile | 40（圆角 small） | 行内图标瓷贴 | [已拍板] 2026-09-07 · TASK-spacing-tokens |
 | bar-browser-toolbar | barBrowserToolbar | 52 | 浏览器内容区上方工具条高 | [已拍板] 2026-09-07 · TASK-spacing-tokens |
 | capsule-player | capsulePlayer | 68 | 播放器控制胶囊高（上排控件链 + 下排进度条） | [已拍板] 2026-09-07 · TASK-spacing-tokens |
-| control-transport | controlTransport | 28 | 播放胶囊上排方形 transport/工具钮 | [已拍板] 2026-09-07 · TASK-spacing-tokens |
+| control-transport | controlTransport | 28 | 水平控件条（播放胶囊/浏览器工具条）上的 28pt 方形操作钮 | [已拍板] 2026-09-07 · TASK-spacing-tokens |
 | chip-codec | chipCodec | 20 | codec 信息瓷贴高（HW/编码/分辨率/码率） | [已拍板] 2026-09-07 · TASK-spacing-tokens |
 | slider-volume | sliderVolume | 64 | 播放器音量滑条宽 | [已拍板] 2026-09-07 · TASK-spacing-tokens |
 | pill-reader-chrome | pillReaderChrome | 32 | 阅读器 chrome pill 高（scrubber/页码/续读提示三处同高）；与 row-sidebar 同值异义，分立角色 | [已拍板] 2026-09-07 · TASK-spacing-tokens |
@@ -86,6 +86,9 @@ spacing 刻度 + 组件尺寸角色两族分立：间距走数值档（空间距
 | slider-scrubber | sliderScrubber | 220 | 条带阅读器 scrubber 滑条宽（scrubber pill 内） | [已拍板] 2026-09-07 · TASK-spacing-tokens |
 | field-numeric | fieldNumeric | 64 | 设置页数值输入框宽（容量/TTL/限速三处共用）；与 slider-volume 同值异义，分立角色 | [已拍板] 2026-09-07 · TASK-spacing-tokens |
 | table-preheat-folder | tablePreheatFolder | 150 | 设置页预热文件夹表高 | [已拍板] 2026-09-07 · TASK-spacing-tokens |
+| row-playlist | rowPlaylist | 32 | 播放器播放队列弹层行高（32n+62 公式的行高项引用本角色）；与 row-sidebar 同值异义，分立角色 | [已拍板] 2026-09-07 · TASK-spacing-tokens |
+| circle-mode | circleMode | 32 | 阅读器模式切换圆钮（单页/条带），circle-nav 44 的同族小号；与 row-sidebar 同值异义，分立角色 | [已拍板] 2026-09-07 · TASK-spacing-tokens |
+| control-bar-accessory | controlBarAccessory | 20 | 水平控件条上的迷你附件钮（浏览器工具条下载取消钮），刻意小于 control-pill 26 标准；与 chip-codec 同值异义，分立角色 | [已拍板] 2026-09-07 · TASK-spacing-tokens |
 
 ### 3.4 豁免清单（登记，不进令牌）
 
@@ -93,14 +96,26 @@ spacing 刻度 + 组件尺寸角色两族分立：间距走数值档（空间距
 
 - PillButton 内部 padding/最小高 26：组件封装（SharedUI/PillButton.swift:70）。
   最小高即 control-pill 标准的实现，不反向引用令牌。
-- 弹层高度公式常数：倍速/模式弹层 26n+54、播放队列弹层 32n+62
-  （PlayerWindowController.swift:1145 / :1254）。公式整体豁免；行高部分
-  可引角色值——26 即 control-pill（选项行与胶囊控件同高同族）；32 与
-  row-sidebar 同值异义（播放队列行 ≠ 侧栏行），是否另立角色留待 Step 3
-  迁移时 Review 定夺。
-- 红绿灯避让 90：播放器胶囊左右安全距（PlayerWindowController.swift:296-297）。
+- 弹层高度公式常数：倍速/模式弹层 n×control-pill+54、播放队列弹层
+  n×row-playlist+62（PlayerWindowController.swift:1146 / :1256）。
+  公式的常数项（+54/+62）与 n 倍结构豁免；行高项已引角色值——26 =
+  control-pill（选项行与胶囊控件同高同族），32 = row-playlist（Step 3 定夺：
+  与 row-sidebar 同值异义，另立角色）。
+- 红绿灯避让：播放器胶囊左右安全距 90（PlayerWindowController.swift:296-297）；
+  codec chips 顶部下沉 40（同文件 :181，让开红绿灯安全区，刻度无 40 档）。
 - 微调 2/3/7：单点调校（如 ContinuousReaderView.swift:198、
-  PlayerWindowController.swift:294 / :1035）。
+  PlayerWindowController.swift:294 / :1035、BrowserViewController.swift:628
+  选中圆角矩形的 dy:2——同处 dx:12 已收编 space12）。
+- 速度钮宽 38（PlayerWindowController.swift:347）：内容驱动实测值
+  （mono-digit 最宽档 "1.25x"），与 volumeReadoutWidth 同类，不立角色。
+- glyph 承载框（符号档 §4.5 外的不可见布局盒，随宿主行高/胶囊调校，不立
+  角色）：播放胶囊音量图标框 16（PlayerWindowController.swift:317）、侧栏
+  组加号钮 16（ServerListViewController.swift:235）、侧栏行图标框 18
+  （ServerListViewController.swift:299）。播放队列行 glyph 框 14 落在刻度
+  上，走 space14 数值档（PlayerWindowController.swift:1309），不在此列。
+- StatePlaceholderView 组件封装内部几何（同 PillButton 一类）：
+  占位图标框 48 / spinner 框 32 / 内容宽上限 360 / 行动按钮前间距 18
+  （StatePlaceholderView.swift:66 / :73-81）。
 - upperRowCenterY / lowerRowCenterY（-9 / 13）：68 胶囊高的几何分解，
   已有局部常量（PlayerWindowController.swift:515-516）。
 - volumeReadoutWidth：音量百分比读数宽度，字体实测值

@@ -199,13 +199,13 @@ final class ContinuousReaderView: NSView {
             make.centerY.equalToSuperview()
         }
         scrubberSlider.snp.makeConstraints { make in
-            make.leading.equalTo(speedLabel.snp.trailing).offset(6)
+            make.leading.equalTo(speedLabel.snp.trailing).offset(CoveStyle.space6)
             make.centerY.equalToSuperview()
             make.width.equalTo(CoveStyle.sliderScrubber)
         }
         progressLabel.snp.makeConstraints { make in
-            make.leading.equalTo(scrubberSlider.snp.trailing).offset(10)
-            make.trailing.equalToSuperview().offset(-14)
+            make.leading.equalTo(scrubberSlider.snp.trailing).offset(CoveStyle.space10)
+            make.trailing.equalToSuperview().offset(-CoveStyle.space14)
             make.centerY.equalToSuperview()
         }
         zoomLabel.snp.makeConstraints { make in
