@@ -1,10 +1,76 @@
 import AppKit
 
-/// Shared design constants for Cove's UI: corner radii, fonts, and colors.
+/// Shared design constants for Cove's UI: spacing, component sizes,
+/// corner radii, fonts, and colors.
 /// One place so every feature screen speaks the same visual language
 /// instead of growing its own ad-hoc values.
 @MainActor
 enum CoveStyle {
+    // MARK: Spacing (tokens §3)
+
+    // Fixed spacing scale; call sites pick a step directly instead of
+    // inventing ad-hoc offsets. Steps 6/10/14 are the admitted 2pt
+    // sub-steps for measured high-density chrome (transport chains,
+    // slider flanks, popover insets); prefer the main 4pt grid elsewhere.
+    // Usage conventions (content insets, card padding, compact gaps) are
+    // documented in design/DESIGN-TOKENS.md §3, not aliased here.
+    static let space4: CGFloat = 4
+    static let space6: CGFloat = 6
+    static let space8: CGFloat = 8
+    static let space10: CGFloat = 10
+    static let space12: CGFloat = 12
+    static let space14: CGFloat = 14
+    static let space16: CGFloat = 16
+    static let space20: CGFloat = 20
+    static let space24: CGFloat = 24
+    static let space32: CGFloat = 32
+
+    // MARK: Component sizes (tokens §3)
+
+    // Fixed component dimensions by semantic role: one role per
+    // value+meaning pair — a repeated value with a different meaning gets
+    // its own role so each can evolve independently. Mirrors the role
+    // table in design/DESIGN-TOKENS.md §3.
+
+    /// Capsule (pill) control standard height; PillButton enforces it as
+    /// its minimum height.
+    static let controlPill: CGFloat = 26
+    /// Browser list row height (badge tile plus breathing room).
+    static let rowList: CGFloat = 56
+    /// Sidebar row height (servers/local groups).
+    static let rowSidebar: CGFloat = 32
+    /// Sidebar group-header row height (same value as `chipCodec`,
+    /// different meaning — separate role).
+    static let rowSidebarGroup: CGFloat = 20
+    /// Row icon badge tile in browser list rows.
+    static let badgeTile: CGFloat = 40
+    /// Browser toolbar strip height above the content list.
+    static let barBrowserToolbar: CGFloat = 52
+    /// Player controls capsule height (upper control row + lower progress
+    /// row).
+    static let capsulePlayer: CGFloat = 68
+    /// Square transport/tool buttons in the player capsule's upper row.
+    static let controlTransport: CGFloat = 28
+    /// Codec info chip height (HW / codec / resolution / bitrate).
+    static let chipCodec: CGFloat = 20
+    /// Player volume slider width.
+    static let sliderVolume: CGFloat = 64
+    /// Reader chrome pill height (scrubber / page chrome / resume hint;
+    /// same value as `rowSidebar`, different meaning — separate role).
+    static let pillReaderChrome: CGFloat = 32
+    /// Accessory symbol buttons nested inside reader chrome pills
+    /// (auto-scroll, auto-advance).
+    static let controlPillAccessory: CGFloat = 24
+    /// Reader navigation circles (previous/next page).
+    static let circleNav: CGFloat = 44
+    /// Strip-reader scrubber slider width (inside the scrubber pill).
+    static let sliderScrubber: CGFloat = 220
+    /// Settings numeric input field width (capacity / TTL / rate limit;
+    /// same value as `sliderVolume`, different meaning — separate role).
+    static let fieldNumeric: CGFloat = 64
+    /// Settings preheat-folder table height.
+    static let tablePreheatFolder: CGFloat = 150
+
     // MARK: Corner radii
 
     /// Small badges and chips (e.g. the server row icon badge).

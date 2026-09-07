@@ -39,18 +39,75 @@ Cove 跨平台 UI 一致性的图纸：所有色值/字号/间距/圆角/动效/
 | overlay-flash | 15 semibold | 阅读器缩放倍数闪现（两文件复制已去重） | [已拍板] 2026-09-05 · TASK-typography-scale |
 | —（已废除） | 9pt / 10pt | 条带速度档→mono-digit 12、「远程」tag→caption 11 | [已拍板] 2026-09-05 · TASK-typography-scale |
 
-## 3. 间距与尺寸（4pt 网格）
+## 3. 间距与尺寸
 
-刻度：4 / 8 / 12 / 16 / 20 / 24 / 32。所有 margin/padding 从刻度取值。
+spacing 刻度 + 组件尺寸角色两族分立：间距走数值档（空间距不问语义，
+调用点直接写档位），组件尺寸走语义角色（改定义一处全仓生效）。
+[已拍板] 2026-09-07 · TASK-spacing-tokens
 
-| 角色 | 值 | 用途 | 状态 |
-|------|----|------|------|
-| inset-content | 20 | 内容区四边 | [现状]（散点登记） |
-| inset-card | 16 | 卡片/胶囊内边距 | [现状]（散点登记） |
-| gap-compact | 8 | 组件内部元素间距 | [现状]（散点登记） |
-| row-list | 56 | 浏览器行高 | [现状] |
-| badge-tile | 40（圆角 small） | 行内图标瓷贴 | [现状] |
-| row-sidebar | 32 | 侧栏行高 | [现状]（散点登记） |
+### 3.1 spacing 刻度
+
+| 档族 | 值 | 代码令牌 | 说明 | 状态 |
+|------|----|---------|------|------|
+| 主网格（4pt） | 4 / 8 / 12 / 16 / 20 / 24 / 32 | CoveStyle.space4…space32 | 所有 margin/padding/gap 默认从主网格取值 | [已拍板] 2026-09-07 · TASK-spacing-tokens |
+| 子档（2pt） | 6 / 10 / 14 | CoveStyle.space6 / space10 / space14 | 实测调校的高密度区专用（播放器按钮链 6、进度条两侧 10、弹层 inset 14）；收编后散点离网格率 34% → ~6%，视觉不动 | [已拍板] 2026-09-07 · TASK-spacing-tokens（收编 2pt 子档） |
+
+### 3.2 用法约定（文档级，不叠代码别名）
+
+原 [现状] 散点登记的语义角色转为用法约定：约定指向档位，代码侧不再
+另立语义别名。[已拍板] 2026-09-07 · TASK-spacing-tokens
+
+| 约定 | 指向档位 | 用途 |
+|------|---------|------|
+| inset-content | 20（space20） | 内容区四边 |
+| inset-card | 16（space16） | 卡片/胶囊内边距 |
+| gap-compact | 8（space8） | 组件内部元素间距 |
+
+### 3.3 组件尺寸角色（与 CoveStyle 一一对应）
+
+一值一角色、同值同义合并、撞名新义升格（同值异义分立角色，各自独立
+演化）。[已拍板] 2026-09-07 · TASK-spacing-tokens
+
+| 角色 | 代码（CoveStyle） | 值 | 用途 | 状态 |
+|------|------------------|----|------|------|
+| control-pill | controlPill | 26 | 胶囊（pill）控件标准高；PillButton 最小高实现该标准（组件封装豁免，见 §3.4） | [已拍板] 2026-09-07 · TASK-spacing-tokens |
+| row-list | rowList | 56 | 浏览器行高（40 瓷贴 + 上下各 8 呼吸位） | [已拍板] 2026-09-07 · TASK-spacing-tokens |
+| row-sidebar | rowSidebar | 32 | 侧栏行高 | [已拍板] 2026-09-07 · TASK-spacing-tokens |
+| row-sidebar-group | rowSidebarGroup | 20 | 侧栏组标题行高；与 chip-codec 同值异义，分立角色 | [已拍板] 2026-09-07 · TASK-spacing-tokens |
+| badge-tile | badgeTile | 40（圆角 small） | 行内图标瓷贴 | [已拍板] 2026-09-07 · TASK-spacing-tokens |
+| bar-browser-toolbar | barBrowserToolbar | 52 | 浏览器内容区上方工具条高 | [已拍板] 2026-09-07 · TASK-spacing-tokens |
+| capsule-player | capsulePlayer | 68 | 播放器控制胶囊高（上排控件链 + 下排进度条） | [已拍板] 2026-09-07 · TASK-spacing-tokens |
+| control-transport | controlTransport | 28 | 播放胶囊上排方形 transport/工具钮 | [已拍板] 2026-09-07 · TASK-spacing-tokens |
+| chip-codec | chipCodec | 20 | codec 信息瓷贴高（HW/编码/分辨率/码率） | [已拍板] 2026-09-07 · TASK-spacing-tokens |
+| slider-volume | sliderVolume | 64 | 播放器音量滑条宽 | [已拍板] 2026-09-07 · TASK-spacing-tokens |
+| pill-reader-chrome | pillReaderChrome | 32 | 阅读器 chrome pill 高（scrubber/页码/续读提示三处同高）；与 row-sidebar 同值异义，分立角色 | [已拍板] 2026-09-07 · TASK-spacing-tokens |
+| control-pill-accessory | controlPillAccessory | 24 | 阅读器 pill 内嵌附件钮（自动滚动/自动翻页） | [已拍板] 2026-09-07 · TASK-spacing-tokens |
+| circle-nav | circleNav | 44 | 阅读器翻页导航圆钮（上一页/下一页） | [已拍板] 2026-09-07 · TASK-spacing-tokens |
+| slider-scrubber | sliderScrubber | 220 | 条带阅读器 scrubber 滑条宽（scrubber pill 内） | [已拍板] 2026-09-07 · TASK-spacing-tokens |
+| field-numeric | fieldNumeric | 64 | 设置页数值输入框宽（容量/TTL/限速三处共用）；与 slider-volume 同值异义，分立角色 | [已拍板] 2026-09-07 · TASK-spacing-tokens |
+| table-preheat-folder | tablePreheatFolder | 150 | 设置页预热文件夹表高 | [已拍板] 2026-09-07 · TASK-spacing-tokens |
+
+### 3.4 豁免清单（登记，不进令牌）
+
+[已拍板] 2026-09-07 · TASK-spacing-tokens（逐条登记，括号内为实证位置）
+
+- PillButton 内部 padding/最小高 26：组件封装（SharedUI/PillButton.swift:70）。
+  最小高即 control-pill 标准的实现，不反向引用令牌。
+- 弹层高度公式常数：倍速/模式弹层 26n+54、播放队列弹层 32n+62
+  （PlayerWindowController.swift:1145 / :1254）。公式整体豁免；行高部分
+  可引角色值——26 即 control-pill（选项行与胶囊控件同高同族）；32 与
+  row-sidebar 同值异义（播放队列行 ≠ 侧栏行），是否另立角色留待 Step 3
+  迁移时 Review 定夺。
+- 红绿灯避让 90：播放器胶囊左右安全距（PlayerWindowController.swift:296-297）。
+- 微调 2/3/7：单点调校（如 ContinuousReaderView.swift:198、
+  PlayerWindowController.swift:294 / :1035）。
+- upperRowCenterY / lowerRowCenterY（-9 / 13）：68 胶囊高的几何分解，
+  已有局部常量（PlayerWindowController.swift:515-516）。
+- volumeReadoutWidth：音量百分比读数宽度，字体实测值
+  （PlayerWindowController.swift:506）。
+- 阴影参数（shadowOffset 0/-1、0/-2 等）：另立 shadow 配方候选，本卡不动。
+- 窗口/分栏尺寸：窗口 contentRect / minSize / sheet 尺寸等窗口配置。
+- 像素域常量：thumbnailPixelSize 等 Services 层常量。
 
 ## 4. 圆角
 
