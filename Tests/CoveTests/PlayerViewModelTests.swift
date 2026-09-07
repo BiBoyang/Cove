@@ -13,6 +13,7 @@ struct PlayerViewModelTests {
             case seekTo(Double)
             case setVolume(Double)
             case setSpeed(Double)
+            case setSubtitle(Int?)
         }
 
         private(set) var commands: [Command] = []
@@ -22,6 +23,7 @@ struct PlayerViewModelTests {
         func seekTo(seconds: Double) { commands.append(.seekTo(seconds)) }
         func setVolume(_ volume: Double) { commands.append(.setVolume(volume)) }
         func setSpeed(_ speed: Double) { commands.append(.setSpeed(speed)) }
+        func setSubtitle(trackID: Int?) { commands.append(.setSubtitle(trackID)) }
     }
 
     private func makeViewModel(
@@ -165,6 +167,38 @@ struct PlayerViewModelTests {
         viewModel.setSpeed(99)
         #expect(controller.commands == [.setSpeed(1.5), .setSpeed(4)])
         #expect(viewModel.speed == 4)
+    }
+
+    @Test("subtitle track events land for the picker and reset on file switch")
+    func subtitleTracksLand() {
+        let (viewModel, _) = makeViewModel()
+        #expect(viewModel.subtitleTracks.isEmpty)
+        #expect(viewModel.selectedSubtitleTrackID == nil)
+        #expect(viewModel.hasSubtitleTracks == false)
+
+        let tracks = [
+            SubtitleTrack(id: 1, title: "中文", lang: "chi", codec: "subrip", displayName: "中文"),
+            SubtitleTrack(id: 2, title: nil, lang: "eng", codec: "ass", displayName: "eng"),
+        ]
+        viewModel.apply(.subtitleTracksChanged(tracks, selectedID: 1))
+        #expect(viewModel.subtitleTracks == tracks)
+        #expect(viewModel.selectedSubtitleTrackID == 1)
+        #expect(viewModel.hasSubtitleTracks)
+
+        // A file switch re-emits through the core: the new file's list
+        // (here: none) replaces the old one.
+        viewModel.apply(.subtitleTracksChanged([], selectedID: nil))
+        #expect(viewModel.subtitleTracks.isEmpty)
+        #expect(viewModel.selectedSubtitleTrackID == nil)
+        #expect(viewModel.hasSubtitleTracks == false)
+    }
+
+    @Test("subtitle intents forward to the controller, nil means off")
+    func subtitleIntents() {
+        let (viewModel, controller) = makeViewModel()
+        viewModel.setSubtitle(trackID: 2)
+        viewModel.setSubtitle(trackID: nil)
+        #expect(controller.commands == [.setSubtitle(2), .setSubtitle(nil)])
     }
 
     @Test("replay seeks to zero and clears a parked pause")

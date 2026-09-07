@@ -8,7 +8,9 @@ import SourceKit
 /// so they stay centered). A floating frosted capsule, bottom-centered and
 /// sized to its content, carries two rows: the upper row is the volume
 /// icon + slider + live number, then previous / play-pause / next, then
-/// the playback-rate button ("1x", popover with speeds), the play-mode
+/// the playback-rate button ("1x", popover with speeds), the subtitle
+/// button (popover listing the file's embedded subtitle tracks plus an
+/// off entry, greyed out while the file has none), the play-mode
 /// button (single / repeat-one / list / list-loop / shuffle, symbol with a
 /// popover picker), and the playlist button (popover listing the queue;
 /// tap a row to jump to it); the lower row is the elapsed time, the
@@ -67,6 +69,7 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
     private let volumeValueLabel = NSTextField(labelWithString: "")
     private let playModeButton = NSButton()
     private let playlistButton = NSButton()
+    private let subtitleButton = NSButton()
     private let centerTitleLabel = NSTextField(labelWithString: "")
     private let controlsCapsule = ControlsCapsuleView()
     private let upNextOverlay = UpNextOverlayView()
@@ -96,9 +99,15 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
     private var currentPlayMode: PlayMode = .list
     /// Retained while shown; a popover deallocates mid-flight otherwise.
     private var activePopover: NSPopover?
+    /// True while the active popover is the subtitle picker's; its rows
+    /// belong to one file's session, so a track swap must drop it.
+    private var isSubtitlePopoverActive = false
 
     /// Playback rates offered by the speed popover.
     private static let speedOptions: [Double] = [0.5, 0.75, 1, 1.25, 1.5, 2]
+    /// The subtitle popover value for its "off" row; track rows carry the
+    /// mpv track id as a string, which never collides with this.
+    private static let subtitleOffValue = "off"
     /// Play modes with their popover labels and capsule symbols.
     private static let playModeInfo: [(mode: PlayMode, label: String, symbol: String)] = [
         (.single, "单视频播放", "play.rectangle"),
@@ -120,7 +129,7 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
         window.title = item.name
         // The bottom capsule shrink-wraps its content and stays centered;
         // the floor keeps a narrowed window clear of the capsule's sides
-        // (520 covers its natural width, ~370, with margin) and leaves a
+        // (520 covers its natural width, ~400, with margin) and leaves a
         // usable video area. No frame autosave exists, so nothing restores
         // a smaller frame that would need clamping.
         window.minSize = NSSize(width: 520, height: 320)
@@ -216,6 +225,11 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
             accessibilityDescription: "播放列表",
             action: #selector(handlePlaylistTapped(_:))
         )
+        configureButton(
+            subtitleButton, symbol: "captions.bubble",
+            accessibilityDescription: "字幕",
+            action: #selector(handleSubtitleTapped(_:))
+        )
         // Disabled until the coordinator reports the playlist position.
         previousTrackButton.isEnabled = false
         nextTrackButton.isEnabled = false
@@ -277,6 +291,7 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
         capsuleBoard.addSubview(playPauseButton)
         capsuleBoard.addSubview(nextTrackButton)
         capsuleBoard.addSubview(speedButton)
+        capsuleBoard.addSubview(subtitleButton)
         capsuleBoard.addSubview(volumeIconView)
         capsuleBoard.addSubview(volumeSlider)
         capsuleBoard.addSubview(volumeValueLabel)
@@ -346,8 +361,13 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
             make.centerY.equalToSuperview().offset(Self.upperRowCenterY)
             make.width.equalTo(38)
         }
-        playModeButton.snp.makeConstraints { make in
+        subtitleButton.snp.makeConstraints { make in
             make.leading.equalTo(speedButton.snp.trailing).offset(CoveStyle.space8)
+            make.centerY.equalToSuperview().offset(Self.upperRowCenterY)
+            make.size.equalTo(CoveStyle.controlTransport)
+        }
+        playModeButton.snp.makeConstraints { make in
+            make.leading.equalTo(subtitleButton.snp.trailing).offset(CoveStyle.space6)
             make.centerY.equalToSuperview().offset(Self.upperRowCenterY)
             make.size.equalTo(CoveStyle.controlTransport)
         }
@@ -454,6 +474,11 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
         self.viewModel.onChange = nil
         self.core.onEvent = nil
         self.core.shutdown()
+        // The subtitle popover's rows belong to the outgoing file; drop it
+        // with the session (a transient tap-away usually beats a swap here).
+        if isSubtitlePopoverActive {
+            activePopover?.close()
+        }
 
         self.core = core
         self.viewModel = viewModel
@@ -570,6 +595,30 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
         presentPopover(controller, from: sender)
     }
 
+    /// Subtitle picker: an off entry plus one row per embedded track,
+    /// anchored to the subtitle button like the other capsule pickers.
+    @objc private func handleSubtitleTapped(_ sender: NSButton) {
+        var options: [OptionListPopoverController.Option] = [
+            (label: "关闭字幕", value: Self.subtitleOffValue, checked: viewModel.selectedSubtitleTrackID == nil),
+        ]
+        for track in viewModel.subtitleTracks {
+            options.append((
+                label: track.displayName,
+                value: String(track.id),
+                checked: track.id == viewModel.selectedSubtitleTrackID
+            ))
+        }
+        let controller = OptionListPopoverController(
+            header: "字幕",
+            options: options
+        ) { [weak self] value in
+            self?.activePopover?.close()
+            self?.viewModel.setSubtitle(trackID: value == Self.subtitleOffValue ? nil : Int(value))
+        }
+        isSubtitlePopoverActive = true
+        presentPopover(controller, from: sender)
+    }
+
     @objc private func handlePlaylistTapped(_ sender: NSButton) {
         let controller = PlaylistPopoverController(
             items: playlistItems,
@@ -619,6 +668,8 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
         playPauseButton.image = NSImage(systemSymbolName: symbol, accessibilityDescription: "播放/暂停")?
             .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: CoveStyle.symbolMedium, weight: .semibold))
         progressSlider.isEnabled = viewModel.isProgressEnabled
+        // Greyed out while the current file carries no subtitle tracks.
+        subtitleButton.isEnabled = viewModel.hasSubtitleTracks
         progressSlider.maxValue = max(viewModel.duration, 1)
         if !viewModel.isScrubbing {
             progressSlider.doubleValue = viewModel.currentTime
@@ -863,6 +914,7 @@ extension PlayerWindowController: NSPopoverDelegate {
     /// an explicit close after selection).
     func popoverDidClose(_ notification: Notification) {
         activePopover = nil
+        isSubtitlePopoverActive = false
     }
 }
 

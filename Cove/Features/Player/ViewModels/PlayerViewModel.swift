@@ -9,6 +9,8 @@ protocol PlayerPlaybackControlling: AnyObject {
     func seekTo(seconds: Double)
     func setVolume(_ volume: Double)
     func setSpeed(_ speed: Double)
+    /// Selects a subtitle track by mpv track id; nil turns subtitles off.
+    func setSubtitle(trackID: Int?)
 }
 
 /// UI-facing playback state for one video session. Raw mpv events
@@ -57,6 +59,12 @@ final class PlayerViewModel {
     private(set) var volume: Double = 100
     /// Playback rate multiplier; 1 = normal speed.
     private(set) var speed: Double = 1
+    /// Subtitle tracks of the current file (empty when it has none),
+    /// mirrored from the core's `.subtitleTracksChanged` events; the core
+    /// re-emits on every file switch, which is what resets the list.
+    private(set) var subtitleTracks: [SubtitleTrack] = []
+    /// The selected subtitle track's mpv id; nil = subtitles off.
+    private(set) var selectedSubtitleTrackID: Int?
     /// Whether the floating controls (capsule + overlay title) are shown.
     /// Auto-hide only ever engages during smooth playback; see
     /// `updateIdlePolicy`.
@@ -114,9 +122,9 @@ final class PlayerViewModel {
             isBuffering = buffering
         case .videoInfoChanged(let info):
             videoInfo = info
-        case .subtitleTracksChanged:
-            // Subtitle picker state is wired in Step 2; ignored until then.
-            break
+        case .subtitleTracksChanged(let tracks, let selectedID):
+            subtitleTracks = tracks
+            selectedSubtitleTrackID = selectedID
         case .ended:
             // A finished video is forgotten so a replay starts from the
             // top; the coordinator then decides whether to auto-advance
@@ -235,6 +243,13 @@ final class PlayerViewModel {
         onChange?()
     }
 
+    /// Subtitle picker selection; nil turns subtitles off. The core
+    /// confirms asynchronously via `.subtitleTracksChanged`, so this only
+    /// forwards the command — no optimistic state.
+    func setSubtitle(trackID: Int?) {
+        controller.setSubtitle(trackID: trackID)
+    }
+
     /// Restarts the current video from the top (repeat-one mode): mpv parks
     /// paused at EOF under keep-open, so seek back and unpause.
     func replayFromStart() {
@@ -303,6 +318,12 @@ final class PlayerViewModel {
 
     var isProgressEnabled: Bool {
         hasLoaded && !hasFailed
+    }
+
+    /// True while the subtitle button should be tappable: the current file
+    /// carries at least one subtitle track.
+    var hasSubtitleTracks: Bool {
+        !subtitleTracks.isEmpty
     }
 
     /// True while the transport button should offer pausing.
