@@ -78,10 +78,12 @@ targets:
         MARKETING_VERSION: "0.5.0"
         CURRENT_PROJECT_VERSION: "5"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
-        # Vendored libmpv (Vendor/libmpv): IINA.app Frameworks forest
-        # (mpv 0.38.0, universal, @rpath layout) plus mpv 0.41.0 client
-        # headers. Not committed to git; run scripts/assemble-libmpv.sh
-        # to assemble it locally. See plans/SPIKE-video-playback.md.
+        # Vendored libmpv (Vendor/libmpv): self-built LGPL-clean forest
+        # (mpv 0.41.0 + FFmpeg 7.1.x, arm64, @rpath layout) plus client
+        # headers. Not committed to git; run scripts/build-libmpv.sh to
+        # build it from pinned sources (scripts/assemble-libmpv.sh remains
+        # as the IINA-forest rollback path). See
+        # plans/libmpv-license-audit-2026-09-07.md.
         OTHER_LDFLAGS: "-lmpv"
         LIBRARY_SEARCH_PATHS: "$(PROJECT_DIR)/Vendor/libmpv"
         # -isystem (not -I): keep vendored third-party headers' own
@@ -102,6 +104,18 @@ targets:
           set -e
           FRAMEWORKS_DIR="$BUILT_PRODUCTS_DIR/$PRODUCT_NAME.app/Contents/Frameworks"
           mkdir -p "$FRAMEWORKS_DIR"
+          # Purge bundled dylibs that are no longer vendored: ditto only
+          # copies, so a swapped forest would otherwise leave stale dylibs
+          # (e.g. from the old IINA forest) in the bundle. XCTest injection
+          # dylibs are exempt.
+          for bundled in "$FRAMEWORKS_DIR"/lib*.dylib; do
+            [ -e "$bundled" ] || continue
+            name="$(basename "$bundled")"
+            case "$name" in libXCTest*) continue;; esac
+            if [ ! -e "$PROJECT_DIR/Vendor/libmpv/$name" ]; then
+              rm -f "$bundled"
+            fi
+          done
           for lib in "$PROJECT_DIR"/Vendor/libmpv/*.dylib; do
             # Skip the libmpv.dylib link-time symlink.
             if [ -L "$lib" ]; then continue; fi
