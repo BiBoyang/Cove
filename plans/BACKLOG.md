@@ -4,11 +4,12 @@
 
 ## 进行中 / 待验收
 
-- [ ] UI 统一优化主线：选题池与证据见 plans/UI-AUDIT-2026-09-05.md（按 §4 性价比顺序推进），令牌图纸 design/DESIGN-TOKENS.md；P1–P6 + 设置迁移 + 播放器控制条胶囊重构 + audit 残余清扫全部落地（P5/P6/胶囊于 2026-09-07 真机通过）；残余待办 = U1 spacing 令牌族（另立卡）；候选下一张卡 = 新选题（用户点题）
+- [ ] UI 统一优化主线：选题池与证据见 plans/UI-AUDIT-2026-09-05.md（按 §4 性价比顺序推进），令牌图纸 design/DESIGN-TOKENS.md；P1–P6 + 设置迁移 + 胶囊重构 + audit 清扫 + spacing 令牌族全部落地，audit 散点清零（2026-09-07 真机通过）；候选下一张卡 = 新选题（用户点题）
 
 ## 下一波（候选，未排期）
 
 - [ ] flaky 观察：ContinuousReaderViewModelTests "measurements land as one anchored batch" 高负载下偶发超时（CI 任务实测复跑即过），若 CI 上再红优先治理
+- [ ] 主窗口侧栏宽度漂移（2026-09-07 真机发现、根因已确诊）：点「设置」侧栏吸走详情区余量变宽，点回服务器恢复；宽窗下涨更多。根因=设置页可读列宽约束链（≤560 + 等宽 999）传导到 NSSplitView 分栏布局，侧栏仅 min 200 + preferredFraction 0.25 无上限。修复方向候选：swap 后恢复 divider / 切断约束传导 / 加 maximumThickness
 - [ ] 开发期观察（2026-09-05 实证存档）：ad-hoc 重建（make build）改变签名后，**首个会话**内 Keychain 密码读取（`KeychainKit.KeychainError error 0`）与 vault security-scoped bookmark 创建/解析失效（os_log: `Vault bookmark failed to resolve; falling back to the default root`），优雅重启 App 后自愈。仅影响开发期体验（正式签名上架后不存在）；若频繁干扰再立项，方向：书签创建失败时降级为纯路径存储 + 下次启动重新授权
 
 ## 上架前必须
@@ -66,3 +67,4 @@
 - 媒体 chrome 整治：surfaceOverlay 不透明底板 / textOnMedia 三档 / readerBackground 令牌落地，条带 pill 可见性 + 单页 chrome pill 化，mpv 原生 OSD 根治 + codec chips 随控制条显隐，弹层暖黑化 + accent glyph 选中（废白 checkmark）+ Up Next pill 按钮，播放器中央加载/失败占位；验收修复音量读数定宽与 Up Next 立即播放接线（后者为功能首提交起的潜伏断线）（见 plans/archive/TASK-media-chrome.md，2026-09-07 真机通过）
 - 播放器控制条布局重构：IINA 式底部居中双排窄胶囊（上排音量组 + transport + 工具钮，下排进度条 + 两端时间码）+ 窗口 minSize 520×320，Up Next bottom 魔数 -76 → 锚定胶囊顶 +12（见 plans/archive/TASK-player-controls-capsule.md，2026-09-07 真机通过）
 - UI audit 残余清扫：vault 缩略图接通 ThumbnailService（BUG-5 判定漏接）、设置页五钮统一 PillButton 配方（E3）、U2/U3 复核销项 + U4 系统蓝拍板入 §6.8、vault 红线注释随缩略图缓存例外同步（见 plans/archive/TASK-ui-audit-sweep.md，2026-09-07 真机通过）
+- spacing/尺寸令牌族：spacing 数值档 10 档（收编 2pt 子档 6/10/14）+ 组件尺寸角色族（行高/控件/胶囊等 19 角色），全仓 142 处散点同值迁移零视觉变化，豁免清单入 §3.4；audit U1 销项（见 plans/archive/TASK-spacing-tokens.md，2026-09-07 真机通过）
