@@ -10,7 +10,6 @@
 
 - [ ] flaky 观察：ContinuousReaderViewModelTests "measurements land as one anchored batch" 高负载下偶发超时（CI 任务实测复跑即过），若 CI 上再红优先治理
 - [ ] 开发期观察（2026-09-05 实证存档）：ad-hoc 重建（make build）改变签名后，**首个会话**内 Keychain 密码读取（`KeychainKit.KeychainError error 0`）与 vault security-scoped bookmark 创建/解析失效（os_log: `Vault bookmark failed to resolve; falling back to the default root`），优雅重启 App 后自愈。仅影响开发期体验（正式签名上架后不存在）；若频繁干扰再立项，方向：书签创建失败时降级为纯路径存储 + 下次启动重新授权
-- [ ] 播放器字幕轨开关 UI（2026-09-08 供应链验收时发现的功能缺口）：mpv 默认 `sid=auto` 只自动选中带 default 标记的字幕轨，App 无任何字幕轨入口——非 default 轨（含外挂 srt/ass，被归为 text 类无加载逻辑）永远无法显示。立项时考虑：胶囊工具位加字幕钮 + 轨列表弹层
 
 ## 上架前必须
 
@@ -69,3 +68,4 @@
 - spacing/尺寸令牌族：spacing 数值档 10 档（收编 2pt 子档 6/10/14）+ 组件尺寸角色族（行高/控件/胶囊等 19 角色），全仓 142 处散点同值迁移零视觉变化，豁免清单入 §3.4；audit U1 销项（见 plans/archive/TASK-spacing-tokens.md，2026-09-07 真机通过）
 - 侧栏宽度漂移修复：根因=设置页 999 优先级等宽填充约束把 pane 宽度意见传导进 NSSplitView 分栏仲裁（压过侧栏 250 holding）；修复=填充目标改常量 560 + 侧栏 maximumThickness 320 兜底 + 约束图不变量测试（2026-09-07 真机通过，Codex 执行、助手 Review）
 - libmpv 供应链收敛：脱离 IINA 森林，scripts/build-libmpv.sh 自构建 LGPL 清洁链（mpv 0.41.0 `-Dgpl=false` + FFmpeg 7.1.5 解码裁剪+VideoToolbox，arm64；18 dylib/18MB vs 原 71/116MB），GPL 指纹与闭包自检入脚本、约束级回归测试入网、LICENSES/ 合规交付；embed 脚本修旧库残留（见 plans/archive/TASK-libmpv-supply-chain.md + plans/libmpv-license-audit-2026-09-07.md，2026-09-08 真机七项回归通过）
+- 播放器字幕轨开关：胶囊字幕钮 + 内嵌轨弹层（关闭/各轨，当前项对勾），无轨置灰、切集重置；track-list NODE 观察 + 纯值解析单测（见 plans/archive/TASK-subtitle-track-picker.md，2026-09-08 真机通过）
