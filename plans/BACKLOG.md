@@ -8,7 +8,6 @@
 
 ## 下一波（候选，未排期）
 
-- [ ] flaky 观察：ContinuousReaderViewModelTests "measurements land as one anchored batch" 高负载下偶发超时（CI 任务实测复跑即过），若 CI 上再红优先治理
 - [ ] 开发期观察（2026-09-05 实证存档）：ad-hoc 重建（make build）改变签名后，**首个会话**内 Keychain 密码读取（`KeychainKit.KeychainError error 0`）与 vault security-scoped bookmark 创建/解析失效（os_log: `Vault bookmark failed to resolve; falling back to the default root`），优雅重启 App 后自愈。仅影响开发期体验（正式签名上架后不存在）；若频繁干扰再立项，方向：书签创建失败时降级为纯路径存储 + 下次启动重新授权
 
 ## 上架前必须
@@ -67,6 +66,7 @@
 - UI audit 残余清扫：vault 缩略图接通 ThumbnailService（BUG-5 判定漏接）、设置页五钮统一 PillButton 配方（E3）、U2/U3 复核销项 + U4 系统蓝拍板入 §6.8、vault 红线注释随缩略图缓存例外同步（见 plans/archive/TASK-ui-audit-sweep.md，2026-09-07 真机通过）
 - spacing/尺寸令牌族：spacing 数值档 10 档（收编 2pt 子档 6/10/14）+ 组件尺寸角色族（行高/控件/胶囊等 19 角色），全仓 142 处散点同值迁移零视觉变化，豁免清单入 §3.4；audit U1 销项（见 plans/archive/TASK-spacing-tokens.md，2026-09-07 真机通过）
 - 侧栏宽度漂移修复：根因=设置页 999 优先级等宽填充约束把 pane 宽度意见传导进 NSSplitView 分栏仲裁（压过侧栏 250 holding）；修复=填充目标改常量 560 + 侧栏 maximumThickness 320 兜底 + 约束图不变量测试（2026-09-07 真机通过，Codex 执行、助手 Review）
+- ContinuousReader 测试 deflake：根因=测量落地后窗口扩容使轮询观察窗仅约一个 load 延迟（瞬态中间态被轮询错过）；修复=事件驱动等待 + 闩锁，断言零削弱（2026-09-08，外派 agent 执行、助手 Review）
 - libmpv 供应链收敛：脱离 IINA 森林，scripts/build-libmpv.sh 自构建 LGPL 清洁链（mpv 0.41.0 `-Dgpl=false` + FFmpeg 7.1.5 解码裁剪+VideoToolbox，arm64；18 dylib/18MB vs 原 71/116MB），GPL 指纹与闭包自检入脚本、约束级回归测试入网、LICENSES/ 合规交付；embed 脚本修旧库残留（见 plans/archive/TASK-libmpv-supply-chain.md + plans/libmpv-license-audit-2026-09-07.md，2026-09-08 真机七项回归通过）
 - 播放器字幕轨开关：胶囊字幕钮 + 内嵌轨弹层（关闭/各轨，当前项对勾），无轨置灰、切集重置；track-list NODE 观察 + 纯值解析单测（见 plans/archive/TASK-subtitle-track-picker.md，2026-09-08 真机通过）
 - shadow 配方令牌化：阴影散点 5 处聚类收敛为两档——shadowTextOnMedia（黑 0.6/blur 3/(0,-1)，媒体文字可读性）与 shadowFloatingChrome（黑 0.35/blur 10/(0,-2)，胶囊/Up Next pill 浮层）；零视觉变化，入 §4.6（见 plans/archive/TASK-shadow-recipe.md，2026-09-08 验收通过）
