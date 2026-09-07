@@ -69,3 +69,4 @@
 - 侧栏宽度漂移修复：根因=设置页 999 优先级等宽填充约束把 pane 宽度意见传导进 NSSplitView 分栏仲裁（压过侧栏 250 holding）；修复=填充目标改常量 560 + 侧栏 maximumThickness 320 兜底 + 约束图不变量测试（2026-09-07 真机通过，Codex 执行、助手 Review）
 - libmpv 供应链收敛：脱离 IINA 森林，scripts/build-libmpv.sh 自构建 LGPL 清洁链（mpv 0.41.0 `-Dgpl=false` + FFmpeg 7.1.5 解码裁剪+VideoToolbox，arm64；18 dylib/18MB vs 原 71/116MB），GPL 指纹与闭包自检入脚本、约束级回归测试入网、LICENSES/ 合规交付；embed 脚本修旧库残留（见 plans/archive/TASK-libmpv-supply-chain.md + plans/libmpv-license-audit-2026-09-07.md，2026-09-08 真机七项回归通过）
 - 播放器字幕轨开关：胶囊字幕钮 + 内嵌轨弹层（关闭/各轨，当前项对勾），无轨置灰、切集重置；track-list NODE 观察 + 纯值解析单测（见 plans/archive/TASK-subtitle-track-picker.md，2026-09-08 真机通过）
+- shadow 配方令牌化：阴影散点 5 处聚类收敛为两档——shadowTextOnMedia（黑 0.6/blur 3/(0,-1)，媒体文字可读性）与 shadowFloatingChrome（黑 0.35/blur 10/(0,-2)，胶囊/Up Next pill 浮层）；零视觉变化，入 §4.6（见 plans/archive/TASK-shadow-recipe.md，2026-09-08 验收通过）
