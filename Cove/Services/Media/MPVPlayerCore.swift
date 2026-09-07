@@ -34,6 +34,13 @@ enum PlayerCoreEvent {
     /// Video parameters settled after a (re)config; carries the facts the
     /// codec chips render.
     case videoInfoChanged(VideoTrackInfo)
+    /// Subtitle track list or selection changed. Carries the full current
+    /// list (empty when the file has no subtitle tracks) plus the selected
+    /// track's id (nil = subtitles off). Sourced from the observed
+    /// `track-list` property, so initial load, `setSubtitle` switches and
+    /// file switches (which reset the list) all flow through here; mpv
+    /// dedups the observation by value, so only real changes arrive.
+    case subtitleTracksChanged([SubtitleTrack], selectedID: Int?)
     /// Clean end of file.
     case ended
     /// Playback died with an mpv error (end-file with a negative error code).
@@ -52,6 +59,74 @@ struct VideoTrackInfo: Equatable, Sendable {
     let height: Int
     /// Instantaneous video bitrate in bits per second; 0 when unknown.
     let bitrate: Double
+}
+
+/// One subtitle track as listed in the player's subtitle picker. Pure
+/// values only (same boundary rule as `VideoTrackInfo`).
+struct SubtitleTrack: Equatable, Sendable {
+    /// mpv track id (`track-list/N/id`); the value the `sid` property takes.
+    let id: Int
+    /// Title metadata carried by the file; nil when the track has none.
+    let title: String?
+    /// ISO language code, e.g. "eng"; nil when the track has none.
+    let lang: String?
+    /// Codec name, e.g. "subrip" or "ass"; empty when mpv reports none yet.
+    let codec: String
+    /// Picker row label; see `displayName(title:lang:codec:position:)`.
+    let displayName: String
+}
+
+/// Raw facts of one `track-list` entry, any track type. The seam between
+/// the mpv node walk (needs a live handle, not unit-testable) and the
+/// pure picker logic on `SubtitleTrack`.
+struct MPVTrackEntry: Equatable, Sendable {
+    let id: Int
+    /// mpv stream type: "video", "audio" or "sub".
+    let type: String
+    let title: String?
+    let lang: String?
+    let codec: String?
+    /// mpv's `selected` flag: this track is the current pick of its type.
+    let isSelected: Bool
+}
+
+extension SubtitleTrack {
+    /// Filters subtitle tracks out of a raw track-list and builds the
+    /// picker models; also derives the selected track id (nil = subtitles
+    /// off). The app never sets `secondary-sid`, so at most one subtitle
+    /// track is selected; the first selected one wins defensively.
+    static func parse(trackList entries: [MPVTrackEntry]) -> (tracks: [SubtitleTrack], selectedID: Int?) {
+        var tracks: [SubtitleTrack] = []
+        var selectedID: Int?
+        for entry in entries where entry.type == "sub" {
+            if entry.isSelected, selectedID == nil {
+                selectedID = entry.id
+            }
+            tracks.append(SubtitleTrack(
+                id: entry.id,
+                title: entry.title,
+                lang: entry.lang,
+                codec: entry.codec ?? "",
+                displayName: displayName(
+                    title: entry.title,
+                    lang: entry.lang,
+                    codec: entry.codec,
+                    position: tracks.count + 1
+                )
+            ))
+        }
+        return (tracks, selectedID)
+    }
+
+    /// Row-label fallback chain: title, then language code, then codec,
+    /// then a position-based placeholder, so metadata-less tracks never
+    /// render as an empty row. Empty strings count as missing.
+    static func displayName(title: String?, lang: String?, codec: String?, position: Int) -> String {
+        if let title, !title.isEmpty { return title }
+        if let lang, !lang.isEmpty { return lang }
+        if let codec, !codec.isEmpty { return codec }
+        return "字幕 \(position)"
+    }
 }
 
 /// Owns one mpv handle and its OpenGL render context for a single video.
@@ -80,6 +155,13 @@ final class MPVPlayerCore {
     /// Last emitted video info; reconfig fires several times per track
     /// (audio switches, format probes), so only real changes propagate.
     private var lastVideoTrackInfo: VideoTrackInfo?
+    /// Subtitle tracks of the current file (empty when it has none) and
+    /// the selected track id (nil = subtitles off). Mirror of the last
+    /// emitted `.subtitleTracksChanged` event; because both come from the
+    /// observed `track-list`, a file switch resets them automatically —
+    /// the new file's list simply replaces the previous one.
+    private(set) var subtitleTracks: [SubtitleTrack] = []
+    private(set) var selectedSubtitleTrackID: Int?
 
     /// Property-observation reply IDs, matched against `reply_userdata` in
     /// the drain loop.
@@ -89,6 +171,7 @@ final class MPVPlayerCore {
         static let pause: UInt64 = 3
         static let pausedForCache: UInt64 = 4
         static let eofReached: UInt64 = 5
+        static let trackList: UInt64 = 6
     }
 
     /// Receives playback events on the main actor; wired to the view model
@@ -198,6 +281,18 @@ final class MPVPlayerCore {
         command(["set", "speed", String(speed)])
     }
 
+    /// Selects a subtitle track by mpv track id; nil disables subtitles
+    /// (`sid=no`). The switch is confirmed asynchronously: mpv re-notifies
+    /// the observed track-list, which updates `selectedSubtitleTrackID`
+    /// and emits `.subtitleTracksChanged` — no optimistic state here.
+    func setSubtitle(trackID: Int?) {
+        if let trackID {
+            command(["set", "sid", String(trackID)])
+        } else {
+            command(["set", "sid", "no"])
+        }
+    }
+
     /// Observes the properties the player UI reads. Replies (including each
     /// property's initial value) arrive as MPV_EVENT_PROPERTY_CHANGE in the
     /// drain loop, distinguished by `reply_userdata`.
@@ -208,6 +303,12 @@ final class MPVPlayerCore {
         mpv_observe_property(handle, ObservedProperty.pause, "pause", MPV_FORMAT_FLAG)
         mpv_observe_property(handle, ObservedProperty.pausedForCache, "paused-for-cache", MPV_FORMAT_FLAG)
         mpv_observe_property(handle, ObservedProperty.eofReached, "eof-reached", MPV_FORMAT_FLAG)
+        // track-list as NODE: one observation covers the whole subtitle
+        // lifecycle — the list becomes reliable at file-loaded, `set sid`
+        // switches re-notify it (mpv fires TRACK_SWITCHED), and a file
+        // switch replaces it. mpv dedups observed values, so noisier
+        // events that also touch track-list (e.g. reconfig) cost nothing.
+        mpv_observe_property(handle, ObservedProperty.trackList, "track-list", MPV_FORMAT_NODE)
     }
 
     /// Snapshots the codec-chip facts once a video track is configured.
@@ -226,6 +327,59 @@ final class MPVPlayerCore {
             height: height,
             bitrate: max(0, readDoubleProperty("video-bitrate"))
         )
+    }
+
+    /// Copies an observed `track-list` node out to raw entries. The node
+    /// memory is event-owned and invalidated by the next `mpv_wait_event`
+    /// call, so every string is copied here, synchronously, inside the
+    /// drain loop.
+    private static func readTrackListEntries(_ node: mpv_node) -> [MPVTrackEntry] {
+        guard node.format == MPV_FORMAT_NODE_ARRAY,
+              let list = node.u.list,
+              let values = list.pointee.values else { return [] }
+        return (0..<Int(list.pointee.num)).compactMap { readTrackEntry(values[$0]) }
+    }
+
+    /// One track-list entry (a NODE_MAP). Keys mpv marks unavailable (e.g.
+    /// `title` on an untitled track) are absent from the map, so a missing
+    /// key becomes nil rather than an empty string.
+    private static func readTrackEntry(_ node: mpv_node) -> MPVTrackEntry? {
+        guard node.format == MPV_FORMAT_NODE_MAP,
+              let map = node.u.list,
+              let keys = map.pointee.keys,
+              let values = map.pointee.values else { return nil }
+        var id = 0
+        var type = ""
+        var title: String?
+        var lang: String?
+        var codec: String?
+        var isSelected = false
+        for index in 0..<Int(map.pointee.num) {
+            guard let key = keys[index] else { continue }
+            let value = values[index]
+            switch String(cString: key) {
+            case "id":
+                if value.format == MPV_FORMAT_INT64 { id = Int(value.u.int64) }
+            case "type":
+                type = Self.nodeString(value) ?? ""
+            case "title":
+                title = Self.nodeString(value)
+            case "lang":
+                lang = Self.nodeString(value)
+            case "codec":
+                codec = Self.nodeString(value)
+            case "selected":
+                if value.format == MPV_FORMAT_FLAG { isSelected = value.u.flag != 0 }
+            default:
+                break
+            }
+        }
+        return MPVTrackEntry(id: id, type: type, title: title, lang: lang, codec: codec, isSelected: isSelected)
+    }
+
+    private static func nodeString(_ node: mpv_node) -> String? {
+        guard node.format == MPV_FORMAT_STRING, let cString = node.u.string else { return nil }
+        return String(cString: cString)
     }
 
     /// Synchronous string read; nil when the property is unavailable.
@@ -278,9 +432,26 @@ final class MPVPlayerCore {
                 }
                 wasAtEOF = value
             }
+        case ObservedProperty.trackList:
+            handleTrackListChange(property)
         default:
             break
         }
+    }
+
+    /// track-list notifications arrive as NODE values; parse, then emit
+    /// only on a real change (mpv already dedups the observation, but the
+    /// initial pre-load notification carries an empty list that matches
+    /// the idle state and must not surface as an event).
+    private func handleTrackListChange(_ property: mpv_event_property) {
+        guard property.format == MPV_FORMAT_NODE, let data = property.data else { return }
+        let parsed = SubtitleTrack.parse(
+            trackList: Self.readTrackListEntries(data.assumingMemoryBound(to: mpv_node.self).pointee)
+        )
+        guard parsed.tracks != subtitleTracks || parsed.selectedID != selectedSubtitleTrackID else { return }
+        subtitleTracks = parsed.tracks
+        selectedSubtitleTrackID = parsed.selectedID
+        onEvent?(.subtitleTracksChanged(parsed.tracks, selectedID: parsed.selectedID))
     }
 
     /// Tears down the session. Idempotent; safe on window close at any

@@ -114,6 +114,9 @@ final class PlayerViewModel {
             isBuffering = buffering
         case .videoInfoChanged(let info):
             videoInfo = info
+        case .subtitleTracksChanged:
+            // Subtitle picker state is wired in Step 2; ignored until then.
+            break
         case .ended:
             // A finished video is forgotten so a replay starts from the
             // top; the coordinator then decides whether to auto-advance
