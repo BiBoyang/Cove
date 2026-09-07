@@ -150,23 +150,35 @@ explicit `.private`. Passwords are never logged.
 ## Requirements
 
 - macOS 15.0+ (deployment target)
+- Apple Silicon Mac (the vendored libmpv forest is built arm64-only)
 - Xcode 26+
 - [XcodeGen](https://github.com/yonaskolb/XcodeGen) (`brew install xcodegen`)
 
 ## Build
 
 The video player needs the vendored libmpv dylib forest, which is **not**
-committed to the repo (116 MB, licensing-sensitive). Assemble it locally
-once after cloning (requires [IINA](https://iina.io) installed, or point
-`IINA_APP` at another copy):
+committed to the repo (licensing-sensitive). Since 2026-09-07 the forest is
+a self-built **LGPL-clean** chain (App Store-compatible; mpv 0.41.0 +
+FFmpeg 7.1.5, arm64-only, 18 dylibs) — license texts and the upstream
+source mapping live in `LICENSES/`. Build it once after cloning (fetches
+pinned sources and compiles them; ~30–60 min on first run, resumable on
+re-run):
 
 ```sh
-scripts/assemble-libmpv.sh   # copies Vendor/libmpv from IINA.app + mpv headers
-make generate                # generate Cove.xcodeproj from project.yml via XcodeGen
-make build                   # Debug build via xcodebuild
-make test                    # Framework package tests + Cove Swift Testing + smb-spike compile check
+scripts/build-libmpv.sh   # fetch + build + bundle + selfcheck → Vendor/libmpv-self/
+rm -rf Vendor/libmpv      # then install the fresh forest as the active one
+ditto Vendor/libmpv-self Vendor/libmpv
+make generate             # generate Cove.xcodeproj from project.yml via XcodeGen
+make build                # Debug build via xcodebuild
+make test                 # Framework package tests + Cove Swift Testing + smb-spike compile check
 make clean
 ```
+
+Rollback while acceptance is in flight: the pre-2026-09-07 IINA.app forest
+is preserved at `Vendor/libmpv-iina-backup/` — swap it back into
+`Vendor/libmpv/` (or re-run the now-deprecated
+`scripts/assemble-libmpv.sh`, which copies from a locally installed
+[IINA](https://iina.io)).
 
 `project.yml` is the source of truth for the Xcode project. `*.xcodeproj` is
 git-ignored — regenerate it with `make generate` after cloning.

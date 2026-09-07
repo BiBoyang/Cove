@@ -50,9 +50,12 @@ ReaderKit 是 Frameworks 下的领域核心包，不依赖 AppKit、SnapKit、SM
 8. Frameworks 下的包保持小而专一；新增依赖（尤其是三方库）先在 AGENTS.md
    登记用途再引入。已登记三方库：SnapKit（App target 布局 DSL）、AMSMB2
    （SourceKit SMB 客户端）、ZIPFoundation（ComicKit CBZ 解析）、libmpv
-   （视频播放引擎，Vendor/libmpv dylib 随包嵌入 App target；Vendor/libmpv
-   不入库，由 `scripts/assemble-libmpv.sh` 从本机 IINA.app 装配，获取方式
-   与选型理由见 `plans/archive/SPIKE-video-playback.md`）。
+   （视频播放引擎，Vendor/libmpv dylib 随包嵌入 App target；Vendor/ 整目录
+   不入库，森林由 `scripts/build-libmpv.sh` 从 pin 死版本的上游源码自构建
+   ——LGPL 清洁链，license 文本与源码指认见 `LICENSES/`，合规基线与 flag
+   矩阵见 `plans/libmpv-license-audit-2026-09-07.md`；`scripts/assemble-libmpv.sh`
+   已退役，仅作旧 IINA 森林的回滚路径，原选型理由见
+   `plans/archive/SPIKE-video-playback.md`）。
 9. 日志隐私：TraceKit 插值默认 `.auto`（持久化日志里打码）；host/share/path
    等用户数据显式传 `.private`；`.public` 只给确定安全的内容。任何 API 都
    不许记密码。
