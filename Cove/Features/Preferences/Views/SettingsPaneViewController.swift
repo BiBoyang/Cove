@@ -36,6 +36,9 @@ final class SettingsPaneViewController: NSViewController {
     private let vaultPathLabel = NSTextField(labelWithString: "")
     private let chooseVaultButton = PillButton(title: "更改…", style: .secondary)
     private let revealVaultButton = PillButton(title: "在 Finder 中打开", style: .secondary)
+    private let vaultBookmarkHintLabel = NSTextField(
+        wrappingLabelWithString: "书签已失效，请点「更改…」重新选择位置（新下载暂存默认位置）。"
+    )
 
     private let byteFormatter: ByteCountFormatter = {
         let formatter = ByteCountFormatter()
@@ -112,6 +115,11 @@ final class SettingsPaneViewController: NSViewController {
         chooseVaultButton.action = #selector(chooseVaultLocation(_:))
         revealVaultButton.target = self
         revealVaultButton.action = #selector(revealVaultLocation(_:))
+        // Bookmark-invalid guidance: same idiom as the form hints (red
+        // caption), hidden unless the state says the bookmark died.
+        vaultBookmarkHintLabel.font = CoveStyle.captionFont
+        vaultBookmarkHintLabel.textColor = .systemRed
+        vaultBookmarkHintLabel.isHidden = true
 
         // Return in the input field adds the folder.
         folderField.placeholderString = "公共空间/动漫/xxx"
@@ -186,9 +194,13 @@ final class SettingsPaneViewController: NSViewController {
         stack.addArrangedSubview(makeHeader("本地仓库"))
         let vaultRow = makeRow(makeLabel("位置"), vaultPathLabel, chooseVaultButton, revealVaultButton)
         stack.addArrangedSubview(vaultRow)
+        stack.addArrangedSubview(vaultBookmarkHintLabel)
         stack.addArrangedSubview(makeAuxLabel("更改位置只影响新下载，旧位置的文件不会迁移。"))
         vaultRow.snp.makeConstraints { make in
             make.width.equalTo(stack)
+        }
+        vaultBookmarkHintLabel.snp.makeConstraints { make in
+            make.width.lessThanOrEqualTo(stack)
         }
 
         view = root
@@ -261,6 +273,7 @@ final class SettingsPaneViewController: NSViewController {
             displayUsageLabel.stringValue = "显示缓存：统计中…"
         }
         vaultPathLabel.stringValue = state.vaultPath
+        vaultBookmarkHintLabel.isHidden = !state.vaultBookmarkInvalid
         folderTableView.reloadData()
     }
 
@@ -322,7 +335,7 @@ final class SettingsPaneViewController: NSViewController {
     }
 
     @objc private func revealVaultLocation(_ sender: Any?) {
-        let root = viewModel.vaultRootURL
+        let root = viewModel.vaultRootURLForReveal()
         try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         NSWorkspace.shared.open(root)
     }

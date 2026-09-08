@@ -1,5 +1,6 @@
 import Foundation
 import KeychainKit
+import Security
 import SourceKit
 import Synchronization
 import TraceKit
@@ -7,6 +8,14 @@ import TraceKit
 enum SessionError: LocalizedError {
     case missingPassword
     case unknownServer
+    /// The SecurityAgent authorization prompt was dismissed or denied
+    /// (errSecUserCanceled, -128) — a dev-rebuild transition-window
+    /// symptom; retrying is the fix.
+    case keychainPromptDenied
+    /// Any other Keychain read failure, including "success with an empty
+    /// item" (the 2026-09-05 `KeychainError error 0`): no persistent
+    /// damage, a restart usually heals.
+    case keychainReadFailed
 
     var errorDescription: String? {
         switch self {
@@ -14,6 +23,31 @@ enum SessionError: LocalizedError {
             return "Keychain 中找不到该服务器的密码，请删除后重新添加。"
         case .unknownServer:
             return "找不到该服务器的配置，请刷新后重试。"
+        case .keychainPromptDenied:
+            return "钥匙串授权弹窗被拒绝，请重试连接；若仍失败，请删除该服务器后重新添加。"
+        case .keychainReadFailed:
+            return "钥匙串读取失败，重启 App 通常自愈；若反复出现，请删除该服务器后重新添加。"
+        }
+    }
+
+    /// Maps a Keychain read failure to a user-facing error
+    /// (TASK-dev-bookmark-resilience): every failure surfaces with a
+    /// recovery path instead of a cryptic status code.
+    static func keychainRead(_ error: KeychainError) -> SessionError {
+        switch error {
+        case .unhandled(let status):
+            switch status {
+            // A read normally reports "no item" as nil (then
+            // `missingPassword`); map the status too for completeness.
+            case errSecItemNotFound:
+                return .missingPassword
+            case errSecUserCanceled:
+                return .keychainPromptDenied
+            default:
+                return .keychainReadFailed
+            }
+        case .unexpectedData:
+            return .keychainReadFailed
         }
     }
 }
@@ -358,12 +392,16 @@ final class SMBSessionService {
     }
 
     private func passwordFor(_ server: ServerConfig) throws -> String {
-        guard let password = try KeychainKit.readPassword(
-            service: Self.keychainService,
-            account: server.id.uuidString
-        ) else {
-            throw SessionError.missingPassword
+        do {
+            guard let password = try KeychainKit.readPassword(
+                service: Self.keychainService,
+                account: server.id.uuidString
+            ) else {
+                throw SessionError.missingPassword
+            }
+            return password
+        } catch let error as KeychainError {
+            throw SessionError.keychainRead(error)
         }
-        return password
     }
 }

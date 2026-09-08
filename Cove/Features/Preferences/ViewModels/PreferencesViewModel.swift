@@ -24,6 +24,10 @@ final class PreferencesViewModel {
         let originalUsageBytes: Int64?
         let displayUsageBytes: Int64?
         let vaultPath: String
+        /// True when a stored vault bookmark failed to resolve: the pane
+        /// shows the re-pick hint. False covers both "no bookmark" and
+        /// "bookmark resolved" (TASK-dev-bookmark-resilience).
+        let vaultBookmarkInvalid: Bool
         let readerResumeOnOpen: Bool
     }
 
@@ -58,6 +62,7 @@ final class PreferencesViewModel {
             originalUsageBytes: originalUsageBytes,
             displayUsageBytes: displayUsageBytes,
             vaultPath: vault.displayPath,
+            vaultBookmarkInvalid: vault.rootStatus == .bookmarkInvalid,
             readerResumeOnOpen: settings.readerResumeOnOpen
         )
     }
@@ -72,8 +77,14 @@ final class PreferencesViewModel {
         self.vault = vault
     }
 
-    /// The current vault root, for "在 Finder 中打开".
-    var vaultRootURL: URL { vault.rootURL }
+    /// The vault root for "在 Finder 中打开". This read may be the first
+    /// resolution of a newly invalid bookmark, so the state is republished
+    /// afterwards to surface the re-pick hint immediately.
+    func vaultRootURLForReveal() -> URL {
+        let url = vault.rootURL
+        publish()
+        return url
+    }
 
     /// Persists a user-chosen vault root as a security-scoped bookmark so
     /// sandboxed relaunches keep access. Only new downloads go there —

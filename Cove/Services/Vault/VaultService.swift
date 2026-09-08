@@ -2,6 +2,28 @@ import Foundation
 import SourceKit
 import TraceKit
 
+/// Observable resolution state of the vault root
+/// (TASK-dev-bookmark-resilience): a stored bookmark that fails to resolve
+/// is NOT the same as having no bookmark. The former surfaces in
+/// Preferences as a re-pick hint; the root still falls back to the default
+/// container location meanwhile (recovery semantics unchanged).
+enum VaultRootStatus: Equatable, Sendable {
+    /// No bookmark stored; the default container root is in use.
+    case defaultRoot
+    /// The stored bookmark resolved; the user-chosen root is in use.
+    case bookmarkResolved
+    /// A stored bookmark failed to resolve; the default root is in use
+    /// until the user re-picks the location.
+    case bookmarkInvalid
+
+    /// Pure classification so the "bookmark present but failed" vs "no
+    /// bookmark" distinction is unit-testable without the real bookmark API.
+    static func classify(bookmark: Data?, resolvedURL: URL?) -> VaultRootStatus {
+        guard bookmark != nil else { return .defaultRoot }
+        return resolvedURL != nil ? .bookmarkResolved : .bookmarkInvalid
+    }
+}
+
 /// The local vault: permanent whole-file copies downloaded from SMB shares.
 ///
 /// Semantic boundary (task decision): the vault is ownership, not cache —
@@ -46,6 +68,7 @@ final class VaultService {
     private let settings: SettingsService?
     private let rootOverride: URL?
     private var cachedRoot: URL?
+    private var cachedStatus: VaultRootStatus = .defaultRoot
     private let logger = TraceLogger(category: "Vault")
 
     init(settings: SettingsService) {
@@ -70,33 +93,46 @@ final class VaultService {
         if let rootOverride { return rootOverride }
         if let cachedRoot { return cachedRoot }
         let resolved = Self.resolveRoot(bookmark: settings?.vaultRootBookmark)
-        cachedRoot = resolved
-        return resolved
+        cachedRoot = resolved.url
+        cachedStatus = resolved.status
+        return resolved.url
     }
 
     /// The root path as shown in Preferences.
     var displayPath: String { rootURL.path }
 
-    private static func resolveRoot(bookmark: Data?) -> URL {
+    /// The root resolution state, for the Preferences re-pick hint. Reading
+    /// it resolves the root if that has not happened yet, so it can never
+    /// lag behind the stored bookmark.
+    var rootStatus: VaultRootStatus {
+        if rootOverride != nil { return .defaultRoot }
+        _ = rootURL
+        return cachedStatus
+    }
+
+    private static func resolveRoot(bookmark: Data?) -> (url: URL, status: VaultRootStatus) {
         let logger = TraceLogger(category: "Vault")
-        if let bookmark {
-            var isStale = false
-            if let url = try? URL(
-                resolvingBookmarkData: bookmark,
-                options: .withSecurityScope,
-                bookmarkDataIsStale: &isStale
-            ) {
-                // Access is kept for the process lifetime; the grant is
-                // cheap and the vault root is used repeatedly.
-                _ = url.startAccessingSecurityScopedResource()
-                if isStale {
-                    logger.notice("Vault bookmark is stale; re-saving is the Preferences row's job", privacy: .public)
-                }
-                return url
-            }
-            logger.error("Vault bookmark failed to resolve; falling back to the default root", privacy: .public)
+        guard let bookmark else {
+            return (defaultRootURL, .defaultRoot)
         }
-        return defaultRootURL
+        var isStale = false
+        let url = try? URL(
+            resolvingBookmarkData: bookmark,
+            options: .withSecurityScope,
+            bookmarkDataIsStale: &isStale
+        )
+        let status = VaultRootStatus.classify(bookmark: bookmark, resolvedURL: url)
+        guard let url else {
+            logger.error("Vault bookmark failed to resolve; falling back to the default root", privacy: .public)
+            return (defaultRootURL, status)
+        }
+        // Access is kept for the process lifetime; the grant is
+        // cheap and the vault root is used repeatedly.
+        _ = url.startAccessingSecurityScopedResource()
+        if isStale {
+            logger.notice("Vault bookmark is stale; re-saving is the Preferences row's job", privacy: .public)
+        }
+        return (url, status)
     }
 
     /// `~/Library/Application Support/Cove/Vault` — inside the sandbox
