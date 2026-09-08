@@ -9,7 +9,9 @@ chrome, dark player) regardless of the system appearance.
 
 - Add SMB servers with just an address, username and password — no share name
   needed. Connecting lists the server's shares automatically as a card grid
-  (hidden/admin shares like `IPC$` are filtered out).
+  (hidden/admin shares like `IPC$` are filtered out). Cards carry the share's
+  comment when the server provides one, plus a locally tracked "last opened"
+  relative time once you've browsed them.
 - Passwords are stored in the Keychain; only address, username and display
   name are persisted in `UserDefaults`. Right-click a server to delete it
   (drops both the config and the Keychain password, after confirmation).
@@ -26,12 +28,15 @@ chrome, dark player) regardless of the system appearance.
 - **Video playback**: double-click a video file (mp4, mkv, avi, mov, wmv,
   flv, webm, ts and more — anything mpv plays) to stream it straight off the
   NAS via [libmpv](https://mpv.io) bridged onto Cove's own SMB stack; nothing
-  is downloaded in advance. A floating warm-black control capsule (play/pause,
-  seekable progress, volume with live readout) hides itself with the cursor
-  during playback and returns on mouse movement, with codec info chips
-  (HW / codec / resolution / bitrate) riding the same visibility at the top
-  left; the centered file title stays put. Loading and buffering show a
-  centered spinner, failures a placeholder with retry. Keyboard: space,
+  is downloaded in advance. A floating warm-black two-row control capsule
+  (transport and volume/tools row above a seekable progress row with time
+  codes at both ends) sits centered at the bottom, hides itself with the
+  cursor during playback and returns on mouse movement, with codec info
+  chips (HW / codec / resolution / bitrate) riding the same visibility at
+  the top left; the centered file title stays put. A subtitle button in the
+  capsule lists the file's embedded subtitle tracks (when it carries any)
+  to switch between them or turn subtitles off. Loading and buffering show
+  a centered spinner, failures a placeholder with retry. Keyboard: space,
   ←/→ seek, ↑/↓ volume, Esc exits full screen.
   Each video's playback position is remembered and resumed on reopen
   (finished videos start over).
@@ -62,8 +67,9 @@ chrome, dark player) regardless of the system appearance.
 - Files are classified by type (video / image / pdf / comic / text / other)
   and shown with type icons. Image files get real thumbnails (square
   center-crop at 160 px) loaded through the same two-pool disk cache as the
-  reader: symbols show first, thumbnails fade in, off-screen rows never load,
-  and duplicate requests coalesce.
+  reader, in shares and the local vault alike: symbols show first,
+  thumbnails fade in, off-screen rows never load, and duplicate requests
+  coalesce.
 - Double-click an image file to open a full-screen single-page reader:
   exactly one image is shown at a time on a black background, centered and
   fit proportionally. Previous/next buttons, `←`/`→` (plus PageUp/PageDown),
