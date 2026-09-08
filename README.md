@@ -147,6 +147,18 @@ Logging: interpolated log content defaults to os_log `.auto` privacy
 (redacted in persisted logs); hosts, share names and paths are logged with
 explicit `.private`. Passwords are never logged.
 
+## Download
+
+Tagged releases (`v*`) are built automatically on GitHub Actions and
+published as a **signed and notarized dmg** on
+[GitHub Releases](https://github.com/BiBoyang/Cove/releases): download
+`Cove-<version>.dmg`, open it and drag Cove to Applications. Apple Silicon
+only (the bundled libmpv forest is arm64-only), macOS 15+. Both the app and
+the dmg carry a Developer ID signature with a notarization ticket stapled
+on, so Gatekeeper opens them without any "unidentified developer" detour.
+Tags with a prerelease suffix (e.g. `v0.6.0-rc1`) are published as
+prereleases.
+
 ## Requirements
 
 - macOS 15.0+ (deployment target)

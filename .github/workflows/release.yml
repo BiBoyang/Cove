@@ -1,0 +1,300 @@
+name: Release
+
+# Tag-triggered release pipeline (plans/TASK-release-packaging.md, decision
+# B1: CI-hosted signing). A push of a `v*` tag builds the vendored libmpv
+# forest, archives the app in Release with Developer ID signing + hardened
+# runtime, notarizes via notarytool, staples, packages a dmg and publishes
+# the GitHub release with generated notes.
+#
+# Required repo secrets (names only — values never appear here or in logs;
+# GitHub masks any accidental secret echo):
+#   DEVELOPER_ID_CERT_P12_BASE64   base64 of the Developer ID Application p12
+#   DEVELOPER_ID_CERT_PASSWORD     p12 export password
+#   APPLE_TEAM_ID                  10-char Team ID, also injected into the build
+#   ASC_KEY_ID / ASC_ISSUER_ID / ASC_KEY_P8   App Store Connect API key for notarytool
+#
+# Local development is unaffected: project.yml keeps CODE_SIGN_STYLE=Automatic
+# with an empty DEVELOPMENT_TEAM (ad-hoc "Sign to Run Locally").
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: macos-latest
+    timeout-minutes: 120
+    env:
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      DEVELOPER_ID_CERT_P12_BASE64: ${{ secrets.DEVELOPER_ID_CERT_P12_BASE64 }}
+      DEVELOPER_ID_CERT_PASSWORD: ${{ secrets.DEVELOPER_ID_CERT_PASSWORD }}
+      ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+      ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+      ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+      KEYCHAIN_PATH: ${{ runner.temp }}/build.keychain-db
+      KEY_P8: ${{ runner.temp }}/AuthKey.p8
+    steps:
+      - name: Select newest installed Xcode
+        run: |
+          find /Applications -maxdepth 1 -name 'Xcode*.app' || true
+          XCODE_APP="$(find /Applications -maxdepth 1 -name 'Xcode*_*.app' | sort -V | tail -n1)"
+          if [ -z "$XCODE_APP" ]; then XCODE_APP=/Applications/Xcode.app; fi
+          echo "Selecting $XCODE_APP"
+          sudo xcode-select -s "$XCODE_APP"
+          xcodebuild -version
+
+      - uses: actions/checkout@v5
+        with:
+          # Full history: CURRENT_PROJECT_VERSION is derived from the commit
+          # count, which needs more than the default shallow clone.
+          fetch-depth: 0
+
+      - name: Derive release version from tag
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          VERSION="${TAG#v}"
+          BUILD="$(git rev-list --count HEAD)"
+          PRERELEASE=""
+          # semver convention (and the task card's test-tag example
+          # v0.6.0-rc1): a dash in the version marks a prerelease.
+          if [[ "$VERSION" == *-* ]]; then PRERELEASE="true"; fi
+          echo "tag=$TAG"               >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION"       >> "$GITHUB_OUTPUT"
+          echo "build=$BUILD"           >> "$GITHUB_OUTPUT"
+          echo "prerelease=$PRERELEASE" >> "$GITHUB_OUTPUT"
+
+      - name: Install build tools
+        run: |
+          # Forest build tools (idempotent; most are preinstalled on the
+          # runner image) + xcodegen for project generation.
+          brew install meson ninja pkgconf nasm xcodegen
+
+      - name: Cache libmpv forest
+        id: forest-cache
+        uses: actions/cache@v4
+        with:
+          # build-libmpv.sh's output dir. Exact-key only, keyed on the
+          # script's content hash: no restore-keys fallback, because a stale
+          # forest without its build/ work dir would die in the bundle phase.
+          path: Vendor/libmpv-self
+          key: libmpv-forest-arm64-${{ hashFiles('scripts/build-libmpv.sh') }}
+
+      - name: Build libmpv forest (self-clean LGPL chain)
+        if: steps.forest-cache.outputs.cache-hit != 'true'
+        run: scripts/build-libmpv.sh
+
+      - name: Install forest as active Vendor/libmpv
+        run: |
+          set -euo pipefail
+          test -f Vendor/libmpv-self/libmpv.2.dylib
+          rm -rf Vendor/libmpv
+          # Same activation step as the README build instructions.
+          ditto Vendor/libmpv-self Vendor/libmpv
+
+      - name: Generate Xcode project
+        run: make generate
+
+      - name: Import Developer ID certificate into temporary keychain
+        run: |
+          set -euo pipefail
+          CERT_P12="$RUNNER_TEMP/DeveloperID.p12"
+          # Random per-run keychain password, never printed.
+          KEYCHAIN_PASSWORD="$(openssl rand -hex 24)"
+          echo -n "$DEVELOPER_ID_CERT_P12_BASE64" | base64 --decode > "$CERT_P12"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$CERT_P12" \
+            -P "$DEVELOPER_ID_CERT_PASSWORD" \
+            -t cert -f pkcs12 -k "$KEYCHAIN_PATH" -A
+          # Let codesign access the key without UI prompts.
+          security set-key-partition-list -S apple-tool:,apple: \
+            -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          # Search list: our keychain first.
+          security list-keychain -d user -s "$KEYCHAIN_PATH" login.keychain-db
+          # Cert material exists only inside the keychain from here on.
+          rm -f "$CERT_P12"
+
+      - name: Write export options and notary API key
+        run: |
+          cat > "$RUNNER_TEMP/ExportOptions.plist" <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key>
+            <string>developer-id</string>
+            <key>teamID</key>
+            <string>${APPLE_TEAM_ID}</string>
+            <key>signingStyle</key>
+            <string>manual</string>
+            <key>signingCertificate</key>
+            <string>Developer ID Application</string>
+          </dict>
+          </plist>
+          PLIST
+          # Accept the secret either as raw PEM or as base64 of the PEM.
+          if [[ "$ASC_KEY_P8" == *"BEGIN PRIVATE KEY"* ]]; then
+            printf '%s\n' "$ASC_KEY_P8" > "$KEY_P8"
+          else
+            base64 --decode <<< "$ASC_KEY_P8" > "$KEY_P8"
+          fi
+          chmod 600 "$KEY_P8"
+
+      - name: Archive (Release, Developer ID, hardened runtime)
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Command-line settings override project.yml's development defaults
+          # (Automatic + empty team) without touching the file on disk.
+          # Manual + explicit identity: automatic signing would look for an
+          # Apple Development cert, which the CI keychain deliberately lacks.
+          xcodebuild archive \
+            -project Cove.xcodeproj \
+            -scheme Cove \
+            -configuration Release \
+            -destination 'generic/platform=macOS' \
+            -archivePath build/Cove.xcarchive \
+            DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
+            CODE_SIGN_STYLE=Manual \
+            CODE_SIGN_IDENTITY="Developer ID Application" \
+            ENABLE_HARDENED_RUNTIME=YES \
+            MARKETING_VERSION="${{ steps.version.outputs.version }}" \
+            CURRENT_PROJECT_VERSION="${{ steps.version.outputs.build }}" \
+            2>&1 | tee xcodebuild-archive.log
+
+      - name: Export signed app
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcodebuild -exportArchive \
+            -archivePath build/Cove.xcarchive \
+            -exportPath build/export \
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" \
+            2>&1 | tee xcodebuild-export.log
+
+      - name: Verify signatures
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP=build/export/Cove.app
+          codesign --verify --strict --verbose=2 "$APP"
+          codesign -dv "$APP" 2>&1 | grep -q "TeamIdentifier=${APPLE_TEAM_ID}"
+          for f in "$APP"/Contents/Frameworks/lib*.dylib; do
+            codesign --verify --strict "$f"
+            codesign -dv "$f" 2>&1 | grep -q "TeamIdentifier=${APPLE_TEAM_ID}"
+          done
+          echo "signature check: app + $(ls "$APP"/Contents/Frameworks/lib*.dylib | wc -l | tr -d ' ') dylibs OK"
+
+      - name: Notarize app and staple
+        shell: bash
+        run: |
+          set -euo pipefail
+          NOTARY_ARGS=(--key "$KEY_P8" --key-id "$ASC_KEY_ID" --issuer "$ASC_ISSUER_ID")
+          notarize_with_log() {
+            local file="$1" log="$2" attempt
+            for attempt in 1 2; do
+              if xcrun notarytool submit "$file" "${NOTARY_ARGS[@]}" --wait 2>&1 | tee "$log"; then
+                return 0
+              fi
+              echo "notarization attempt $attempt failed (see $log), retrying once"
+              sleep 30
+            done
+            # Surface Apple's detailed rejection log for debugging.
+            local id
+            id="$(grep -Eo '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' "$log" | tail -n1 || true)"
+            if [[ -n "$id" ]]; then
+              xcrun notarytool log "$id" "${NOTARY_ARGS[@]}" 2>&1 | tee "${log%.log}-notarylog.log" || true
+            fi
+            return 1
+          }
+          ditto -c -k --keepParent build/export/Cove.app Cove.app.zip
+          notarize_with_log Cove.app.zip notarize-app.log
+          xcrun stapler staple build/export/Cove.app
+          xcrun stapler validate build/export/Cove.app
+
+      - name: Build dmg
+        shell: bash
+        run: |
+          set -euo pipefail
+          STAGING="$RUNNER_TEMP/dmg-staging"
+          rm -rf "$STAGING"
+          mkdir -p "$STAGING"
+          cp -R build/export/Cove.app "$STAGING/Cove.app"
+          ln -s /Applications "$STAGING/Applications"
+          hdiutil create -volname "Cove" -srcfolder "$STAGING" -ov -format UDZO \
+            "Cove-${{ steps.version.outputs.version }}.dmg"
+
+      - name: Notarize dmg and staple
+        shell: bash
+        run: |
+          set -euo pipefail
+          NOTARY_ARGS=(--key "$KEY_P8" --key-id "$ASC_KEY_ID" --issuer "$ASC_ISSUER_ID")
+          notarize_with_log() {
+            local file="$1" log="$2" attempt
+            for attempt in 1 2; do
+              if xcrun notarytool submit "$file" "${NOTARY_ARGS[@]}" --wait 2>&1 | tee "$log"; then
+                return 0
+              fi
+              echo "notarization attempt $attempt failed (see $log), retrying once"
+              sleep 30
+            done
+            local id
+            id="$(grep -Eo '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' "$log" | tail -n1 || true)"
+            if [[ -n "$id" ]]; then
+              xcrun notarytool log "$id" "${NOTARY_ARGS[@]}" 2>&1 | tee "${log%.log}-notarylog.log" || true
+            fi
+            return 1
+          }
+          DMG="Cove-${{ steps.version.outputs.version }}.dmg"
+          notarize_with_log "$DMG" notarize-dmg.log
+          xcrun stapler staple "$DMG"
+          xcrun stapler validate "$DMG"
+          # Gatekeeper dry run of the exact artifact users will download.
+          spctl --assess --type open -vv "$DMG"
+
+      - name: Create GitHub release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.version.outputs.version }}"
+          ARGS=(--title "Cove $VERSION" --generate-notes)
+          if [[ -n "${{ steps.version.outputs.prerelease }}" ]]; then
+            ARGS+=(--prerelease)
+          fi
+          gh release create "$GITHUB_REF_NAME" \
+            "Cove-${VERSION}.dmg" "${ARGS[@]}"
+
+      - name: Upload logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-logs
+          if-no-files-found: ignore
+          path: |
+            xcodebuild-archive.log
+            xcodebuild-export.log
+            notarize-app.log
+            notarize-app-notarylog.log
+            notarize-dmg.log
+            notarize-dmg-notarylog.log
+
+      - name: Cleanup keychain and key material
+        if: always()
+        run: |
+          security list-keychain -d user -s login.keychain-db || true
+          security delete-keychain "$KEYCHAIN_PATH" || true
+          rm -f "$KEY_P8" "$RUNNER_TEMP/DeveloperID.p12" || true
+          rm -f "$RUNNER_TEMP/ExportOptions.plist" || true

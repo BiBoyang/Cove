@@ -94,8 +94,10 @@ targets:
           - "$(inherited)"
           - "@executable_path/../Frameworks"
     # Embed the vendored libmpv dylib forest into Contents/Frameworks and
-    # ad-hoc re-sign every dylib (equivalent of "Code Sign On Copy" for
-    # plain dylibs, which the Embed Frameworks phase cannot handle).
+    # re-sign every dylib with the build's own signing identity (equivalent
+    # of "Code Sign On Copy" for plain dylibs, which the Embed Frameworks
+    # phase cannot handle): ad-hoc for development builds, Developer ID for
+    # distribution archives.
     postBuildScripts:
       - name: Embed libmpv dylibs
         shell: /bin/sh
@@ -121,7 +123,17 @@ targets:
             if [ -L "$lib" ]; then continue; fi
             name="$(basename "$lib")"
             ditto "$lib" "$FRAMEWORKS_DIR/$name"
-            codesign --force --sign - "$FRAMEWORKS_DIR/$name"
+            # Distribution builds (Developer ID) need every nested binary
+            # signed with the app's identity, plus the hardened runtime flag
+            # and a secure timestamp: hardened-runtime library validation
+            # rejects same-bundle dylibs signed by any other identity, and
+            # notarization rejects missing timestamps. "-" (Sign to Run
+            # Locally) stays plain ad-hoc, keeping local dev builds offline.
+            if [ -z "${EXPANDED_CODE_SIGN_IDENTITY:-}" ] || [ "$EXPANDED_CODE_SIGN_IDENTITY" = "-" ]; then
+              codesign --force --sign - "$FRAMEWORKS_DIR/$name"
+            else
+              codesign --force --sign "$EXPANDED_CODE_SIGN_IDENTITY" --options runtime --timestamp "$FRAMEWORKS_DIR/$name"
+            fi
           done
   CoveTests:
     type: bundle.unit-test

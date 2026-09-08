@@ -113,5 +113,24 @@ git log --oneline -1`，确认自己在正确的工作树上**——本机曾经
 ## 当前签名状态
 
 开发期：`CODE_SIGN_STYLE=Automatic` + 空 `DEVELOPMENT_TEAM`（即 Sign to Run
-Locally）。上架前需要在 `project.yml` 里填自己的 Team ID，并替换占位
-bundle id `com.biboyang.cove`。
+Locally）。分发签名不落 project.yml：Release 工作流在 CI 侧以命令行注入
+Team ID（见下方「发布流程」）；只有本地手工做签名构建时才需要把 Team ID
+填进 `project.yml`。上架前另需替换占位 bundle id `com.biboyang.cove`。
+
+## 发布流程（GitHub Release）
+
+tag `v*` push 触发 `.github/workflows/release.yml`：CI 自建 libmpv 森林
+（actions/cache，key = build-libmpv.sh 内容 hash，缓存 `Vendor/libmpv-self`，
+`ditto` 激活为 `Vendor/libmpv`）→ xcodegen → `xcodebuild archive` 命令行
+注入 `DEVELOPMENT_TEAM` / `ENABLE_HARDENED_RUNTIME` / `MARKETING_VERSION` /
+`CURRENT_PROJECT_VERSION`（project.yml 的开发态默认值保持不动）→ 临时
+keychain 导入 Developer ID p12（job 收尾删除）→ developer-id 方式导出 →
+notarytool 公证 + stapler staple（app 与 dmg 各一轮）→ hdiutil 打 dmg →
+`gh release create --generate-notes`（版本串带 `-` 自动标 prerelease）。
+所需 secrets（仓库 Settings → Actions 配置；值永不入日志/代码/文档）：
+`DEVELOPER_ID_CERT_P12_BASE64` / `DEVELOPER_ID_CERT_PASSWORD` /
+`APPLE_TEAM_ID` / `ASC_KEY_ID` / `ASC_ISSUER_ID` / `ASC_KEY_P8`。
+postBuild「Embed libmpv dylibs」跟随 `EXPANDED_CODE_SIGN_IDENTITY` 签名：
+为 `-`（Sign to Run Locally）时保持纯 ad-hoc；为 Developer ID 时加
+`--options runtime --timestamp`——hardened runtime 库校验要求所有嵌套
+二进制同身份，公证要求 secure timestamp，这是硬约束不是可选项。
