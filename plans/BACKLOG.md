@@ -5,7 +5,6 @@
 ## 进行中 / 待验收
 
 - [ ] UI 统一优化主线：选题池与证据见 plans/UI-AUDIT-2026-09-05.md（按 §4 性价比顺序推进），令牌图纸 design/DESIGN-TOKENS.md；P1–P6 + 设置迁移 + 胶囊重构 + audit 清扫 + spacing 令牌族全部落地，audit 散点清零（2026-09-07 真机通过）；候选下一张卡 = 新选题（用户点题）
-- [ ] GitHub Release 分发管线（plans/TASK-release-packaging.md）：Step 1 工作流已落地入库（Developer ID 签名 + 公证 + dmg，tag v* 触发）；**Step 2 待端到端验证**：打 v0.6.0-rc1 测试 tag 跑全程、本机下载 dmg 验 Gatekeeper/公证
 
 ## 下一波（候选，未排期）
 
@@ -69,6 +68,7 @@
 - 侧栏宽度漂移修复：根因=设置页 999 优先级等宽填充约束把 pane 宽度意见传导进 NSSplitView 分栏仲裁（压过侧栏 250 holding）；修复=填充目标改常量 560 + 侧栏 maximumThickness 320 兜底 + 约束图不变量测试（2026-09-07 真机通过，Codex 执行、助手 Review）
 - ContinuousReader 测试 deflake：根因=测量落地后窗口扩容使轮询观察窗仅约一个 load 延迟（瞬态中间态被轮询错过）；修复=事件驱动等待 + 闩锁，断言零削弱（2026-09-08，外派 agent 执行、助手 Review）
 - 开发期书签/Keychain 失效自愈：spike 推翻"签名变化后首会话必坏"——失效窗口实为身份过渡态启动（210+ 次正常启动全健康），纯路径兜底沙箱下 EPERM 实证不成立；修复=书签失效可观察化 + 设置页红字引导重选 + Keychain 读取错误三分支（-25300/-128/其他），测试证据闭环（含沙箱测试宿主真书签端到端），真机视觉抽查因 TCC 容器权限待补（见 plans/archive/TASK-dev-bookmark-resilience.md + plans/bookmark-failure-diagnosis-2026-09-08.md，2026-09-08）
+- GitHub Release 分发管线（B1 CI 全托管）：tag v* 触发全自动——自建森林（缓存）→ arm64 archive → Developer ID 签名 → 双轮公证+staple → dmg → 自动 notes。落地后三轮实证修复：job env 误用 runner.temp 致 workflow 无效（rc1 空跑）、无头 runner GL 探针失败（rc2，CI 跳 probe/selfcheck 保指纹步）、universal 链接撞 arm64-only 森林（rc3，钉 ARCHS=arm64）、spctl 对裸 dmg 无评估上下文误报（rc4，Gatekeeper 预演移到 App）。v0.6.0-rc5 全绿，本机核验 dmg：Notarized Developer ID + staple + 版本注入全过（见 plans/archive/TASK-release-packaging.md，2026-09-08 真机验收通过）
 - libmpv 供应链收敛：脱离 IINA 森林，scripts/build-libmpv.sh 自构建 LGPL 清洁链（mpv 0.41.0 `-Dgpl=false` + FFmpeg 7.1.5 解码裁剪+VideoToolbox，arm64；18 dylib/18MB vs 原 71/116MB），GPL 指纹与闭包自检入脚本、约束级回归测试入网、LICENSES/ 合规交付；embed 脚本修旧库残留（见 plans/archive/TASK-libmpv-supply-chain.md + plans/libmpv-license-audit-2026-09-07.md，2026-09-08 真机七项回归通过）
 - 播放器字幕轨开关：胶囊字幕钮 + 内嵌轨弹层（关闭/各轨，当前项对勾），无轨置灰、切集重置；track-list NODE 观察 + 纯值解析单测（见 plans/archive/TASK-subtitle-track-picker.md，2026-09-08 真机通过）
 - shadow 配方令牌化：阴影散点 5 处聚类收敛为两档——shadowTextOnMedia（黑 0.6/blur 3/(0,-1)，媒体文字可读性）与 shadowFloatingChrome（黑 0.35/blur 10/(0,-2)，胶囊/Up Next pill 浮层）；零视觉变化，入 §4.6（见 plans/archive/TASK-shadow-recipe.md，2026-09-08 验收通过）
