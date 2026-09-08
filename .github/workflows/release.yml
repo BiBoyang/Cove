@@ -254,6 +254,9 @@ jobs:
           notarize_with_log Cove.app.zip notarize-app.log
           xcrun stapler staple build/export/Cove.app
           xcrun stapler validate build/export/Cove.app
+          # The meaningful Gatekeeper check runs on the app bundle; spctl
+          # cannot assess a bare dmg ("Insufficient Context").
+          spctl --assess --type execute -vv build/export/Cove.app
 
       - name: Build dmg
         shell: bash
@@ -294,8 +297,8 @@ jobs:
           notarize_with_log "$DMG" notarize-dmg.log
           xcrun stapler staple "$DMG"
           xcrun stapler validate "$DMG"
-          # Gatekeeper dry run of the exact artifact users will download.
-          spctl --assess --type open -vv "$DMG"
+          # No spctl on the dmg: open-assessment lacks context for disk
+          # images and rejects even accepted+stapled ones (v0.6.0-rc4).
 
       - name: Create GitHub release
         shell: bash
