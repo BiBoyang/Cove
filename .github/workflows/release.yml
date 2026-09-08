@@ -93,7 +93,12 @@ jobs:
 
       - name: Build libmpv forest (self-clean LGPL chain)
         if: steps.forest-cache.outputs.cache-hit != 'true'
-        run: scripts/build-libmpv.sh
+        # Headless runner: skip the probe/selfcheck phases — the GL probe
+        # needs an accelerated CGL context that headless CI cannot provide
+        # (v0.6.0-rc2 failed there). Closure assertions run in the bundle
+        # phase; signatures are verified by the workflow's verify step;
+        # the GPL fingerprint is checked in the next step.
+        run: scripts/build-libmpv.sh tools fetch dav1d freetype fribidi harfbuzz unibreak fontconfig lcms2 uchardet zimg libass libplacebo ffmpeg mpv bundle
 
       - name: Install forest as active Vendor/libmpv
         run: |
@@ -102,6 +107,23 @@ jobs:
           rm -rf Vendor/libmpv
           # Same activation step as the README build instructions.
           ditto Vendor/libmpv-self Vendor/libmpv
+
+      - name: Forest compliance fingerprint
+        run: |
+          set -euo pipefail
+          # The CI-side stand-in for the skipped selfcheck phase: the GPL
+          # configure line must be absent, the clean-chain flags present,
+          # and the closure must not reference GPL/known-excluded libs.
+          if strings Vendor/libmpv/libavutil.59.dylib | grep -q -- "--enable-gpl"; then
+            echo "::error::--enable-gpl fingerprint found in libavutil" >&2
+            exit 1
+          fi
+          strings Vendor/libmpv/libavutil.59.dylib | grep -q -- "--disable-gpl"
+          if for f in Vendor/libmpv/*.dylib; do otool -L "$f"; done | grep -E "postproc|rubberband|vidstab|x264|x265|gnutls"; then
+            echo "::error::forbidden library reference in forest closure" >&2
+            exit 1
+          fi
+          echo "forest fingerprint clean"
 
       - name: Generate Xcode project
         run: make generate
