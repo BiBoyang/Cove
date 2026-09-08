@@ -15,6 +15,10 @@ name: Release
 #
 # Local development is unaffected: project.yml keeps CODE_SIGN_STYLE=Automatic
 # with an empty DEVELOPMENT_TEAM (ad-hoc "Sign to Run Locally").
+#
+# NOTE: the `runner` context is not available in job-level `env` (GitHub
+# context-availability rules), so KEYCHAIN_PATH / KEY_P8 are set per step
+# that needs them. `$RUNNER_TEMP` itself is auto-set in every run step.
 
 on:
   push:
@@ -38,8 +42,6 @@ jobs:
       ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
       ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
       ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
-      KEYCHAIN_PATH: ${{ runner.temp }}/build.keychain-db
-      KEY_P8: ${{ runner.temp }}/AuthKey.p8
     steps:
       - name: Select newest installed Xcode
         run: |
@@ -105,6 +107,8 @@ jobs:
         run: make generate
 
       - name: Import Developer ID certificate into temporary keychain
+        env:
+          KEYCHAIN_PATH: ${{ runner.temp }}/build.keychain-db
         run: |
           set -euo pipefail
           CERT_P12="$RUNNER_TEMP/DeveloperID.p12"
@@ -126,7 +130,10 @@ jobs:
           rm -f "$CERT_P12"
 
       - name: Write export options and notary API key
+        env:
+          KEY_P8: ${{ runner.temp }}/AuthKey.p8
         run: |
+          set -euo pipefail
           cat > "$RUNNER_TEMP/ExportOptions.plist" <<PLIST
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -198,6 +205,8 @@ jobs:
 
       - name: Notarize app and staple
         shell: bash
+        env:
+          KEY_P8: ${{ runner.temp }}/AuthKey.p8
         run: |
           set -euo pipefail
           NOTARY_ARGS=(--key "$KEY_P8" --key-id "$ASC_KEY_ID" --issuer "$ASC_ISSUER_ID")
@@ -237,6 +246,8 @@ jobs:
 
       - name: Notarize dmg and staple
         shell: bash
+        env:
+          KEY_P8: ${{ runner.temp }}/AuthKey.p8
         run: |
           set -euo pipefail
           NOTARY_ARGS=(--key "$KEY_P8" --key-id "$ASC_KEY_ID" --issuer "$ASC_ISSUER_ID")
@@ -293,6 +304,9 @@ jobs:
 
       - name: Cleanup keychain and key material
         if: always()
+        env:
+          KEYCHAIN_PATH: ${{ runner.temp }}/build.keychain-db
+          KEY_P8: ${{ runner.temp }}/AuthKey.p8
         run: |
           security list-keychain -d user -s login.keychain-db || true
           security delete-keychain "$KEYCHAIN_PATH" || true
