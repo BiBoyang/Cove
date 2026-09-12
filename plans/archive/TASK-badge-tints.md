@@ -1,6 +1,6 @@
 # TASK: Browser row badge type tints
 
-- Status: landed 2026-09-12 (build/test green, 253/253); 真机待 Owner 过目
+- Status: landed 2026-09-12 (build/test green, 253/253)；真机 Owner 过目通过
 - Slug: badge-tints
 
 ## Goal

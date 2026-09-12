@@ -8,16 +8,14 @@
 
 ## 下一波（1.0 批次，顺序即排期）
 
-- [ ] 批 1（快卡三连）：plans/TASK-browser-search.md（浏览器名称过滤）
-  → plans/TASK-empty-states.md（T1 空态/加载态清扫）
+- [ ] 批 1（快卡）：plans/TASK-empty-states.md（T1 空态/加载态清扫）
   → plans/TASK-check-for-updates.md（检查更新）
+  （browser-search 已落地归档，2026-09-12）
 - [ ] 批 2（体验三连）：外挂字幕 → 继续观看（PlaybackProgressStore
   已有数据，idle 页最近播放卡片）→ 音频播放（分类表加 audio +
   复用 libmpv 桥）
 - [ ] 批 3（压哨）：DEVELOPMENT_TEAM + 真 bundle id，随 1.0.0 tag
 - [ ] 候选（可放 1.x）：图片网格墙
-- [ ] 已落地待真机：浏览器行徽标类型着色（plans/TASK-badge-tints.md，
-  A 方案 2026-09-12 提交 a5a0796，Owner 过目后即可归档）
 
 ## 上架前必须
 
@@ -78,6 +76,8 @@
 - 设置页全屏沉底修复 + 主窗口 minSize：document 加 height>=视口约束根治非翻转文档沉底；contentMinSize 900x700（数值=设置页构成实测，写死不随内容涨）+ 初始 1024x720（见 plans/archive/TASK-settings-pane-anchor.md，2026-09-12 真机通过）
 - 本地仓库文件夹固定侧栏（pins）：VaultPinStore（相对路径+别名，cap 8，置灰不删），浏览器右键对称「固定到侧栏/从侧栏移除」+ 文件夹恢复「从本地仓库删除…」双菜单项，底栏零高 pin 区、tooltip 显全路径、长名截断防撑宽侧栏，「当前 pin」胶囊（前缀匹配最深者胜，本地仓库行让位，单高亮不变量延伸），backToShareGrid 目的地同步补缺（见 plans/archive/TASK-vault-pins.md，2026-09-12 真机通过）
 - 侧栏底栏（B-3）+ 单击化：本地仓库/设置撤出表格钉底（SidebarBottomBar，服务器数/滚动/resize/全屏不动）；鼠标左键单击激活（.leftMouseDown 事件门控，右键只选中+菜单）、方向键只选中、回车激活、双击回声抑制；单高亮不变量（底栏胶囊只在表格无选中时显示）（见 plans/archive/TASK-sidebar-bottom-bar.md，2026-09-12 真机通过）
+- 浏览器名称过滤：工具条常驻搜索框（⌘F 聚焦）按名称过滤当前目录，大小写/变音符不敏感、纯本地零网络、导航即清零；无匹配空态 + 计数标签；播放列表不受过滤影响（见 plans/archive/TASK-browser-search.md，2026-09-12 真机通过）
+- 浏览器行徽标类型着色：placeholderTint 按类型映射（文件夹蓝/视频紫/PDF 红/漫画橙/图片占位绿/文本提亮/其他不变），CoveStyle badgeTint 令牌族 + 令牌文档 §1 登记；灰瓷贴不变，缩略图仍是行内最跳元素（见 plans/archive/TASK-badge-tints.md，2026-09-12 真机通过）
 - ContinuousReader 测试 deflake：根因=测量落地后窗口扩容使轮询观察窗仅约一个 load 延迟（瞬态中间态被轮询错过）；修复=事件驱动等待 + 闩锁，断言零削弱（2026-09-08，外派 agent 执行、助手 Review）
 - 开发期书签/Keychain 失效自愈：spike 推翻"签名变化后首会话必坏"——失效窗口实为身份过渡态启动（210+ 次正常启动全健康），纯路径兜底沙箱下 EPERM 实证不成立；修复=书签失效可观察化 + 设置页红字引导重选 + Keychain 读取错误三分支（-25300/-128/其他），测试证据闭环（含沙箱测试宿主真书签端到端），真机视觉抽查因 TCC 容器权限待补（见 plans/archive/TASK-dev-bookmark-resilience.md + plans/bookmark-failure-diagnosis-2026-09-08.md，2026-09-08）
 - GitHub Release 分发管线（B1 CI 全托管）：tag v* 触发全自动——自建森林（缓存）→ arm64 archive → Developer ID 签名 → 双轮公证+staple → dmg → 自动 notes。落地后三轮实证修复：job env 误用 runner.temp 致 workflow 无效（rc1 空跑）、无头 runner GL 探针失败（rc2，CI 跳 probe/selfcheck 保指纹步）、universal 链接撞 arm64-only 森林（rc3，钉 ARCHS=arm64）、spctl 对裸 dmg 无评估上下文误报（rc4，Gatekeeper 预演移到 App）。v0.6.0-rc5 全绿，本机核验 dmg：Notarized Developer ID + staple + 版本注入全过（见 plans/archive/TASK-release-packaging.md，2026-09-08 真机验收通过）
