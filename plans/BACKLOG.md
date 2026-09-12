@@ -9,8 +9,7 @@
 ## 下一波（1.0 批次，顺序即排期）
 
 - [ ] 批 1（快卡）：plans/TASK-empty-states.md（T1 空态/加载态清扫）
-  → plans/TASK-check-for-updates.md（检查更新）
-  （browser-search 已落地归档，2026-09-12）
+  （browser-search、check-for-updates 已落地归档，2026-09-12）
 - [ ] 批 2（体验三连）：外挂字幕 → 继续观看（PlaybackProgressStore
   已有数据，idle 页最近播放卡片）→ 音频播放（分类表加 audio +
   复用 libmpv 桥）
@@ -76,6 +75,7 @@
 - 设置页全屏沉底修复 + 主窗口 minSize：document 加 height>=视口约束根治非翻转文档沉底；contentMinSize 900x700（数值=设置页构成实测，写死不随内容涨）+ 初始 1024x720（见 plans/archive/TASK-settings-pane-anchor.md，2026-09-12 真机通过）
 - 本地仓库文件夹固定侧栏（pins）：VaultPinStore（相对路径+别名，cap 8，置灰不删），浏览器右键对称「固定到侧栏/从侧栏移除」+ 文件夹恢复「从本地仓库删除…」双菜单项，底栏零高 pin 区、tooltip 显全路径、长名截断防撑宽侧栏，「当前 pin」胶囊（前缀匹配最深者胜，本地仓库行让位，单高亮不变量延伸），backToShareGrid 目的地同步补缺（见 plans/archive/TASK-vault-pins.md，2026-09-12 真机通过）
 - 侧栏底栏（B-3）+ 单击化：本地仓库/设置撤出表格钉底（SidebarBottomBar，服务器数/滚动/resize/全屏不动）；鼠标左键单击激活（.leftMouseDown 事件门控，右键只选中+菜单）、方向键只选中、回车激活、双击回声抑制；单高亮不变量（底栏胶囊只在表格无选中时显示）（见 plans/archive/TASK-sidebar-bottom-bar.md，2026-09-12 真机通过）
+- 检查更新：app 菜单「检查更新…」+ 设置页「关于与更新」区（版本行 Bundle 直读 + 按钮 + 隐私说明）双入口单流程（LibraryCoordinator.checkForUpdates，主窗口 sheet），GitHub Releases /releases/latest 一次 GET（带 UA、15s 超时、非 2xx 收敛失败态），三态中文 alert（已是最新/有新版「前往下载」跳 release 页/失败信息性无重试），manual-only 无后台轮询；UpdateService fetcher 注入测试缝 + SemanticVersion 容错解析，12 测零网络（见 plans/archive/TASK-check-for-updates.md，2026-09-12 真机通过）
 - 浏览器名称过滤：工具条常驻搜索框（⌘F 聚焦）按名称过滤当前目录，大小写/变音符不敏感、纯本地零网络、导航即清零；无匹配空态 + 计数标签；播放列表不受过滤影响（见 plans/archive/TASK-browser-search.md，2026-09-12 真机通过）
 - 浏览器行徽标类型着色：placeholderTint 按类型映射（文件夹蓝/视频紫/PDF 红/漫画橙/图片占位绿/文本提亮/其他不变），CoveStyle badgeTint 令牌族 + 令牌文档 §1 登记；灰瓷贴不变，缩略图仍是行内最跳元素（见 plans/archive/TASK-badge-tints.md，2026-09-12 真机通过）
 - ContinuousReader 测试 deflake：根因=测量落地后窗口扩容使轮询观察窗仅约一个 load 延迟（瞬态中间态被轮询错过）；修复=事件驱动等待 + 闩锁，断言零削弱（2026-09-08，外派 agent 执行、助手 Review）
