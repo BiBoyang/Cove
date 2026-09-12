@@ -232,4 +232,23 @@ enum CoveStyle {
     static let accentGold = NSColor(
         srgbRed: 0xe0 / 255.0, green: 0xc0 / 255.0, blue: 0x20 / 255.0, alpha: 1
     )
+
+    // MARK: Browser badge tints (type-colored placeholder glyphs)
+
+    /// Folder badge glyph: Finder blue (TASK-badge-tints, 2026-09-12).
+    /// Small-area saturation on the grey tile — real thumbnails stay the
+    /// loudest element on the row.
+    static let badgeTintFolder = NSColor.systemBlue
+    /// Video badge glyph.
+    static let badgeTintVideo = NSColor.systemPurple
+    /// PDF badge glyph (Preview association).
+    static let badgeTintPdf = NSColor.systemRed
+    /// Comic badge glyph.
+    static let badgeTintComic = NSColor.systemOrange
+    /// Image placeholder glyph, shown only until the real thumbnail lands.
+    static let badgeTintImage = NSColor.systemGreen
+    /// Text badge glyph: brightness bump only, stays quiet.
+    static let badgeTintText = NSColor.secondaryLabelColor
+    /// Fallback badge glyph: unchanged monochrome.
+    static let badgeTintOther = NSColor.tertiaryLabelColor
 }

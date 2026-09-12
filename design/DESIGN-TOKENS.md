@@ -25,6 +25,13 @@ Cove 跨平台 UI 一致性的图纸：所有色值/字号/间距/圆角/动效/
 | danger | systemRed | 破坏性操作按钮、错误提示 | [提议]（补 alert hasDestructiveAction 后生效） |
 | card-border | labelColor 8% alpha | 卡片细描边，让圆角形状在深色底上可读 | [已拍板] 2026-09-05 · TASK-grid-card-details（share 卡片已启用） |
 | hover-fill | quaternaryLabelColor | 内容表面 hover 反馈（卡片/网格项）；系统语义灰，与系统蓝选中同族 | [已拍板] 2026-09-05 · TASK-grid-card-details |
+| badge-tint-folder | systemBlue | 浏览器行徽标·文件夹（Finder 直觉蓝） | [已拍板] 2026-09-12 · TASK-badge-tints |
+| badge-tint-video | systemPurple | 浏览器行徽标·视频 | [已拍板] 2026-09-12 · TASK-badge-tints |
+| badge-tint-pdf | systemRed | 浏览器行徽标·PDF（Preview 联想） | [已拍板] 2026-09-12 · TASK-badge-tints |
+| badge-tint-comic | systemOrange | 浏览器行徽标·漫画 | [已拍板] 2026-09-12 · TASK-badge-tints |
+| badge-tint-image | systemGreen | 浏览器行徽标·图片占位（加载完被真缩略图顶替） | [已拍板] 2026-09-12 · TASK-badge-tints |
+| badge-tint-text | secondaryLabelColor | 浏览器行徽标·文本（只提亮度，保持安静） | [已拍板] 2026-09-12 · TASK-badge-tints |
+| badge-tint-other | tertiaryLabelColor | 浏览器行徽标·其他（维持单色） | [已拍板] 2026-09-12 · TASK-badge-tints |
 
 ## 2. 字（刻度表）
 

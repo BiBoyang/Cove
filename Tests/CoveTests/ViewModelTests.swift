@@ -87,6 +87,20 @@ struct BrowserViewModelTests {
             mode: .vault, clickedRow: -1, items: items, pinnedPaths: []) == [])
     }
 
+    @Test("placeholder badge tint follows the content type")
+    func badgeTints() {
+        func item(_ name: String, dir: Bool = false) -> ContentItem {
+            ContentItem(name: name, path: "/" + name, isDirectory: dir, size: 0, modifiedDate: nil)
+        }
+        #expect(BrowserViewController.placeholderTint(for: item("fold", dir: true)) == CoveStyle.badgeTintFolder)
+        #expect(BrowserViewController.placeholderTint(for: item("a.mkv")) == CoveStyle.badgeTintVideo)
+        #expect(BrowserViewController.placeholderTint(for: item("a.png")) == CoveStyle.badgeTintImage)
+        #expect(BrowserViewController.placeholderTint(for: item("a.pdf")) == CoveStyle.badgeTintPdf)
+        #expect(BrowserViewController.placeholderTint(for: item("a.cbz")) == CoveStyle.badgeTintComic)
+        #expect(BrowserViewController.placeholderTint(for: item("a.txt")) == CoveStyle.badgeTintText)
+        #expect(BrowserViewController.placeholderTint(for: item("a.bin")) == CoveStyle.badgeTintOther)
+    }
+
     @Test("vault folders pair the symmetric pin intent with delete")
     func vaultPinIntents() {
         let folder = ContentItem(name: "Movies", path: "/Movies", isDirectory: true, size: 0, modifiedDate: nil)

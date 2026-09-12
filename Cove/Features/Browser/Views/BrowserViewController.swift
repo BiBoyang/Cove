@@ -452,6 +452,22 @@ final class BrowserViewController: NSViewController {
 }
 
 extension BrowserViewController: NSTableViewDataSource, NSTableViewDelegate {
+    /// The badge glyph's type tint (TASK-badge-tints, 2026-09-12):
+    /// folders read Finder-blue, media types get their own hue, text only
+    /// gets a brightness bump, and the fallback stays monochrome.
+    /// Internal (not private) so the mapping is unit-testable.
+    static func placeholderTint(for item: ContentItem) -> NSColor {
+        if item.isDirectory { return CoveStyle.badgeTintFolder }
+        switch item.fileType ?? .other {
+        case .video: return CoveStyle.badgeTintVideo
+        case .image: return CoveStyle.badgeTintImage
+        case .pdf: return CoveStyle.badgeTintPdf
+        case .comic: return CoveStyle.badgeTintComic
+        case .text: return CoveStyle.badgeTintText
+        case .other: return CoveStyle.badgeTintOther
+        }
+    }
+
     func numberOfRows(in tableView: NSTableView) -> Int {
         viewModel.state.items.count
     }
@@ -587,11 +603,12 @@ private final class BrowserRowCellView: NSTableCellView {
         thumbnailTask = nil
         currentPath = item.path
 
-        // Placeholders stay monochrome so the loaded thumbnail is the only
-        // saturated element on the row.
+        // Placeholder glyphs are type-tinted (TASK-badge-tints): the small
+        // saturated symbol reads on the grey tile while the loaded
+        // thumbnail stays the loudest element on the row.
         badgeImageView.image = NSImage(systemSymbolName: Self.placeholderSymbol(for: item), accessibilityDescription: nil)?
             .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: CoveStyle.symbolLarge, weight: .regular))
-        badgeImageView.contentTintColor = .tertiaryLabelColor
+        badgeImageView.contentTintColor = BrowserViewController.placeholderTint(for: item)
         badgeImageView.isHidden = false
         thumbnailImageView.image = nil
         thumbnailImageView.isHidden = true
