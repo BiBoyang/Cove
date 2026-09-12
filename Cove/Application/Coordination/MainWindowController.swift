@@ -33,7 +33,11 @@ final class MainWindowController: NSWindowController {
         window.title = "Cove"
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
-        window.setContentSize(NSSize(width: 960, height: 600))
+        window.setContentSize(NSSize(width: 1024, height: 720))
+        // Window floor sized so the settings pane fits without scrolling
+        // at the minimum (2026-09-12). Frozen on purpose: future pane
+        // growth scrolls inside the pane instead of raising this floor.
+        window.contentMinSize = NSSize(width: 900, height: 700)
         window.center()
         super.init(window: window)
 

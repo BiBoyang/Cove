@@ -83,6 +83,11 @@ final class SettingsPaneViewController: NSViewController {
         scrollView.documentView = content
         content.snp.makeConstraints { make in
             make.width.equalTo(scrollView.contentView)
+            // Fill short viewports so the form anchors to the top: a
+            // non-flipped document shorter than the clip view is pinned
+            // to the bottom of the visible area (2026-09-12
+            // bottom-cluster bug in fullscreen/tall windows).
+            make.height.greaterThanOrEqualTo(scrollView.contentView)
         }
 
         configureNumberField(capacityField, allowsFloat: false)
