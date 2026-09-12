@@ -192,11 +192,11 @@ make test                 # Framework package tests + Cove Swift Testing + smb-s
 make clean
 ```
 
-Rollback while acceptance is in flight: the pre-2026-09-07 IINA.app forest
-is preserved at `Vendor/libmpv-iina-backup/` — swap it back into
-`Vendor/libmpv/` (or re-run the now-deprecated
-`scripts/assemble-libmpv.sh`, which copies from a locally installed
-[IINA](https://iina.io)).
+Rollback: re-run `scripts/build-libmpv.sh` to rebuild the clean forest.
+(The pre-2026-09-07 IINA.app backup at `Vendor/libmpv-iina-backup/` was
+deleted on 2026-09-12 after acceptance completed; the deprecated
+`scripts/assemble-libmpv.sh` can still re-assemble the old forest from a
+locally installed [IINA](https://iina.io).)
 
 `project.yml` is the source of truth for the Xcode project. `*.xcodeproj` is
 git-ignored — regenerate it with `make generate` after cloning.

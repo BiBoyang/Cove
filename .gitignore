@@ -28,9 +28,9 @@ Carthage/Build/
 #                              (scripts/build-libmpv.sh; license texts and
 #                              upstream source mapping live in LICENSES/)
 #   Vendor/libmpv-self/        build-libmpv.sh's own output/staging dir
-#   Vendor/libmpv-iina-backup/ rollback copy of the old IINA.app forest,
-#                              kept during acceptance (assemble-libmpv.sh,
-#                              deprecated)
+#   Vendor/libmpv-iina-backup/ old IINA.app forest rollback copy (deleted
+#                              2026-09-12 after acceptance;
+#                              assemble-libmpv.sh, deprecated)
 Vendor/
 
 # Local-only collaboration logs (AI-assisted dev process). Design knowledge

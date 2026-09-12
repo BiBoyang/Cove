@@ -3,10 +3,10 @@
 # Vendor/libmpv now ships the self-built LGPL-clean forest produced by
 # scripts/build-libmpv.sh (see plans/TASK-libmpv-supply-chain.md Step 3 and
 # plans/libmpv-license-audit-2026-09-07.md). This script is kept solely to
-# re-assemble the old IINA.app forest as a local rollback while acceptance
-# testing is in flight; do not use it for fresh checkouts or distribution.
-# (Fastest rollback: swap the preserved old forest back with
-#  `mv Vendor/libmpv Vendor/libmpv-self-accept && mv Vendor/libmpv-iina-backup Vendor/libmpv`.)
+# re-assemble the old IINA.app forest as a local rollback; do not use it
+# for fresh checkouts or distribution. (The preserved backup forest at
+# Vendor/libmpv-iina-backup/ was deleted on 2026-09-12 after acceptance
+# completed; this script is now the only rollback path.)
 #
 # Assemble Vendor/libmpv locally (the forest is git-ignored, 116MB).
 #
