@@ -178,7 +178,7 @@ final class PlayerViewModel {
         if position >= duration * 0.95 {
             progressStore.removePosition(forKey: progressKey)
         } else if position > 5 {
-            progressStore.savePosition(position, forKey: progressKey)
+            progressStore.savePosition(position, forKey: progressKey, duration: duration)
         }
     }
 

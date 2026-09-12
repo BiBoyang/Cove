@@ -1,9 +1,11 @@
 import Foundation
 
-/// Pinned destination of the sidebar's bottom bar (vault / settings);
-/// `none` marks a server-driven pane (share grid or browser) on screen.
+/// Pinned destination of the sidebar's bottom bar (home / vault /
+/// settings); `none` marks a server-driven pane (share grid or browser)
+/// on screen.
 enum SidebarDestination: Equatable {
     case none
+    case home
     case vault
     case settings
 }

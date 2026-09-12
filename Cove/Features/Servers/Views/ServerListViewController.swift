@@ -14,6 +14,7 @@ final class ServerListViewController: NSViewController {
     var onEdit: ((ServerConfig) -> Void)?
     var onSwitchEndpoint: ((ServerConfig) -> Void)?
     var onRemove: ((ServerConfig) -> Void)?
+    var onOpenHome: (() -> Void)?
     var onOpenVault: (() -> Void)?
     var onOpenSettings: (() -> Void)?
     /// Vault pin row intents, forwarded from the bottom bar to the
@@ -117,6 +118,7 @@ final class ServerListViewController: NSViewController {
         bottomBar.snp.makeConstraints { make in
             make.leading.trailing.bottom.equalToSuperview()
         }
+        bottomBar.onOpenHome = { [weak self] in self?.onOpenHome?() }
         bottomBar.onOpenVault = { [weak self] in self?.onOpenVault?() }
         bottomBar.onOpenSettings = { [weak self] in self?.onOpenSettings?() }
         bottomBar.onOpenPin = { [weak self] in self?.onOpenPin?($0) }

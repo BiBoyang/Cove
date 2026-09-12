@@ -74,18 +74,24 @@ final class ShareGridViewModel {
     private var displayedShares: [SMBShareInfo] = []
     private var displayedServerID: UUID?
 
-    init(lastOpened: @escaping @MainActor (UUID, String) -> Date? = { _, _ in nil }) {
+    init(
+        lastOpened: @escaping @MainActor (UUID, String) -> Date? = { _, _ in nil }
+    ) {
         self.lastOpened = lastOpened
     }
 
-    /// Idle guidance shown whenever no server is selected.
+    /// Idle guidance for the no-server-selected state. The grid pane no
+    /// longer hosts the idle page (the home destination does, Amendment 2),
+    /// but the placeholder stays part of the grid's pure state vocabulary.
     func showIdlePlaceholder() {
-        showPlaceholder(Placeholder(
-            kind: .info(symbol: "externaldrive"),
-            title: "双击左侧服务器以连接",
-            message: "",
-            action: nil
-        ))
+        showPlaceholder(
+            Placeholder(
+                kind: .info(symbol: "externaldrive"),
+                title: "双击左侧服务器以连接",
+                message: "",
+                action: nil
+            )
+        )
     }
 
     /// First-run guidance: no servers configured at all, so the placeholder

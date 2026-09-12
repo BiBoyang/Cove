@@ -15,16 +15,28 @@ final class LibraryCoordinator {
     private let vaultService: VaultService
     private let shareOpenStore: ShareOpenStore
     private let pinStore: VaultPinStore
+    /// Resume-position persistence: feeds the home page's
+    /// continue-watching grid and prunes records after certain failures
+    /// (decision 4). Concrete type because `allEntries` deliberately
+    /// lives off the protocol (decision 1).
+    private let progressStore: PlaybackProgressStore?
 
-    private let serverListViewModel = ServerListViewModel()
+    /// Internal (not private) so the home-destination reset choreography
+    /// is unit-testable, like `shareGridViewModel`.
+    let serverListViewModel = ServerListViewModel()
     /// Internal (not private) so the enumeration-failure placeholder wiring
     /// is unit-testable, like `enumerateShares`. Built in `init` because its
     /// records lookup reads the share-open store.
     let shareGridViewModel: ShareGridViewModel
+    /// Internal (not private) so the home-page state (grid entries, the
+    /// two-level empty state) is unit-testable, like `shareGridViewModel`.
+    /// Built in `init` because its records lookup reads the progress store.
+    let homeViewModel: HomeViewModel
     private let browserViewModel = BrowserViewModel()
 
     let serverListViewController: ServerListViewController
     let shareGridViewController: ShareGridViewController
+    let homeViewController: HomeViewController
     let browserViewController: BrowserViewController
     let settingsPaneViewController: SettingsPaneViewController
 
@@ -66,7 +78,7 @@ final class LibraryCoordinator {
         preferencesViewModel: PreferencesViewModel,
         shareOpenStore: ShareOpenStore,
         pinStore: VaultPinStore = VaultPinStore(),
-        progressStore: PlaybackProgressStoring? = nil
+        progressStore: PlaybackProgressStore? = nil
     ) {
         self.sessionService = sessionService
         self.cache = cache
@@ -75,13 +87,25 @@ final class LibraryCoordinator {
         self.vaultService = vaultService
         self.shareOpenStore = shareOpenStore
         self.pinStore = pinStore
+        self.progressStore = progressStore
         playerCoordinator = PlayerCoordinator(progressStore: progressStore)
         pdfReaderCoordinator = PdfReaderCoordinator(cache: cache)
-        shareGridViewModel = ShareGridViewModel(lastOpened: { [shareOpenStore] serverID, share in
-            shareOpenStore.lastOpened(forServer: serverID, share: share)
-        })
+        shareGridViewModel = ShareGridViewModel(
+            lastOpened: { [shareOpenStore] serverID, share in
+                shareOpenStore.lastOpened(forServer: serverID, share: share)
+            }
+        )
+        homeViewModel = HomeViewModel(
+            recentWatchRecords: { [progressStore] in
+                progressStore?.allEntries() ?? []
+            },
+            serverCount: { [sessionService] in
+                sessionService.servers.count
+            }
+        )
         serverListViewController = ServerListViewController(viewModel: serverListViewModel)
         shareGridViewController = ShareGridViewController(viewModel: shareGridViewModel)
+        homeViewController = HomeViewController(viewModel: homeViewModel)
         browserViewController = BrowserViewController(viewModel: browserViewModel)
         settingsPaneViewController = SettingsPaneViewController(viewModel: preferencesViewModel)
         wireCallbacks()
@@ -90,18 +114,22 @@ final class LibraryCoordinator {
 
     func start() {
         serverListViewModel.update(servers: sessionService.servers)
-        showIdlePlaceholderForCurrentServerList()
+        showHomePage()
         refreshPins()
     }
 
-    /// Idle detail-pane placeholder: first-run guidance with an add action
-    /// when no servers exist, plain "connect" guidance otherwise.
-    private func showIdlePlaceholderForCurrentServerList() {
-        if sessionService.servers.isEmpty {
-            shareGridViewModel.showEmptyServerGuidance()
-        } else {
-            shareGridViewModel.showIdlePlaceholder()
-        }
+    /// The home page's arrival path (Amendment 2 decision 3): the home
+    /// destination's highlight is set structurally in this one place
+    /// instead of per call site, the grid re-parses the records (so the
+    /// two-level empty state re-levels too), and the detail pane swaps.
+    /// Every arrival at home — `start`, server removal, or the sidebar's
+    /// home row — funnels through here. Absorbs the idle-placeholder
+    /// funnel it replaces: the home page's empty states own first-run and
+    /// no-records guidance.
+    private func showHomePage() {
+        serverListViewModel.setActiveDestination(.home)
+        homeViewModel.refresh()
+        onShowDetail?(homeViewController)
     }
 
     private func wireCallbacks() {
@@ -110,11 +138,14 @@ final class LibraryCoordinator {
         serverListViewController.onEdit = { [weak self] in self?.presentEditServerSheet($0) }
         serverListViewController.onSwitchEndpoint = { [weak self] in self?.switchEndpoint(of: $0) }
         serverListViewController.onRemove = { [weak self] in self?.confirmRemoveServer($0) }
+        serverListViewController.onOpenHome = { [weak self] in self?.openHome() }
         serverListViewController.onOpenVault = { [weak self] in self?.openVault() }
         serverListViewController.onOpenSettings = { [weak self] in self?.showSettings() }
         shareGridViewController.onOpenShare = { [weak self] in self?.openShare($0) }
         shareGridViewController.onRetry = { [weak self] in self?.retryEnumeration() }
         shareGridViewController.onAddServer = { [weak self] in self?.presentAddServerSheet() }
+        homeViewController.onResumeWatch = { [weak self] in self?.resumePlayback($0) }
+        homeViewController.onAddServer = { [weak self] in self?.presentAddServerSheet() }
         browserViewController.onOpenDirectory = { [weak self] in self?.navigateInto($0) }
         browserViewController.onOpenImage = { [weak self] in self?.openReader(forImageAt: $0) }
         browserViewController.onOpenComic = { [weak self] in self?.openComicReader(at: $0) }
@@ -263,7 +294,19 @@ final class LibraryCoordinator {
         }
     }
 
-    private func resetAfterRemovingCurrentServer() {
+    /// Internal (not private) so the removal reset's home-destination
+    /// choreography is unit-testable, like `switchEndpoint`.
+    func resetAfterRemovingCurrentServer() {
+        resetToHomeState()
+    }
+
+    /// Shared reset back to the home page: cancels in-flight navigation,
+    /// drops the current server/share/vault context and the back stack,
+    /// refreshes and shows the home grid (a step that also activates the
+    /// home destination), and disconnects the live session. Server removal
+    /// and the sidebar's home row run the exact same steps (Amendment
+    /// 2026-09-13, retargeted to the home pane by Amendment 2).
+    private func resetToHomeState() {
         _ = beginNavigation()
         currentServer = nil
         currentShare = nil
@@ -271,9 +314,19 @@ final class LibraryCoordinator {
         navigationPath.reset()
         onTitleChange?("Cove")
         browserViewController.thumbnailProvider = nil
-        showIdlePlaceholderForCurrentServerList()
-        onShowDetail?(shareGridViewController)
+        showHomePage()
         activeTask = Task { await sessionService.disconnect() }
+    }
+
+    /// Sidebar "首页" destination (Amendment 2026-09-13): one tap back to
+    /// the home page from any pane — the same reset semantics as removing
+    /// the current server. The home row's highlight rides the home page's
+    /// structural invariant (see `showHomePage`), not a per-call-site
+    /// assignment. Repeat taps are idempotent: the same reset simply
+    /// runs again. Internal (not private) so the choreography is
+    /// unit-testable, like `enumerateShares`.
+    func openHome() {
+        resetToHomeState()
     }
 
     /// Flips the server's address (LAN ↔ remote), drops any live session
@@ -462,7 +515,13 @@ final class LibraryCoordinator {
     /// thumbnail miss does copy the file's bytes into that pool — accepted
     /// for BUG-5 (2026-09-07): local reads are cheap and CacheKit bounds
     /// the pool by capacity/TTL.
-    private func openVault(initialPath: String? = nil) {
+    ///
+    /// `completion` runs once the open settles (pins refreshed), receiving
+    /// the drill outcome so deep links can tell a vanished target directory
+    /// apart from a plain open. Installing it hands drill-failure
+    /// presentation to the caller — the resume flow shows its own single
+    /// alert instead of the generic one below.
+    private func openVault(initialPath: String? = nil, completion: ((Bool) -> Void)? = nil) {
         let generation = beginNavigation()
         browsingVault = true
         currentServer = nil
@@ -487,6 +546,7 @@ final class LibraryCoordinator {
                     )
                 }
                 try await loadDirectory(at: "/", generation: generation)
+                var drilled = true
                 if let initialPath {
                     do {
                         try await drillIntoVaultPath(initialPath, generation: generation)
@@ -496,13 +556,17 @@ final class LibraryCoordinator {
                         // The pinned folder vanished mid-open: fall back to
                         // the root; the pin-existence refresh below greys
                         // the row out instead of deleting it.
+                        drilled = false
                         navigationPath.reset()
                         try await loadDirectory(at: "/", generation: generation)
-                        onError?(error, "打开目录失败")
+                        if completion == nil {
+                            onError?(error, "打开目录失败")
+                        }
                     }
                 }
                 // Entering the vault re-checks pin targets (decision 4).
                 refreshPins()
+                completion?(drilled)
             } catch {
                 if Task.isCancelled || error is CancellationError { return }
                 guard generation == navigationGeneration else { return }
@@ -678,6 +742,149 @@ final class LibraryCoordinator {
 
     private func cancelDownload() {
         downloadTask?.cancel()
+    }
+
+    // MARK: - Continue watching
+
+    /// Terminal failures of the resume deep link that prune the record
+    /// (decision 4): the file — or its folder — is gone for good.
+    private enum ResumeFailure: Error {
+        case fileUnreachable
+    }
+
+    /// Deep link from the home page's continue-watching grid (decision
+    /// 4): connect → share → directory → player. Resume itself is free —
+    /// the player's progressKey mechanism seeks once the duration lands.
+    /// Each route rides a single navigation generation, so any user
+    /// navigation mid-chain cancels the remaining steps.
+    private func resumePlayback(_ entry: RecentWatchEntry) {
+        switch entry.source {
+        case .vault:
+            resumeVaultPlayback(entry)
+        case .smb(let host, let share):
+            resumeSMBPlayback(entry, host: host, share: share)
+        }
+    }
+
+    /// SMB route: match the stored server by the address recorded in the
+    /// entry's sourceID (a session opened via the remote endpoint records
+    /// that address, so both configured hosts match), then walk the same
+    /// chain a manual open would. Failure semantics mirror the manual
+    /// flow (decision 4): transient connect/listing failures surface as
+    /// the grid's failure placeholder and keep the record; only a gone
+    /// server config or an unreachable file prunes it.
+    private func resumeSMBPlayback(_ entry: RecentWatchEntry, host: String, share: String) {
+        guard let server = sessionService.servers.first(where: {
+            $0.host == host || $0.remoteHost == host
+        }) else {
+            // Certain failure #1: the server config is gone for good.
+            removeRecentWatch(entry)
+            presentResumeFailureAlert(
+                message: "无法打开“\(entry.fileName)”",
+                informative: "该视频所在的服务器已被删除，已从最近播放中移除。"
+            )
+            return
+        }
+        let generation = beginNavigation()
+        currentServer = server
+        browsingVault = false
+        serverListViewModel.setActiveDestination(.none)
+        browserViewController.thumbnailProvider = nil
+        onShowDetail?(shareGridViewController)
+        shareGridViewModel.showLoading()
+        onTitleChange?(server.displayName)
+        // Already on the exact share: reuse the live session instead of
+        // reconnecting (decision 4).
+        let reusingSession = sessionService.currentSourceID == entry.sourceID
+        activeTask = Task {
+            do {
+                if !reusingSession {
+                    try await sessionService.connect(to: server, share: share)
+                    guard generation == navigationGeneration else { return }
+                    // Same contract as a manual share open: the open
+                    // record lands once the connection is established.
+                    shareOpenStore.recordOpen(forServer: server.id, share: share)
+                    if let sourceID = sessionService.currentSourceID {
+                        browserViewController.thumbnailProvider = ThumbnailService(
+                            readFile: makeFileReader(), cache: cache, sourceID: sourceID
+                        )
+                    }
+                }
+                currentShare = share
+                browserViewController.browseMode = .remote
+                navigationPath.reset()
+                onTitleChange?("\(server.displayName) / \(share)")
+                onShowDetail?(browserViewController)
+                navigationPath.navigateInto(entry.directoryPath)
+                do {
+                    try await loadDirectory(at: entry.directoryPath, generation: generation)
+                } catch {
+                    navigationPath.rollbackInto()
+                    // A cancelled chain must not masquerade as a gone file.
+                    if Task.isCancelled || error is CancellationError { throw error }
+                    throw ResumeFailure.fileUnreachable
+                }
+                guard browserViewModel.videoItems.contains(where: { $0.path == entry.path }) else {
+                    throw ResumeFailure.fileUnreachable
+                }
+                openPlayer(at: entry.path)
+            } catch {
+                if Task.isCancelled || error is CancellationError { return }
+                guard generation == navigationGeneration else { return }
+                if error is ResumeFailure {
+                    // Certain failure #2: the file or its folder is gone.
+                    removeRecentWatch(entry)
+                    presentResumeFailureAlert(
+                        message: "无法打开“\(entry.fileName)”",
+                        informative: "文件可能已移动或删除，已从最近播放中移除。"
+                    )
+                } else {
+                    // Transient failure (network, credentials): the record
+                    // stays; the placeholder owns the presentation with
+                    // its retry affordance, same as a manual connect.
+                    logger.error("续播连接失败: \(error.localizedDescription)")
+                    shareGridViewModel.showEnumerationFailure(canSwitchToRemote: server.canSwitchToRemote)
+                }
+            }
+        }
+    }
+
+    /// Vault route: the plain vault open drills to the entry's directory;
+    /// the completion then either opens the player or, when the file or
+    /// its folder is gone, applies the certain-failure cleanup.
+    private func resumeVaultPlayback(_ entry: RecentWatchEntry) {
+        openVault(initialPath: entry.directoryPath) { [weak self] drilled in
+            guard let self else { return }
+            if drilled, browserViewModel.videoItems.contains(where: { $0.path == entry.path }) {
+                openPlayer(at: entry.path)
+            } else {
+                removeRecentWatch(entry)
+                presentResumeFailureAlert(
+                    message: "无法打开“\(entry.fileName)”",
+                    informative: "文件可能已移动或删除，已从最近播放中移除。"
+                )
+            }
+        }
+    }
+
+    /// Prunes a record after a certain failure and refreshes the home
+    /// grid so the card is gone the next time the page renders — and
+    /// immediately when it is on screen (decision 4).
+    private func removeRecentWatch(_ entry: RecentWatchEntry) {
+        progressStore?.removePosition(forKey: entry.key)
+        homeViewModel.refresh()
+    }
+
+    /// Terminal resume feedback: informational, single button — the same
+    /// alert shape as the pin-cap and update-check notices.
+    private func presentResumeFailureAlert(message: String, informative: String) {
+        guard let window = hostWindowProvider?() else { return }
+        let alert = NSAlert()
+        alert.messageText = message
+        alert.informativeText = informative
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: "好")
+        alert.beginSheetModal(for: window) { _ in }
     }
 
     // MARK: - Settings

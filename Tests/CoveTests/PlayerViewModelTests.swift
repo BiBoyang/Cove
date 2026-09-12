@@ -317,13 +317,15 @@ struct PlayerViewModelTests {
     private final class FakeProgressStore: PlaybackProgressStoring {
         var positions: [String: Double] = [:]
         private(set) var saves: [Double] = []
+        private(set) var savedDurations: [Double] = []
         private(set) var removals: [String] = []
 
         func position(forKey key: String) -> Double? { positions[key] }
 
-        func savePosition(_ position: Double, forKey key: String) {
+        func savePosition(_ position: Double, forKey key: String, duration: Double) {
             positions[key] = position
             saves.append(position)
+            savedDurations.append(duration)
         }
 
         func removePosition(forKey key: String) {

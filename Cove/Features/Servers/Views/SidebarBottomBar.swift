@@ -1,13 +1,14 @@
 import AppKit
 import SnapKit
 
-/// Pinned bottom bar of the servers sidebar: the two fixed destinations
-/// (本地仓库 / 设置) as rows under a hairline separator, with the vault's
-/// pinned folders as extra rows between them — immovable by server count,
-/// scrolling, window resize, or fullscreen. Feature-private per
-/// AGENTS.md rule 14.
+/// Pinned bottom bar of the servers sidebar: the fixed destinations
+/// (首页 / 本地仓库 / 设置) as rows under a hairline separator, with the
+/// vault's pinned folders as extra rows between them — immovable by
+/// server count, scrolling, window resize, or fullscreen. Feature-private
+/// per AGENTS.md rule 14.
 @MainActor
 final class SidebarBottomBar: NSView {
+    var onOpenHome: (() -> Void)?
     var onOpenVault: (() -> Void)?
     var onOpenSettings: (() -> Void)?
     /// Pin row intents, forwarded by `ServerListViewController` to the
@@ -16,6 +17,9 @@ final class SidebarBottomBar: NSView {
     var onSetAlias: ((_ path: String) -> Void)?
     var onRemovePin: ((_ path: String) -> Void)?
 
+    private let homeRow = SidebarDestinationRowView(
+        symbol: "house", title: "首页", tint: .labelColor
+    )
     private let vaultRow = SidebarDestinationRowView(
         symbol: "externaldrive.fill", title: "本地仓库", tint: CoveStyle.accentGold
     )
@@ -38,10 +42,12 @@ final class SidebarBottomBar: NSView {
         separator.boxType = .separator
 
         addSubview(separator)
+        addSubview(homeRow)
         addSubview(vaultRow)
         addSubview(pinsArea)
         addSubview(settingsRow)
 
+        homeRow.onTap = { [weak self] in self?.onOpenHome?() }
         vaultRow.onTap = { [weak self] in self?.onOpenVault?() }
         settingsRow.onTap = { [weak self] in self?.onOpenSettings?() }
         pinMenu.delegate = self
@@ -49,9 +55,14 @@ final class SidebarBottomBar: NSView {
         separator.snp.makeConstraints { make in
             make.leading.trailing.top.equalToSuperview()
         }
-        vaultRow.snp.makeConstraints { make in
+        homeRow.snp.makeConstraints { make in
             make.leading.trailing.equalToSuperview()
             make.top.equalTo(separator.snp.bottom).offset(CoveStyle.space4)
+            make.height.equalTo(CoveStyle.rowSidebar)
+        }
+        vaultRow.snp.makeConstraints { make in
+            make.leading.trailing.equalToSuperview()
+            make.top.equalTo(homeRow.snp.bottom)
             make.height.equalTo(CoveStyle.rowSidebar)
         }
         pinsArea.snp.makeConstraints { make in
@@ -92,14 +103,15 @@ final class SidebarBottomBar: NSView {
     }
 
     private func syncRows() {
+        homeRow.setActive(lastDestination == .home)
         vaultRow.setActive(lastDestination == .vault && activePinPath == nil)
         settingsRow.setActive(lastDestination == .settings)
         for row in pinRows { row.setActive(row.pinPath == activePinPath) }
     }
 
     /// Replaces the pinned-folder rows between the vault and settings
-    /// rows. An empty list collapses the area to zero, restoring the
-    /// original two-row bar exactly.
+    /// rows. An empty list collapses the area to zero, leaving only the
+    /// fixed destination rows.
     func setPins(_ pins: [VaultPinRow]) {
         pinRows.forEach { $0.removeFromSuperview() }
         pinRows = pins.map { pin in

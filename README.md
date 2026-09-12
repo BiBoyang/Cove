@@ -22,7 +22,7 @@ chrome, dark player) regardless of the system appearance.
   switching when an idle remote address is configured (see
   [Remote access](#remote-access-tailscale--wireguard)).
 - Single-click a server in the sidebar to connect (arrows select, Return
-  activates); 本地仓库 and 设置 stay pinned in a bottom bar that never
+  activates); 首页, 本地仓库 and 设置 stay pinned in a bottom bar that never
   moves with the server count, window resize, or fullscreen.
 - Double-click a share card to browse it: directories, navigation into
   folders and back up (the back button returns to the share grid from the
@@ -62,6 +62,16 @@ chrome, dark player) regardless of the system appearance.
     auto-advance and how prev/next behave at the queue edges.
   - **Playback speed**: 0.5–2x from the capsule's speed button; the chosen
     rate carries over across track changes.
+- **Home page (首页, recent watches)**: Cove launches onto a home page that
+  grids the videos you've watched most recently (up to 30) — file name, a
+  mini progress bar, and a 已看至 h:mm:ss · N天前 line per card.
+  Double-click a card to resume: the app reconnects the recorded server,
+  re-enters its share and folder, and the player picks up at the saved
+  position; SMB and vault entries work alike. Tapping a card whose file or
+  server has vanished shows a notice and prunes the record. The page's
+  empty states double as first-run guidance (还没有添加服务器, with an add
+  action) and a no-records hint (还没有播放记录), and the sidebar bottom
+  bar's 首页 row returns here from any pane.
 - **PDF reading**: double-click a `.pdf` to read it with PDFKit — the file
   is cached whole in the original pool (instant on reopen) and shown as
   continuous pages with breaks (`.cbr`-style one-offs are not special-cased;
