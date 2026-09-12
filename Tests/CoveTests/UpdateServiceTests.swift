@@ -49,6 +49,13 @@ struct UpdateServiceTests {
         #expect(SemanticVersion("2026.09.12-release") == SemanticVersion("2026.9.12"))
     }
 
+    @Test("oversized digit segments clamp to Int.max instead of trapping")
+    func oversizedSegments() {
+        let huge = SemanticVersion("v99999999999999999999999.0.0")
+        #expect(huge != nil)
+        #expect(huge! > SemanticVersion("0.7.0")!)
+    }
+
     @Test("abnormal strings fail to parse")
     func abnormalStrings() {
         #expect(SemanticVersion("") == nil)

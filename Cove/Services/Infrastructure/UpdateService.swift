@@ -39,7 +39,9 @@ struct SemanticVersion: Equatable, Comparable, CustomStringConvertible, Sendable
         var numbers: [Int] = []
         for segment in segments {
             let digits = segment.prefix { $0.isNumber && $0.isASCII }
-            numbers.append(digits.isEmpty ? 0 : Int(digits)!)
+            // Absurdly long digit runs (19+) overflow Int — clamp instead
+            // of trapping, so no tag can ever crash the check.
+            numbers.append(digits.isEmpty ? 0 : (Int(digits) ?? .max))
         }
         // A tag with no digit anywhere ("latest", "v", "") is not a version.
         guard text.contains(where: { $0.isNumber && $0.isASCII }) else { return nil }
