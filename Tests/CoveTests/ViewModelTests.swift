@@ -28,6 +28,63 @@ struct BrowserViewModelTests {
         #expect(visible.map(\.name) == ["Folder", "2.jpg", "10.jpg"])
     }
 
+    @Test("name filter: blank queries are identity, matches fold case and diacritics, order preserved")
+    func filterItems() {
+        func item(_ name: String) -> ContentItem {
+            ContentItem(name: name, path: "/\(name)", isDirectory: false, size: 0, modifiedDate: nil)
+        }
+        let items = [item("a.mkv"), item("Café.jpg"), item("新番 01.mkv"), item("notes.txt")]
+
+        // Empty and whitespace-only queries filter nothing.
+        #expect(BrowserViewModel.filterItems(items, query: "") == items)
+        #expect(BrowserViewModel.filterItems(items, query: "  \n ") == items)
+
+        // Case-insensitive contains; the query is trimmed; the incoming
+        // order is preserved.
+        #expect(BrowserViewModel.filterItems(items, query: " MKV ")
+            == [item("a.mkv"), item("新番 01.mkv")])
+
+        // Diacritic-insensitive: "cafe" matches "Café".
+        #expect(BrowserViewModel.filterItems(items, query: "cafe") == [item("Café.jpg")])
+
+        // CJK substring.
+        #expect(BrowserViewModel.filterItems(items, query: "新番") == [item("新番 01.mkv")])
+
+        // No match returns empty.
+        #expect(BrowserViewModel.filterItems(items, query: "zzz").isEmpty)
+    }
+
+    @Test("setFilter narrows only the display; navigation resets the query")
+    func filterLifecycle() {
+        let viewModel = BrowserViewModel()
+        let mkv = ContentItem(name: "a.mkv", path: "/a.mkv", isDirectory: false, size: 1, modifiedDate: nil)
+        let jpg = ContentItem(name: "b.jpg", path: "/b.jpg", isDirectory: false, size: 1, modifiedDate: nil)
+        viewModel.display(items: [mkv, jpg], path: "/", title: "share")
+
+        viewModel.setFilter("mkv")
+        // The raw listing and its playlist projections stay complete…
+        #expect(viewModel.state.items == [mkv, jpg])
+        #expect(viewModel.imageItems == [jpg])
+        // …while the display narrows.
+        #expect(viewModel.state.displayedItems == [mkv])
+
+        // A whitespace-only query counts as no filter.
+        viewModel.setFilter("   ")
+        #expect(viewModel.state.displayedItems == [mkv, jpg])
+
+        // beginLoading (any navigation) resets the query.
+        viewModel.setFilter("mkv")
+        viewModel.beginLoading(path: "/sub", title: "sub")
+        #expect(viewModel.state.filterQuery == "")
+        #expect(viewModel.state.displayedItems == viewModel.state.items)
+
+        // display resets it too, and the display matches the raw listing.
+        viewModel.setFilter("jpg")
+        viewModel.display(items: [mkv, jpg], path: "/", title: "share")
+        #expect(viewModel.state.filterQuery == "")
+        #expect(viewModel.state.displayedItems == [mkv, jpg])
+    }
+
     @Test("location label merges path and title without duplication")
     func locationText() {
         // Share root: title alone.

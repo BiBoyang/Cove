@@ -97,6 +97,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         editMenu.addItem(NSMenuItem(title: "拷贝", action: #selector(NSText.copy(_:)), keyEquivalent: "c"))
         editMenu.addItem(NSMenuItem(title: "粘贴", action: #selector(NSText.paste(_:)), keyEquivalent: "v"))
         editMenu.addItem(NSMenuItem(title: "全选", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a"))
+        // "查找…" (Cmd+F) focuses the browser toolbar's filter field. No
+        // target: the item rides the responder chain, so it enables only
+        // while a browser view is on-screen.
+        editMenu.addItem(.separator())
+        editMenu.addItem(NSMenuItem(
+            title: "查找…",
+            action: #selector(BrowserViewController.focusSearchField(_:)),
+            keyEquivalent: "f"
+        ))
         editMenuItem.submenu = editMenu
 
         NSApplication.shared.mainMenu = mainMenu

@@ -27,7 +27,11 @@ chrome, dark player) regardless of the system appearance.
 - Double-click a share card to browse it: directories, navigation into
   folders and back up (the back button returns to the share grid from the
   share root). Rows show a large rounded thumbnail with a name-plus-metadata
-  line, and the toolbar shows a breadcrumb of the current location.
+  line, and the toolbar shows a breadcrumb of the current location. The
+  toolbar's search field (⌘F) filters the current folder by name as you
+  type — case- and diacritic-insensitive, purely local with no network
+  round-trip, cleared on navigation — and works the same when browsing
+  the local vault.
 - **Video playback**: double-click a video file (mp4, mkv, avi, mov, wmv,
   flv, webm, ts and more — anything mpv plays) to stream it straight off the
   NAS via [libmpv](https://mpv.io) bridged onto Cove's own SMB stack; nothing

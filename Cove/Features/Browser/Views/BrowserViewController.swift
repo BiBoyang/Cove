@@ -99,6 +99,11 @@ final class BrowserViewController: NSViewController {
         symbolName: "xmark", pointSize: CoveStyle.symbolSmall, style: .secondary,
         accessibilityDescription: "取消下载"
     )
+    /// Toolbar name filter: typing narrows the current listing locally.
+    private let searchField = NSSearchField()
+    /// "matched/total" readout left of the search field; hidden without
+    /// an active query.
+    private let filterCountLabel = NSTextField(labelWithString: "")
 
     private let byteFormatter: ByteCountFormatter = {
         let formatter = ByteCountFormatter()
@@ -170,10 +175,27 @@ final class BrowserViewController: NSViewController {
         downloadCancelButton.action = #selector(handleCancelDownload)
         downloadCancelButton.isHidden = true
 
+        // Name filter (search): a persistent 200pt search field between
+        // the breadcrumb and the download cluster. Typing filters
+        // immediately; Esc clears, Return hands focus back to the table.
+        searchField.placeholderString = "搜索当前文件夹"
+        searchField.sendsSearchStringImmediately = true
+        searchField.delegate = self
+        searchField.target = self
+        searchField.action = #selector(handleFilterChanged)
+        searchField.setContentHuggingPriority(.required, for: .horizontal)
+
+        filterCountLabel.font = CoveStyle.captionFont
+        filterCountLabel.textColor = .secondaryLabelColor
+        filterCountLabel.isHidden = true
+        filterCountLabel.setContentHuggingPriority(.required, for: .horizontal)
+
         toolbarView.addSubview(backButton)
         toolbarView.addSubview(preheatButton)
         toolbarView.addSubview(preheatProgressLabel)
         toolbarView.addSubview(locationLabel)
+        toolbarView.addSubview(filterCountLabel)
+        toolbarView.addSubview(searchField)
         toolbarView.addSubview(downloadLabel)
         toolbarView.addSubview(downloadCancelButton)
         backButton.snp.makeConstraints { make in
@@ -193,7 +215,19 @@ final class BrowserViewController: NSViewController {
         locationLabel.snp.makeConstraints { make in
             make.center.equalToSuperview()
             make.leading.greaterThanOrEqualTo(preheatProgressLabel.snp.trailing).offset(CoveStyle.space8)
-            make.trailing.lessThanOrEqualTo(downloadLabel.snp.leading).offset(-CoveStyle.space8)
+            make.trailing.lessThanOrEqualTo(filterCountLabel.snp.leading).offset(-CoveStyle.space8)
+        }
+        // The filter sits between the breadcrumb and the download cluster:
+        // when a download appears the label (≤320pt) pushes the filter
+        // left and the breadcrumb yields.
+        searchField.snp.makeConstraints { make in
+            make.trailing.equalTo(downloadLabel.snp.leading).offset(-CoveStyle.space8)
+            make.centerY.equalToSuperview()
+            make.width.equalTo(200)
+        }
+        filterCountLabel.snp.makeConstraints { make in
+            make.trailing.equalTo(searchField.snp.leading).offset(-CoveStyle.space6)
+            make.centerY.equalToSuperview()
         }
         downloadLabel.snp.makeConstraints { make in
             make.trailing.equalTo(downloadCancelButton.snp.leading).offset(-CoveStyle.space6)
@@ -260,6 +294,7 @@ final class BrowserViewController: NSViewController {
         backButton.isEnabled = state.canGoUp
         renderPreheat(state.preheat)
         renderDownload(state.download)
+        syncFilterControls(state)
         tableView.reloadData()
         // Same-path renders (download/preheat progress, refresh after a
         // delete) must not yank the user's scroll position.
@@ -288,6 +323,13 @@ final class BrowserViewController: NSViewController {
             placeholder = StatePlaceholderView(
                 style: .loading, title: "正在加载…", message: state.title
             )
+        } else if let query = Self.activeFilterQuery(state),
+            state.displayedItems.isEmpty, !state.items.isEmpty {
+            placeholder = StatePlaceholderView(
+                style: .symbol("magnifyingglass"),
+                title: "无匹配结果",
+                message: "没有名称包含「\(query)」的条目。"
+            )
         } else if state.canGoUp && state.items.isEmpty {
             placeholder = StatePlaceholderView(
                 style: .symbol("tray"),
@@ -311,7 +353,7 @@ final class BrowserViewController: NSViewController {
     /// (Finder-style). A row that no longer exists (renamed or deleted
     /// meanwhile) degrades to the top reset from the path change.
     func revealItem(atPath path: String) {
-        guard let row = viewModel.state.items.firstIndex(where: { $0.path == path }) else { return }
+        guard let row = viewModel.state.displayedItems.firstIndex(where: { $0.path == path }) else { return }
         tableView.scrollRowToVisible(row)
         tableView.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
     }
@@ -348,6 +390,10 @@ final class BrowserViewController: NSViewController {
         case .none:
             downloadLabel.isHidden = true
             downloadCancelButton.isHidden = true
+            // The label keeps participating in layout while hidden, so its
+            // text must go too — otherwise the stale summary keeps pushing
+            // the search field left after the download presentation ends.
+            downloadLabel.stringValue = ""
         case .running(let completed, let total, let file):
             downloadLabel.isHidden = false
             downloadCancelButton.isHidden = false
@@ -359,6 +405,42 @@ final class BrowserViewController: NSViewController {
             downloadCancelButton.isHidden = true
             downloadLabel.stringValue = summary
         }
+    }
+
+    // MARK: - Name filter
+
+    /// The trimmed filter query, or nil while filtering is inactive (the
+    /// query is blank). Static and pure so the placeholder rules and the
+    /// count/field wiring share one notion of "active".
+    static func activeFilterQuery(_ state: BrowserViewModel.State) -> String? {
+        let trimmed = state.filterQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    /// Mirrors state into the search field and the matched/total count.
+    /// The field is written only when its text actually differs, so an
+    /// in-progress edit never yanks the cursor to the end.
+    private func syncFilterControls(_ state: BrowserViewModel.State) {
+        if searchField.stringValue != state.filterQuery {
+            searchField.stringValue = state.filterQuery
+        }
+        guard Self.activeFilterQuery(state) != nil else {
+            filterCountLabel.isHidden = true
+            return
+        }
+        filterCountLabel.stringValue = "\(state.displayedItems.count)/\(state.items.count)"
+        filterCountLabel.isHidden = false
+    }
+
+    @objc private func handleFilterChanged() {
+        viewModel.setFilter(searchField.stringValue)
+    }
+
+    /// Cmd+F ("查找…" menu item, no target — responder chain): focus the
+    /// toolbar filter field. The item auto-disables while the browser is
+    /// off-screen because no responder implements the action then.
+    @objc func focusSearchField(_ sender: Any?) {
+        view.window?.makeFirstResponder(searchField)
     }
 
     @objc private func handleCancelDownload() {
@@ -432,7 +514,7 @@ final class BrowserViewController: NSViewController {
 
     @objc private func handleDoubleClick() {
         let row = tableView.clickedRow
-        let items = viewModel.state.items
+        let items = viewModel.state.displayedItems
         guard row >= 0, row < items.count else { return }
         let item = items[row]
         if item.isDirectory {
@@ -469,7 +551,7 @@ extension BrowserViewController: NSTableViewDataSource, NSTableViewDelegate {
     }
 
     func numberOfRows(in tableView: NSTableView) -> Int {
-        viewModel.state.items.count
+        viewModel.state.displayedItems.count
     }
 
     func tableView(_ tableView: NSTableView, heightOfRow row: Int) -> CGFloat {
@@ -490,7 +572,7 @@ extension BrowserViewController: NSTableViewDataSource, NSTableViewDelegate {
             cell = BrowserRowCellView()
             cell.identifier = identifier
         }
-        let item = viewModel.state.items[row]
+        let item = viewModel.state.displayedItems[row]
         cell.configure(
             with: item,
             subtitle: subtitleText(for: item),
@@ -684,16 +766,17 @@ extension BrowserViewController: NSMenuDelegate {
     /// (header/empty space) simply does not appear.
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
+        let items = viewModel.state.displayedItems
         if let selection = Self.selectionOnRightClick(
             clickedRow: tableView.clickedRow,
             current: tableView.selectedRowIndexes,
-            itemCount: viewModel.state.items.count
+            itemCount: items.count
         ) {
             tableView.selectRowIndexes(selection, byExtendingSelection: false)
         }
         let intents = Self.contextMenuIntent(
             mode: browseMode, clickedRow: tableView.clickedRow,
-            items: viewModel.state.items, pinnedPaths: pinnedPaths
+            items: items, pinnedPaths: pinnedPaths
         )
         for intent in intents {
             let title: String
@@ -713,6 +796,30 @@ extension BrowserViewController: NSMenuDelegate {
             menuItem.target = self
             menuItem.representedObject = intent
             menu.addItem(menuItem)
+        }
+    }
+}
+
+extension BrowserViewController: NSSearchFieldDelegate {
+    /// Search-field key commands: Esc clears an active query and hands
+    /// focus back either way; Return only hands focus back. Returning
+    /// true swallows the default field behavior.
+    func control(
+        _ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector
+    ) -> Bool {
+        switch commandSelector {
+        case #selector(NSResponder.cancelOperation(_:)):
+            if !searchField.stringValue.isEmpty {
+                searchField.stringValue = ""
+                viewModel.setFilter("")
+            }
+            view.window?.makeFirstResponder(tableView)
+            return true
+        case #selector(NSResponder.insertNewline(_:)):
+            view.window?.makeFirstResponder(tableView)
+            return true
+        default:
+            return false
         }
     }
 }

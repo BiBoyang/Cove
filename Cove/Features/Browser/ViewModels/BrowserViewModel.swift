@@ -38,11 +38,21 @@ final class BrowserViewModel {
         let isLoading: Bool
         let preheat: PreheatButtonState
         let download: DownloadState?
+        /// Active name-filter query; "" means no filtering. Navigation
+        /// (`beginLoading` / `display`) always resets it to "".
+        let filterQuery: String
+
+        /// The listing as shown: `items` narrowed by `filterQuery`. The
+        /// raw `items` stay complete so playlist projections and path
+        /// lookups are unaffected by the filter.
+        var displayedItems: [ContentItem] {
+            BrowserViewModel.filterItems(items, query: filterQuery)
+        }
     }
 
     private(set) var state = State(
         items: [], path: "", title: "", canGoUp: false, isLoading: false,
-        preheat: .unavailable, download: nil
+        preheat: .unavailable, download: nil, filterQuery: ""
     )
 
     var onStateChange: ((State) -> Void)? {
@@ -85,7 +95,8 @@ final class BrowserViewModel {
             canGoUp: true,
             isLoading: true,
             preheat: .unavailable,
-            download: nil
+            download: nil,
+            filterQuery: ""
         )
         onStateChange?(state)
     }
@@ -102,7 +113,8 @@ final class BrowserViewModel {
             preheat: .ready,
             // Navigation ends any download presentation; the download task
             // itself is the coordinator's business.
-            download: nil
+            download: nil,
+            filterQuery: ""
         )
         onStateChange?(state)
     }
@@ -129,7 +141,28 @@ final class BrowserViewModel {
             canGoUp: state.canGoUp,
             isLoading: state.isLoading,
             preheat: state.preheat,
-            download: download
+            download: download,
+            filterQuery: state.filterQuery
+        )
+        onStateChange?(state)
+    }
+
+    // MARK: - Name filter
+
+    /// Updates the name-filter query and re-emits state. Only
+    /// `displayedItems` narrows; the raw `items` and their playlist
+    /// projections stay complete.
+    func setFilter(_ query: String) {
+        guard state.filterQuery != query else { return }
+        state = State(
+            items: state.items,
+            path: state.path,
+            title: state.title,
+            canGoUp: state.canGoUp,
+            isLoading: state.isLoading,
+            preheat: state.preheat,
+            download: state.download,
+            filterQuery: query
         )
         onStateChange?(state)
     }
@@ -191,7 +224,8 @@ final class BrowserViewModel {
             canGoUp: state.canGoUp,
             isLoading: state.isLoading,
             preheat: preheat,
-            download: state.download
+            download: state.download,
+            filterQuery: state.filterQuery
         )
         onStateChange?(state)
     }
@@ -203,5 +237,20 @@ final class BrowserViewModel {
                 if lhs.isDirectory != rhs.isDirectory { return lhs.isDirectory }
                 return NaturalSort.areInIncreasingOrder(lhs.name, rhs.name)
             }
+    }
+
+    /// Name-contains filter for the current listing: case-insensitive and
+    /// diacritic-insensitive; the query is trimmed and a blank query is
+    /// the identity. Filter-only — the incoming order (visibleItems
+    /// sort) is preserved. Pure and nonisolated so `State.displayedItems`
+    /// can call it from any context.
+    nonisolated static func filterItems(_ items: [ContentItem], query: String) -> [ContentItem] {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return items }
+        let options: String.CompareOptions = [.caseInsensitive, .diacriticInsensitive]
+        let foldedQuery = trimmed.folding(options: options, locale: nil)
+        return items.filter {
+            $0.name.folding(options: options, locale: nil).contains(foldedQuery)
+        }
     }
 }
