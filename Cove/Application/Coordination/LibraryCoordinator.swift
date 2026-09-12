@@ -396,6 +396,9 @@ final class LibraryCoordinator {
         _ = beginNavigation()
         currentShare = nil
         browsingVault = false
+        // Backing out of the vault lands on a server pane: sync the bar,
+        // the same contract as enumerateShares/openVault/showSettings.
+        serverListViewModel.setActiveDestination(.none)
         navigationPath.reset()
         onTitleChange?(currentServer?.displayName ?? "Cove")
         browserViewController.thumbnailProvider = nil
