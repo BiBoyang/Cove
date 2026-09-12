@@ -72,7 +72,10 @@ struct SubtitleTrack: Equatable, Sendable {
     let lang: String?
     /// Codec name, e.g. "subrip" or "ass"; empty when mpv reports none yet.
     let codec: String
-    /// Picker row label; see `displayName(title:lang:codec:position:)`.
+    /// mpv's `external` flag: mounted from a sidecar file (`sub-add`) rather
+    /// than muxed into the container. Drives the picker's 「外挂」 marker.
+    let external: Bool
+    /// Picker row label; see `displayName(title:lang:codec:position:external:)`.
     let displayName: String
 }
 
@@ -88,6 +91,9 @@ struct MPVTrackEntry: Equatable, Sendable {
     let codec: String?
     /// mpv's `selected` flag: this track is the current pick of its type.
     let isSelected: Bool
+    /// mpv's `external` flag: added from an external file (`sub-add`) instead
+    /// of being muxed into the container.
+    let isExternal: Bool
 }
 
 extension SubtitleTrack {
@@ -107,11 +113,13 @@ extension SubtitleTrack {
                 title: entry.title,
                 lang: entry.lang,
                 codec: entry.codec ?? "",
+                external: entry.isExternal,
                 displayName: displayName(
                     title: entry.title,
                     lang: entry.lang,
                     codec: entry.codec,
-                    position: tracks.count + 1
+                    position: tracks.count + 1,
+                    external: entry.isExternal
                 )
             ))
         }
@@ -120,12 +128,21 @@ extension SubtitleTrack {
 
     /// Row-label fallback chain: title, then language code, then codec,
     /// then a position-based placeholder, so metadata-less tracks never
-    /// render as an empty row. Empty strings count as missing.
-    static func displayName(title: String?, lang: String?, codec: String?, position: Int) -> String {
-        if let title, !title.isEmpty { return title }
-        if let lang, !lang.isEmpty { return lang }
-        if let codec, !codec.isEmpty { return codec }
-        return "字幕 \(position)"
+    /// render as an empty row. Empty strings count as missing. External
+    /// tracks get a 「外挂」 suffix so the picker can tell sidecars apart
+    /// from muxed tracks with identical metadata.
+    static func displayName(title: String?, lang: String?, codec: String?, position: Int, external: Bool = false) -> String {
+        let base: String
+        if let title, !title.isEmpty {
+            base = title
+        } else if let lang, !lang.isEmpty {
+            base = lang
+        } else if let codec, !codec.isEmpty {
+            base = codec
+        } else {
+            base = "字幕 \(position)"
+        }
+        return external ? "\(base)（外挂）" : base
     }
 }
 
@@ -293,6 +310,17 @@ final class MPVPlayerCore {
         }
     }
 
+    /// Mounts an already-staged local subtitle file as an external track.
+    /// mpv accepts this whether the video has finished loading (track added
+    /// and switched to) or is still loading (track added and pre-selected
+    /// at playback init); commands are processed in arrival order, so an
+    /// add issued after `load()` always follows the loadfile. Default
+    /// `sub-add` flags are `select`, so the new track becomes the displayed
+    /// one — the external-wins convention. Failures only log here.
+    func addExternalSubtitle(path: String) {
+        command(["sub-add", path])
+    }
+
     /// Observes the properties the player UI reads. Replies (including each
     /// property's initial value) arrive as MPV_EVENT_PROPERTY_CHANGE in the
     /// drain loop, distinguished by `reply_userdata`.
@@ -354,6 +382,7 @@ final class MPVPlayerCore {
         var lang: String?
         var codec: String?
         var isSelected = false
+        var isExternal = false
         for index in 0..<Int(map.pointee.num) {
             guard let key = keys[index] else { continue }
             let value = values[index]
@@ -370,11 +399,13 @@ final class MPVPlayerCore {
                 codec = Self.nodeString(value)
             case "selected":
                 if value.format == MPV_FORMAT_FLAG { isSelected = value.u.flag != 0 }
+            case "external":
+                if value.format == MPV_FORMAT_FLAG { isExternal = value.u.flag != 0 }
             default:
                 break
             }
         }
-        return MPVTrackEntry(id: id, type: type, title: title, lang: lang, codec: codec, isSelected: isSelected)
+        return MPVTrackEntry(id: id, type: type, title: title, lang: lang, codec: codec, isSelected: isSelected, isExternal: isExternal)
     }
 
     private static func nodeString(_ node: mpv_node) -> String? {

@@ -856,7 +856,9 @@ final class LibraryCoordinator {
 
     /// Opens the player for a video file, carrying the directory's other
     /// videos as the playlist (prev/next buttons and auto-advance on a
-    /// clean end). The PlayerCoordinator owns the single player window; a
+    /// clean end). The full listing rides along as the siblings snapshot —
+    /// external-subtitle sidecars are text files the videos-only playlist
+    /// cannot see. The PlayerCoordinator owns the single player window; a
     /// new open or a track change swaps the session in place — window close
     /// shuts the live mpv handle and stream bridge down via
     /// `windowWillClose`.
@@ -868,6 +870,7 @@ final class LibraryCoordinator {
         }
         playerCoordinator.open(
             items: videos,
+            siblings: browserViewModel.state.items,
             selectedPath: path,
             sourceID: sessionService.currentSourceID,
             reader: sessionService.makeRangedFileReader()

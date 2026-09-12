@@ -22,6 +22,17 @@ final class PlayerCoordinator {
     private var playlist = PlayerPlaylist(items: [], selectedPath: "")
     private var sourceID: String?
     private var reader: VideoStreamBridge.RangedReader?
+    /// Full directory listing captured at open time (videos and text files
+    /// alike): the sidecar-discovery source for every session of this
+    /// playlist. A later browser navigation never disturbs a playing
+    /// session's discovery, and switching tracks reuses the snapshot
+    /// because playlist siblings share one directory.
+    private var siblings: [ContentItem] = []
+    /// The live session's external-subtitle staging state, if it has one:
+    /// the temp directory behind its `sub-add`s plus the still-running
+    /// fetch task. Replaced when the session is replaced, cleaned when the
+    /// window closes.
+    private var subtitleScratch: SubtitleScratch?
     /// Live countdown, if any; `nil` once fired or cancelled. Being `nil`
     /// is what makes a fire beat and a manual step mutually exclusive.
     private var upNextCountdown: UpNextCountdown?
@@ -40,10 +51,18 @@ final class PlayerCoordinator {
         self.progressStore = progressStore
     }
 
+    /// One session's external-subtitle staging: the temp directory handed
+    /// to `sub-add` and the fetch task that fills it.
+    private struct SubtitleScratch {
+        let directory: URL
+        let stagingTask: Task<Void, Never>?
+    }
+
     /// Opens `selectedPath` within its sibling-video queue. Reuses the
     /// existing window (session swap) when one is already up.
     func open(
         items: [ContentItem],
+        siblings directoryListing: [ContentItem],
         selectedPath: String,
         sourceID: String?,
         reader: @escaping VideoStreamBridge.RangedReader
@@ -53,9 +72,11 @@ final class PlayerCoordinator {
         // ended) kills the pending advance.
         cancelUpNextCountdown()
         playlist = PlayerPlaylist(items: items, selectedPath: selectedPath)
+        siblings = directoryListing
         self.sourceID = sourceID
         self.reader = reader
         guard let item = playlist.current else { return }
+        let outgoingScratch = subtitleScratch
         // A failed first session leaves any previous one untouched.
         guard let session = buildSession(item: item) else { return }
         if let windowController {
@@ -63,8 +84,13 @@ final class PlayerCoordinator {
         } else {
             let controller = PlayerWindowController(item: item, core: session.core, viewModel: session.viewModel)
             controller.onClose = { [weak self] in
-                self?.cancelUpNextCountdown()
-                self?.windowController = nil
+                guard let self else { return }
+                self.cancelUpNextCountdown()
+                // windowWillClose shut the mpv handle down before firing
+                // this; the session's staged sidecars go with it.
+                self.teardownSubtitleScratch(self.subtitleScratch)
+                self.subtitleScratch = nil
+                self.windowController = nil
             }
             controller.onPreviousTrack = { [weak self] in self?.step(delta: -1) }
             controller.onNextTrack = { [weak self] in self?.step(delta: 1) }
@@ -82,6 +108,9 @@ final class PlayerCoordinator {
             windowController = controller
             controller.show()
         }
+        // The install above destroyed the outgoing session's mpv handle
+        // (nil-scratch on the very first open), so its sidecar files can go.
+        teardownSubtitleScratch(outgoingScratch)
         windowController?.setPlaylist(items: items, currentIndex: playlist.currentIndex, playMode: playMode)
         updateTransport()
     }
@@ -124,13 +153,19 @@ final class PlayerCoordinator {
         let outgoing = playlist.currentIndex
         playlist.setCurrentIndex(index)
         guard let item = playlist.current else { return }
+        let outgoingScratch = subtitleScratch
         guard let session = buildSession(item: item) else {
             // The outgoing session is still alive; roll the index back so
             // the queue stays consistent with what is actually playing.
+            // Its scratch is untouched — buildSession failed before
+            // replacing it.
             playlist.setCurrentIndex(outgoing)
             return
         }
         windowController.install(item: item, core: session.core, viewModel: session.viewModel)
+        // The outgoing session's mpv handle died inside install; drop its
+        // staged sidecars.
+        teardownSubtitleScratch(outgoingScratch)
         windowController.setPlaylist(items: playlist.items, currentIndex: index, playMode: playMode)
         updateTransport()
     }
@@ -243,12 +278,52 @@ final class PlayerCoordinator {
                 self?.onMessageError?("播放中断：\(detail)", "播放失败")
             }
             viewModel.onEnded = { [weak self] in self?.advanceAfterEnded() }
+            attachExternalSubtitles(to: core, item: item)
             return (core, viewModel)
         } catch {
             bridge.detach()
             onError?(error, "打开视频失败")
             return nil
         }
+    }
+
+    // MARK: - External subtitles
+
+    /// Discovers same-name sidecar subtitles for `item` in the captured
+    /// listing and mounts them on `core`: matched files are fetched into a
+    /// fresh per-session temp directory and each staged file is handed to
+    /// mpv with `sub-add` as soon as staging lands. mpv processes commands
+    /// in arrival order and this task cannot start before the current
+    /// main-actor turn ends (which issues the loadfile via `install` →
+    /// `startSession`), so the adds always follow the loadfile — mpv
+    /// accepts them mid-load (track pre-selects) as well as after it.
+    /// Best-effort by design: no matches or a staging failure just means a
+    /// session without external subtitles (failures logged in the loader).
+    private func attachExternalSubtitles(to core: MPVPlayerCore, item: ContentItem) {
+        guard let reader else { return }
+        let matches = SubtitleDiscovery.matches(videoName: item.name, siblings: siblings)
+        guard !matches.isEmpty else { return }
+        guard let directory = ExternalSubtitleLoader.makeSessionDirectory() else { return }
+        let loader = ExternalSubtitleLoader(reader: reader)
+        // MainActor-inheriting task: the fetches leave the main actor inside
+        // `stage`, the sub-adds come back on it — after the loadfile.
+        let stagingTask = Task { [weak core] in
+            let staged = await loader.stage(matches, into: directory)
+            for url in staged {
+                core?.addExternalSubtitle(path: url.path)
+            }
+        }
+        subtitleScratch = SubtitleScratch(directory: directory, stagingTask: stagingTask)
+    }
+
+    /// Cancels a still-running staging task and deletes its temp directory.
+    /// Only ever called once the session's mpv handle is gone — install
+    /// swapped it out, or the window closed — because mpv keeps reading the
+    /// staged files for the whole session's life.
+    private func teardownSubtitleScratch(_ scratch: SubtitleScratch?) {
+        guard let scratch else { return }
+        scratch.stagingTask?.cancel()
+        ExternalSubtitleLoader.removeSessionDirectory(scratch.directory)
     }
 
     private func updateTransport() {

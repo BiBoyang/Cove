@@ -42,7 +42,11 @@ chrome, dark player) regardless of the system appearance.
   chips (HW / codec / resolution / bitrate) riding the same visibility at
   the top left; the centered file title stays put. A subtitle button in the
   capsule lists the file's embedded subtitle tracks (when it carries any)
-  to switch between them or turn subtitles off. Loading and buffering show
+  to switch between them or turn subtitles off. Same-named external
+  sidecars (.srt/.ass, including language-tagged ones like
+  `Movie.chi.srt`) sitting next to the video are discovered
+  automatically, mounted and selected (marked 外挂 in the list), on
+  SMB shares and the local vault alike. Loading and buffering show
   a centered spinner, failures a placeholder with retry. Keyboard: space,
   ←/→ seek, ↑/↓ volume, Esc exits full screen.
   Each video's playback position is remembered and resumed on reopen

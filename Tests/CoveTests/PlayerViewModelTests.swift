@@ -177,8 +177,8 @@ struct PlayerViewModelTests {
         #expect(viewModel.hasSubtitleTracks == false)
 
         let tracks = [
-            SubtitleTrack(id: 1, title: "中文", lang: "chi", codec: "subrip", displayName: "中文"),
-            SubtitleTrack(id: 2, title: nil, lang: "eng", codec: "ass", displayName: "eng"),
+            SubtitleTrack(id: 1, title: "中文", lang: "chi", codec: "subrip", external: false, displayName: "中文"),
+            SubtitleTrack(id: 2, title: nil, lang: "eng", codec: "ass", external: false, displayName: "eng"),
         ]
         viewModel.apply(.subtitleTracksChanged(tracks, selectedID: 1))
         #expect(viewModel.subtitleTracks == tracks)

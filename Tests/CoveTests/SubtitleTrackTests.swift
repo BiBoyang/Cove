@@ -10,9 +10,10 @@ struct SubtitleTrackTests {
         title: String? = nil,
         lang: String? = nil,
         codec: String? = "subrip",
-        isSelected: Bool = false
+        isSelected: Bool = false,
+        isExternal: Bool = false
     ) -> MPVTrackEntry {
-        MPVTrackEntry(id: id, type: type, title: title, lang: lang, codec: codec, isSelected: isSelected)
+        MPVTrackEntry(id: id, type: type, title: title, lang: lang, codec: codec, isSelected: isSelected, isExternal: isExternal)
     }
 
     @Test("no tracks: empty list, no selection")
@@ -30,7 +31,7 @@ struct SubtitleTrackTests {
             entry(id: 3, type: "sub", lang: "chi"),
         ])
         #expect(parsed.tracks == [
-            SubtitleTrack(id: 3, title: nil, lang: "chi", codec: "subrip", displayName: "chi"),
+            SubtitleTrack(id: 3, title: nil, lang: "chi", codec: "subrip", external: false, displayName: "chi"),
         ])
         #expect(parsed.selectedID == nil)
     }
@@ -41,7 +42,7 @@ struct SubtitleTrackTests {
             entry(id: 1, title: "简繁英双语", lang: "chi", codec: "ass", isSelected: true),
         ])
         #expect(parsed.tracks == [
-            SubtitleTrack(id: 1, title: "简繁英双语", lang: "chi", codec: "ass", displayName: "简繁英双语"),
+            SubtitleTrack(id: 1, title: "简繁英双语", lang: "chi", codec: "ass", external: false, displayName: "简繁英双语"),
         ])
         #expect(parsed.selectedID == 1)
     }
@@ -83,5 +84,26 @@ struct SubtitleTrackTests {
             entry(id: 2, lang: "chi", isSelected: true),
         ])
         #expect(multiple.selectedID == 1)
+    }
+
+    @Test("external flag surfaces and marks the label with 外挂")
+    func externalFlagAndLabel() {
+        let parsed = SubtitleTrack.parse(trackList: [
+            entry(id: 1, title: "chi", codec: "ass", isSelected: true, isExternal: true),
+            entry(id: 2, lang: "chi"),
+        ])
+        #expect(parsed.tracks.map(\.external) == [true, false])
+        #expect(parsed.tracks.map(\.displayName) == ["chi（外挂）", "chi"])
+        #expect(parsed.selectedID == 1)
+    }
+
+    @Test("external marker applies down the whole label fallback chain")
+    func externalLabelFallback() {
+        let parsed = SubtitleTrack.parse(trackList: [
+            entry(id: 1, lang: "jpn", isExternal: true),  // lang
+            entry(id: 2, codec: "ass", isExternal: true), // codec
+            entry(id: 3, codec: nil, isExternal: true),   // position
+        ])
+        #expect(parsed.tracks.map(\.displayName) == ["jpn（外挂）", "ass（外挂）", "字幕 3（外挂）"])
     }
 }
