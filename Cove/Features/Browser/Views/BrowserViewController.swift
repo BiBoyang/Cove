@@ -20,14 +20,16 @@ final class BrowserViewController: NSViewController {
     var onGoUp: (() -> Void)?
     var onPreheatTapped: (() -> Void)?
     /// Right-click intents; the row's item is resolved by the coordinator's
-    /// wiring, both via `contextMenuIntent(mode:clickedRow:items:)`.
+    /// wiring, both via `contextMenuIntent(mode:clickedRow:items:pinnedPaths:)`.
     var onDownloadToVault: ((ContentItem) -> Void)?
     var onDeleteFromVault: ((ContentItem) -> Void)?
+    var onPinToSidebar: ((ContentItem) -> Void)?
+    var onUnpinFromSidebar: ((ContentItem) -> Void)?
     var onCancelDownload: (() -> Void)?
 
     /// Which set of right-click actions the listing offers. Remote
-    /// browsing offers "下载到本地仓库"; vault browsing offers
-    /// "从本地仓库删除". Set by the coordinator.
+    /// browsing offers "下载到本地仓库"; vault browsing offers pin/unpin
+    /// on folders and "从本地仓库删除" on files. Set by the coordinator.
     enum BrowseMode: Sendable {
         case remote
         case vault
@@ -35,21 +37,37 @@ final class BrowserViewController: NSViewController {
 
     var browseMode: BrowseMode = .remote
 
-    /// The single right-click action a row offers in `mode`, if the row is
-    /// valid. Pure and static so the menu wiring is unit-testable.
+    /// Vault-relative paths of the folders currently pinned to the
+    /// sidebar; drives the symmetric pin/unpin menu titles. Set by the
+    /// coordinator — the view never reads the pin store itself.
+    var pinnedPaths: Set<String> = []
+
+    /// The right-click actions a row offers in `mode`, in menu order.
+    /// Pure and static so the menu wiring is unit-testable.
     enum ContextMenuIntent: Equatable {
         case downloadToVault(ContentItem)
         case deleteFromVault(ContentItem)
+        case pinToSidebar(ContentItem)
+        case unpinFromSidebar(ContentItem)
     }
 
     static func contextMenuIntent(
-        mode: BrowseMode, clickedRow: Int, items: [ContentItem]
-    ) -> ContextMenuIntent? {
-        guard items.indices.contains(clickedRow) else { return nil }
+        mode: BrowseMode, clickedRow: Int, items: [ContentItem], pinnedPaths: Set<String>
+    ) -> [ContextMenuIntent] {
+        guard items.indices.contains(clickedRow) else { return [] }
         let item = items[clickedRow]
         switch mode {
-        case .remote: return .downloadToVault(item)
-        case .vault: return .deleteFromVault(item)
+        case .remote: return [.downloadToVault(item)]
+        case .vault:
+            if item.isDirectory {
+                // Vault folders keep the shipped delete action alongside
+                // the pin action; pin/unpin leads, delete follows.
+                let pinIntent: ContextMenuIntent = pinnedPaths.contains(item.path)
+                    ? .unpinFromSidebar(item)
+                    : .pinToSidebar(item)
+                return [pinIntent, .deleteFromVault(item)]
+            }
+            return [.deleteFromVault(item)]
         }
     }
 
@@ -200,8 +218,9 @@ final class BrowserViewController: NSViewController {
         tableView.focusRingType = .none
 
         // Right-click menu: rebuilt per click by menuNeedsUpdate from
-        // `contextMenuIntent`, so remote rows offer the vault download and
-        // vault rows offer local delete — never both.
+        // `contextMenuIntent` — remote rows offer the vault download;
+        // vault folders offer pin/unpin plus local delete; vault files
+        // offer local delete.
         let contextMenu = NSMenu()
         contextMenu.delegate = self
         tableView.menu = contextMenu
@@ -347,14 +366,16 @@ final class BrowserViewController: NSViewController {
     }
 
     @objc private func handleContextMenuAction(_ sender: NSMenuItem) {
-        guard let intent = Self.contextMenuIntent(
-            mode: browseMode, clickedRow: tableView.clickedRow, items: viewModel.state.items
-        ) else { return }
+        guard let intent = sender.representedObject as? ContextMenuIntent else { return }
         switch intent {
         case .downloadToVault(let item):
             onDownloadToVault?(item)
         case .deleteFromVault(let item):
             onDeleteFromVault?(item)
+        case .pinToSidebar(let item):
+            onPinToSidebar?(item)
+        case .unpinFromSidebar(let item):
+            onUnpinFromSidebar?(item)
         }
     }
 
@@ -641,9 +662,9 @@ extension BrowserViewController: NSMenuDelegate {
         return IndexSet(integer: clickedRow)
     }
 
-    /// Builds the right-click menu on demand: exactly one item, chosen by
-    /// `contextMenuIntent` from the browse mode and clicked row. An empty
-    /// menu (header/empty space) simply does not appear.
+    /// Builds the right-click menu on demand: one item per intent from
+    /// `contextMenuIntent`, in its returned order. An empty menu
+    /// (header/empty space) simply does not appear.
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
         if let selection = Self.selectionOnRightClick(
@@ -653,20 +674,28 @@ extension BrowserViewController: NSMenuDelegate {
         ) {
             tableView.selectRowIndexes(selection, byExtendingSelection: false)
         }
-        guard let intent = Self.contextMenuIntent(
-            mode: browseMode, clickedRow: tableView.clickedRow, items: viewModel.state.items
-        ) else { return }
-        let title: String
-        switch intent {
-        case .downloadToVault:
-            title = "下载到本地仓库"
-        case .deleteFromVault:
-            title = "从本地仓库删除…"
-        }
-        let menuItem = NSMenuItem(
-            title: title, action: #selector(handleContextMenuAction(_:)), keyEquivalent: ""
+        let intents = Self.contextMenuIntent(
+            mode: browseMode, clickedRow: tableView.clickedRow,
+            items: viewModel.state.items, pinnedPaths: pinnedPaths
         )
-        menuItem.target = self
-        menu.addItem(menuItem)
+        for intent in intents {
+            let title: String
+            switch intent {
+            case .downloadToVault:
+                title = "下载到本地仓库"
+            case .deleteFromVault:
+                title = "从本地仓库删除…"
+            case .pinToSidebar:
+                title = "固定到侧栏"
+            case .unpinFromSidebar:
+                title = "从侧栏移除"
+            }
+            let menuItem = NSMenuItem(
+                title: title, action: #selector(handleContextMenuAction(_:)), keyEquivalent: ""
+            )
+            menuItem.target = self
+            menuItem.representedObject = intent
+            menu.addItem(menuItem)
+        }
     }
 }

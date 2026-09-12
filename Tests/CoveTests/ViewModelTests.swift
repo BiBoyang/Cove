@@ -72,17 +72,107 @@ struct BrowserViewModelTests {
         #expect(viewModel.state.download == nil)
     }
 
-    @Test("right-click intent follows the browse mode and rejects invalid rows")
+    @Test("right-click intents follow the browse mode and reject invalid rows")
     func contextMenuIntents() {
         let file = ContentItem(name: "a.mkv", path: "/a.mkv", isDirectory: false, size: 1, modifiedDate: nil)
         let items = [file]
 
-        #expect(BrowserViewController.contextMenuIntent(mode: .remote, clickedRow: 0, items: items)
-            == .downloadToVault(file))
-        #expect(BrowserViewController.contextMenuIntent(mode: .vault, clickedRow: 0, items: items)
-            == .deleteFromVault(file))
-        #expect(BrowserViewController.contextMenuIntent(mode: .remote, clickedRow: 5, items: items) == nil)
-        #expect(BrowserViewController.contextMenuIntent(mode: .vault, clickedRow: -1, items: items) == nil)
+        #expect(BrowserViewController.contextMenuIntent(
+            mode: .remote, clickedRow: 0, items: items, pinnedPaths: []) == [.downloadToVault(file)])
+        #expect(BrowserViewController.contextMenuIntent(
+            mode: .vault, clickedRow: 0, items: items, pinnedPaths: []) == [.deleteFromVault(file)])
+        #expect(BrowserViewController.contextMenuIntent(
+            mode: .remote, clickedRow: 5, items: items, pinnedPaths: []) == [])
+        #expect(BrowserViewController.contextMenuIntent(
+            mode: .vault, clickedRow: -1, items: items, pinnedPaths: []) == [])
+    }
+
+    @Test("vault folders pair the symmetric pin intent with delete")
+    func vaultPinIntents() {
+        let folder = ContentItem(name: "Movies", path: "/Movies", isDirectory: true, size: 0, modifiedDate: nil)
+        let items = [folder]
+
+        // Unpinned folder: pinning leads, the shipped delete follows.
+        #expect(BrowserViewController.contextMenuIntent(
+            mode: .vault, clickedRow: 0, items: items, pinnedPaths: [])
+            == [.pinToSidebar(folder), .deleteFromVault(folder)])
+        // Pinned folder: removal leads, delete follows. Remote rows never pin.
+        #expect(BrowserViewController.contextMenuIntent(
+            mode: .vault, clickedRow: 0, items: items, pinnedPaths: ["/Movies"])
+            == [.unpinFromSidebar(folder), .deleteFromVault(folder)])
+        #expect(BrowserViewController.contextMenuIntent(
+            mode: .remote, clickedRow: 0, items: items, pinnedPaths: []) == [.downloadToVault(folder)])
+        // Pin state of an unrelated path must not flip the pin intent.
+        #expect(BrowserViewController.contextMenuIntent(
+            mode: .vault, clickedRow: 0, items: items, pinnedPaths: ["/Other"])
+            == [.pinToSidebar(folder), .deleteFromVault(folder)])
+    }
+}
+
+@Suite("Sidebar pins")
+@MainActor
+struct SidebarPinTests {
+    @Test("the display title is the alias, else the folder name")
+    func titleRules() {
+        #expect(VaultPinRow(path: "/Movies/HD", alias: nil, isAvailable: true).title == "HD")
+        #expect(VaultPinRow(path: "/Movies/HD", alias: "  ", isAvailable: true).title == "HD")
+        #expect(VaultPinRow(path: "/Movies/HD", alias: " 电影 ", isAvailable: true).title == "电影")
+    }
+
+    @Test("updating pins stores the rows and fires the change callback")
+    func pinsCallback() {
+        let viewModel = ServerListViewModel()
+        var received: [[VaultPinRow]] = []
+        viewModel.onPinsChange = { received.append($0) }
+        // Subscription replays the current value, like onStateChange.
+        #expect(received == [[]])
+
+        let row = VaultPinRow(path: "/Movies", alias: nil, isAvailable: true)
+        viewModel.update(pins: [row])
+        #expect(viewModel.pins == [row])
+        #expect(received == [[], [row]])
+    }
+
+    @Test("active pin is the deepest pin whose subtree contains the path")
+    func activePinMatching() {
+        let pins = ["/Movies", "/Movies/HD", "/Comics"]
+        // Exact match and descent into a pinned subtree both light the pin.
+        #expect(ServerListViewModel.activePin(forPath: "/Movies", pinnedPaths: pins) == "/Movies")
+        #expect(ServerListViewModel.activePin(forPath: "/Movies/新番", pinnedPaths: pins) == "/Movies")
+        // Nested pins: the deepest one wins.
+        #expect(ServerListViewModel.activePin(forPath: "/Movies/HD", pinnedPaths: pins) == "/Movies/HD")
+        #expect(ServerListViewModel.activePin(forPath: "/Movies/HD/x", pinnedPaths: pins) == "/Movies/HD")
+        // Sibling prefix lookalikes, the root, and empty state stay dark.
+        #expect(ServerListViewModel.activePin(forPath: "/Movies2", pinnedPaths: pins) == nil)
+        #expect(ServerListViewModel.activePin(forPath: "/", pinnedPaths: pins) == nil)
+        #expect(ServerListViewModel.activePin(forPath: "/Comics", pinnedPaths: []) == nil)
+    }
+
+    @Test("active pin path stores and replays through its callback")
+    func activePinCallback() {
+        let viewModel = ServerListViewModel()
+        var received: [String?] = []
+        viewModel.onActivePinChange = { received.append($0) }
+        #expect(received.count == 1)
+        #expect(received[0] == nil)
+
+        viewModel.setActivePinPath("/Movies")
+        viewModel.setActivePinPath(nil)
+        #expect(viewModel.activePinPath == nil)
+        #expect(received.count == 3)
+        #expect(received[1] == "/Movies")
+        #expect(received[2] == nil)
+    }
+
+    @Test("subscribing the callback replays the current pins")
+    func pinsReplayOnSubscribe() {
+        let viewModel = ServerListViewModel()
+        let row = VaultPinRow(path: "/Comics", alias: "漫画", isAvailable: false)
+        viewModel.update(pins: [row])
+
+        var replayed: [VaultPinRow]?
+        viewModel.onPinsChange = { replayed = $0 }
+        #expect(replayed == [row])
     }
 }
 

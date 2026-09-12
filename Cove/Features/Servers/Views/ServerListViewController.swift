@@ -16,6 +16,11 @@ final class ServerListViewController: NSViewController {
     var onRemove: ((ServerConfig) -> Void)?
     var onOpenVault: (() -> Void)?
     var onOpenSettings: (() -> Void)?
+    /// Vault pin row intents, forwarded from the bottom bar to the
+    /// library coordinator (same pass-through pattern as onOpenVault).
+    var onOpenPin: ((_ path: String) -> Void)?
+    var onSetAlias: ((_ path: String) -> Void)?
+    var onRemovePin: ((_ path: String) -> Void)?
 
     private let tableView = ServerTableView()
     private let scrollView = NSScrollView()
@@ -45,6 +50,14 @@ final class ServerListViewController: NSViewController {
             if destination != .none {
                 tableView.deselectAll(nil)
             }
+        }
+        viewModel.onPinsChange = { [weak self] pins in
+            self?.loadViewIfNeeded()
+            self?.bottomBar.setPins(pins)
+        }
+        viewModel.onActivePinChange = { [weak self] _ in
+            self?.loadViewIfNeeded()
+            self?.syncBarHighlight()
         }
     }
 
@@ -106,6 +119,9 @@ final class ServerListViewController: NSViewController {
         }
         bottomBar.onOpenVault = { [weak self] in self?.onOpenVault?() }
         bottomBar.onOpenSettings = { [weak self] in self?.onOpenSettings?() }
+        bottomBar.onOpenPin = { [weak self] in self?.onOpenPin?($0) }
+        bottomBar.onSetAlias = { [weak self] in self?.onSetAlias?($0) }
+        bottomBar.onRemovePin = { [weak self] in self?.onRemovePin?($0) }
 
         view = root
     }
@@ -158,9 +174,9 @@ final class ServerListViewController: NSViewController {
     /// selection (which never connects) masks the bar instead of
     /// doubling the highlight.
     private func syncBarHighlight() {
-        bottomBar.setActiveDestination(
-            tableView.selectedRow >= 0 ? .none : viewModel.activeDestination
-        )
+        let masked = tableView.selectedRow >= 0
+        bottomBar.setActiveDestination(masked ? .none : viewModel.activeDestination)
+        bottomBar.setActivePin(masked ? nil : viewModel.activePinPath)
     }
 }
 

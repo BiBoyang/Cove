@@ -14,6 +14,7 @@ final class LibraryCoordinator {
     private let preheatService: PreheatService
     private let vaultService: VaultService
     private let shareOpenStore: ShareOpenStore
+    private let pinStore: VaultPinStore
 
     private let serverListViewModel = ServerListViewModel()
     /// Internal (not private) so the enumeration-failure placeholder wiring
@@ -60,6 +61,7 @@ final class LibraryCoordinator {
         vaultService: VaultService,
         preferencesViewModel: PreferencesViewModel,
         shareOpenStore: ShareOpenStore,
+        pinStore: VaultPinStore = VaultPinStore(),
         progressStore: PlaybackProgressStoring? = nil
     ) {
         self.sessionService = sessionService
@@ -68,6 +70,7 @@ final class LibraryCoordinator {
         self.preheatService = preheatService
         self.vaultService = vaultService
         self.shareOpenStore = shareOpenStore
+        self.pinStore = pinStore
         playerCoordinator = PlayerCoordinator(progressStore: progressStore)
         pdfReaderCoordinator = PdfReaderCoordinator(cache: cache)
         shareGridViewModel = ShareGridViewModel(lastOpened: { [shareOpenStore] serverID, share in
@@ -84,6 +87,7 @@ final class LibraryCoordinator {
     func start() {
         serverListViewModel.update(servers: sessionService.servers)
         showIdlePlaceholderForCurrentServerList()
+        refreshPins()
     }
 
     /// Idle detail-pane placeholder: first-run guidance with an add action
@@ -114,6 +118,14 @@ final class LibraryCoordinator {
         browserViewController.onOpenPdf = { [weak self] in self?.openPdfReader(at: $0) }
         browserViewController.onDownloadToVault = { [weak self] in self?.downloadToVault($0) }
         browserViewController.onDeleteFromVault = { [weak self] in self?.confirmDeleteFromVault($0) }
+        browserViewController.onPinToSidebar = { [weak self] in self?.pinToSidebar($0) }
+        browserViewController.onUnpinFromSidebar = { [weak self] in self?.unpinFromSidebar($0) }
+        serverListViewController.onOpenPin = { [weak self] in self?.openVaultFolder(relativePath: $0) }
+        serverListViewController.onSetAlias = { [weak self] in self?.presentPinAliasEditor(forPath: $0) }
+        serverListViewController.onRemovePin = { [weak self] in self?.removePin(atPath: $0) }
+        // Vault-root changes re-stat every pin target (decision 4). The
+        // hook fires on any settings write; the re-check is ≤8 sync stats.
+        vaultService.onVaultRootChanged = { [weak self] in self?.refreshPins() }
         browserViewController.onCancelDownload = { [weak self] in self?.cancelDownload() }
         browserViewController.onUnsupportedFile = { [weak self] in self?.onUnsupportedFile?($0) }
         browserViewController.onGoUp = { [weak self] in self?.goBack() }
@@ -425,6 +437,14 @@ final class LibraryCoordinator {
             // no preheat pipeline, so keep it unavailable on every
             // navigation, not just on entry.
             browserViewModel.setPreheatAvailable(false)
+            // The "current pin" capsule follows the browsed subtree.
+            serverListViewModel.setActivePinPath(
+                ServerListViewModel.activePin(
+                    forPath: path, pinnedPaths: pinStore.load().entries.map(\.path)
+                )
+            )
+        } else {
+            serverListViewModel.setActivePinPath(nil)
         }
     }
 
@@ -437,7 +457,7 @@ final class LibraryCoordinator {
     /// thumbnail miss does copy the file's bytes into that pool — accepted
     /// for BUG-5 (2026-09-07): local reads are cheap and CacheKit bounds
     /// the pool by capacity/TTL.
-    private func openVault() {
+    private func openVault(initialPath: String? = nil) {
         let generation = beginNavigation()
         browsingVault = true
         currentServer = nil
@@ -462,12 +482,143 @@ final class LibraryCoordinator {
                     )
                 }
                 try await loadDirectory(at: "/", generation: generation)
+                if let initialPath {
+                    do {
+                        try await drillIntoVaultPath(initialPath, generation: generation)
+                    } catch {
+                        if Task.isCancelled || error is CancellationError { return }
+                        guard generation == navigationGeneration else { return }
+                        // The pinned folder vanished mid-open: fall back to
+                        // the root; the pin-existence refresh below greys
+                        // the row out instead of deleting it.
+                        navigationPath.reset()
+                        try await loadDirectory(at: "/", generation: generation)
+                        onError?(error, "打开目录失败")
+                    }
+                }
+                // Entering the vault re-checks pin targets (decision 4).
+                refreshPins()
             } catch {
                 if Task.isCancelled || error is CancellationError { return }
                 guard generation == navigationGeneration else { return }
                 onError?(error, "打开本地仓库失败")
             }
         }
+    }
+
+    /// Walks down a vault-relative path one component at a time after the
+    /// vault root loaded, so a pin click drills exactly like manual
+    /// navigation — the back stack walks level by level back to the root
+    /// (decision 5). A failed level rolls its optimistic push back, the
+    /// same contract as `navigateInto`.
+    private func drillIntoVaultPath(_ path: String, generation: Int) async throws {
+        var current = ""
+        for component in path.split(separator: "/", omittingEmptySubsequences: true) {
+            try Task.checkCancellation()
+            current += "/" + component
+            navigationPath.navigateInto(current)
+            do {
+                try await loadDirectory(at: current, generation: generation)
+            } catch {
+                navigationPath.rollbackInto()
+                throw error
+            }
+        }
+    }
+
+    // MARK: - Vault pins
+
+    /// Pushes the persisted pins to the sidebar (rows) and the browser
+    /// (context-menu state), re-stating every target's existence. Called
+    /// at launch, on every pin mutation, on vault-root changes, and on
+    /// entering the vault (decision 4) — at most 8 synchronous local
+    /// stats, so the refresh is cheap.
+    private func refreshPins() {
+        let pins = pinStore.load()
+        let rows = pins.entries.map {
+            VaultPinRow(
+                path: $0.path,
+                alias: $0.alias,
+                isAvailable: vaultService.pinTargetExists(relativePath: $0.path)
+            )
+        }
+        serverListViewModel.update(pins: rows)
+        browserViewController.pinnedPaths = Set(pins.entries.map(\.path))
+        // Pin mutations can move the capsule (pin added for the current
+        // subtree, or the active pin removed).
+        serverListViewModel.setActivePinPath(
+            browsingVault
+                ? ServerListViewModel.activePin(
+                    forPath: navigationPath.currentPath,
+                    pinnedPaths: pins.entries.map(\.path)
+                )
+                : nil
+        )
+    }
+
+    /// Sidebar pin click: opens the vault and drills to the pinned
+    /// folder, reusing the plain vault open so the back stack starts at
+    /// the root and walks up level by level (decision 5).
+    private func openVaultFolder(relativePath path: String) {
+        openVault(initialPath: path)
+    }
+
+    /// Browser context menu: pins a vault folder to the sidebar. The cap
+    /// is announced with an alert (decision 6); nothing on disk is touched.
+    private func pinToSidebar(_ item: ContentItem) {
+        guard item.isDirectory else { return }
+        guard pinStore.load().entries.count < VaultPins.maxCount else {
+            presentPinCapAlert()
+            return
+        }
+        pinStore.add(path: item.path)
+        refreshPins()
+    }
+
+    private func unpinFromSidebar(_ item: ContentItem) {
+        pinStore.remove(path: item.path)
+        refreshPins()
+    }
+
+    /// Sidebar row menu: removing a pin touches only the stored entry,
+    /// never the folder on disk (red line).
+    private func removePin(atPath path: String) {
+        pinStore.remove(path: path)
+        refreshPins()
+    }
+
+    /// Sidebar row menu: alias editor. The field pre-fills the current
+    /// display name; empty input clears the alias and restores the
+    /// folder's own name (decision 1).
+    private func presentPinAliasEditor(forPath path: String) {
+        guard let window = hostWindowProvider?() else { return }
+        let currentTitle = serverListViewModel.pins.first(where: { $0.path == path })?.title
+            ?? VaultPinRow(path: path, alias: nil, isAvailable: true).title
+        let alert = NSAlert()
+        alert.messageText = "设置别名"
+        alert.informativeText = "留空则恢复文件夹本名。"
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 240, height: 24))
+        field.stringValue = currentTitle
+        field.placeholderString = VaultPinRow.folderName(for: path)
+        alert.accessoryView = field
+        alert.addButton(withTitle: "保存")
+        alert.addButton(withTitle: "取消")
+        alert.beginSheetModal(for: window) { [weak self] response in
+            guard let self, response == .alertFirstButtonReturn else { return }
+            pinStore.setAlias(field.stringValue, forPath: path)
+            refreshPins()
+        }
+    }
+
+    /// Cap feedback (decision 6): informational, single button.
+    private func presentPinCapAlert() {
+        guard let window = hostWindowProvider?() else { return }
+        let alert = NSAlert()
+        alert.messageText = "最多固定 8 个文件夹"
+        alert.informativeText = "从侧栏右键「从侧栏移除」后即可添加新的固定。"
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: "好")
+        alert.beginSheetModal(for: window) { _ in }
     }
 
     /// Downloads a file or folder (recursive, all types) into the vault.

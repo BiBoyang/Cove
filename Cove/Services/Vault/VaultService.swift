@@ -69,6 +69,11 @@ final class VaultService {
     private let rootOverride: URL?
     private var cachedRoot: URL?
     private var cachedStatus: VaultRootStatus = .defaultRoot
+    /// Fired on the main actor whenever the resolved root may have changed.
+    /// The settings observer runs on any settings write, not only vault-root
+    /// ones; re-checks triggered from here (≤8 sync stats for pin targets)
+    /// are cheap enough that over-firing is harmless.
+    var onVaultRootChanged: (@MainActor () -> Void)?
     private let logger = TraceLogger(category: "Vault")
 
     init(settings: SettingsService) {
@@ -77,6 +82,7 @@ final class VaultService {
         // A changed vault location takes effect for the next access.
         settings.addChangeObserver { [weak self] in
             self?.cachedRoot = nil
+            self?.onVaultRootChanged?()
         }
     }
 
@@ -177,6 +183,24 @@ final class VaultService {
             throw SourceError.permissionDenied(path)
         }
         try FileManager.default.removeItem(at: url)
+    }
+
+    /// True when a vault-relative pinned folder exists on disk (a pin can
+    /// only point at directories). One synchronous stat per pin target;
+    /// never mutates anything — a missing target greys the sidebar row
+    /// instead of removing it, and the same root-prefix guard as
+    /// `delete(vaultRelativePath:)` keeps stored paths inside the vault.
+    func pinTargetExists(relativePath path: String) -> Bool {
+        let trimmed = path.hasPrefix("/") ? String(path.dropFirst()) : path
+        guard !trimmed.isEmpty else { return false }
+        let rootPath = rootURL.standardizedFileURL.path
+        let url = rootURL.appendingPathComponent(trimmed).standardizedFileURL
+        guard url.path.hasPrefix(rootPath + "/") else { return false }
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory) else {
+            return false
+        }
+        return isDirectory.boolValue
     }
 
     /// Downloads one remote item (file or directory, the latter BFS-recursive
