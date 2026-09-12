@@ -6,13 +6,18 @@
 
 - [ ] UI 统一优化主线：选题池与证据见 plans/UI-AUDIT-2026-09-05.md（按 §4 性价比顺序推进），令牌图纸 design/DESIGN-TOKENS.md；P1–P6 + 设置迁移 + 胶囊重构 + audit 清扫 + spacing 令牌族全部落地，audit 散点清零（2026-09-07 真机通过）；候选下一张卡 = 新选题（用户点题）
 
-## 下一波（候选，未排期）
+## 下一波（1.0 批次，顺序即排期）
 
-- [ ] 1.0 路线（plans/ROADMAP-1.0.md，2026-09-12 圈定）：搜索 → T1
-  空态清扫 → 检查更新 → 外挂字幕 → 继续观看 → 音频播放 →
-  TEAM/bundle id 压哨；候选：图片网格墙
-- [ ] 浏览器行徽标类型着色（ tertiaryLabelColor 单色太灰，2026-09-12
-  用户点题，方案讨论中）
+- [ ] 批 1（快卡三连）：plans/TASK-browser-search.md（浏览器名称过滤）
+  → plans/TASK-empty-states.md（T1 空态/加载态清扫）
+  → plans/TASK-check-for-updates.md（检查更新）
+- [ ] 批 2（体验三连）：外挂字幕 → 继续观看（PlaybackProgressStore
+  已有数据，idle 页最近播放卡片）→ 音频播放（分类表加 audio +
+  复用 libmpv 桥）
+- [ ] 批 3（压哨）：DEVELOPMENT_TEAM + 真 bundle id，随 1.0.0 tag
+- [ ] 候选（可放 1.x）：图片网格墙
+- [ ] 已落地待真机：浏览器行徽标类型着色（plans/TASK-badge-tints.md，
+  A 方案 2026-09-12 提交 a5a0796，Owner 过目后即可归档）
 
 ## 上架前必须
 
