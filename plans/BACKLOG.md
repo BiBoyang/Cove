@@ -67,6 +67,7 @@
 - spacing/尺寸令牌族：spacing 数值档 10 档（收编 2pt 子档 6/10/14）+ 组件尺寸角色族（行高/控件/胶囊等 19 角色），全仓 142 处散点同值迁移零视觉变化，豁免清单入 §3.4；audit U1 销项（见 plans/archive/TASK-spacing-tokens.md，2026-09-07 真机通过）
 - 侧栏宽度漂移修复：根因=设置页 999 优先级等宽填充约束把 pane 宽度意见传导进 NSSplitView 分栏仲裁（压过侧栏 250 holding）；修复=填充目标改常量 560 + 侧栏 maximumThickness 320 兜底 + 约束图不变量测试（2026-09-07 真机通过，Codex 执行、助手 Review）
 - 设置页全屏沉底修复 + 主窗口 minSize：document 加 height>=视口约束根治非翻转文档沉底；contentMinSize 900x700（数值=设置页构成实测，写死不随内容涨）+ 初始 1024x720（见 plans/archive/TASK-settings-pane-anchor.md，2026-09-12 真机通过）
+- 本地仓库文件夹固定侧栏（pins）：VaultPinStore（相对路径+别名，cap 8，置灰不删），浏览器右键对称「固定到侧栏/从侧栏移除」+ 文件夹恢复「从本地仓库删除…」双菜单项，底栏零高 pin 区、tooltip 显全路径、长名截断防撑宽侧栏，「当前 pin」胶囊（前缀匹配最深者胜，本地仓库行让位，单高亮不变量延伸），backToShareGrid 目的地同步补缺（见 plans/archive/TASK-vault-pins.md，2026-09-12 真机通过）
 - 侧栏底栏（B-3）+ 单击化：本地仓库/设置撤出表格钉底（SidebarBottomBar，服务器数/滚动/resize/全屏不动）；鼠标左键单击激活（.leftMouseDown 事件门控，右键只选中+菜单）、方向键只选中、回车激活、双击回声抑制；单高亮不变量（底栏胶囊只在表格无选中时显示）（见 plans/archive/TASK-sidebar-bottom-bar.md，2026-09-12 真机通过）
 - ContinuousReader 测试 deflake：根因=测量落地后窗口扩容使轮询观察窗仅约一个 load 延迟（瞬态中间态被轮询错过）；修复=事件驱动等待 + 闩锁，断言零削弱（2026-09-08，外派 agent 执行、助手 Review）
 - 开发期书签/Keychain 失效自愈：spike 推翻"签名变化后首会话必坏"——失效窗口实为身份过渡态启动（210+ 次正常启动全健康），纯路径兜底沙箱下 EPERM 实证不成立；修复=书签失效可观察化 + 设置页红字引导重选 + Keychain 读取错误三分支（-25300/-128/其他），测试证据闭环（含沙箱测试宿主真书签端到端），真机视觉抽查因 TCC 容器权限待补（见 plans/archive/TASK-dev-bookmark-resilience.md + plans/bookmark-failure-diagnosis-2026-09-08.md，2026-09-08）
