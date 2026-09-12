@@ -290,6 +290,7 @@ final class LibraryCoordinator {
         let generation = beginNavigation()
         currentServer = server
         browsingVault = false
+        serverListViewModel.setActiveDestination(.none)
         // Drop the previous share's thumbnail service so it is not kept
         // alive (or used) while the browser pane is off screen.
         browserViewController.thumbnailProvider = nil
@@ -437,6 +438,7 @@ final class LibraryCoordinator {
         let generation = beginNavigation()
         browsingVault = true
         currentServer = nil
+        serverListViewModel.setActiveDestination(.vault)
         currentShare = nil
         navigationPath.reset()
         onTitleChange?("本地仓库")
@@ -522,21 +524,21 @@ final class LibraryCoordinator {
     // MARK: - Settings
 
     /// Opens the settings destination from outside the sidebar (the
-    /// Cmd+, app-menu entry): syncs the sidebar selection to the settings
-    /// row and shows the pane. `showSettings` is idempotent, so the extra
-    /// call after the selection-driven routing is harmless. Internal so
-    /// the composition root can reach it, like `enumerateShares`.
+    /// Cmd+, app-menu entry); the sidebar bar highlights the destination
+    /// because `showSettings` syncs it. Internal so the composition root
+    /// can reach it, like `enumerateShares`.
     func openSettings() {
-        serverListViewController.selectSettingsRow()
         showSettings()
     }
 
-    /// Settings destination: swaps the detail pane to the settings page.
-    /// Leaving the on-screen directory cancels its in-flight loads and
-    /// directory preheat, the same discipline as opening a reader; the
-    /// SMB session itself stays connected.
+    /// Settings destination: swaps the detail pane to the settings page
+    /// and highlights it in the sidebar's bottom bar. Leaving the
+    /// on-screen directory cancels its in-flight loads and directory
+    /// preheat, the same discipline as opening a reader; the SMB session
+    /// itself stays connected.
     private func showSettings() {
         _ = beginNavigation()
+        serverListViewModel.setActiveDestination(.settings)
         onShowDetail?(settingsPaneViewController)
         onTitleChange?("设置")
     }

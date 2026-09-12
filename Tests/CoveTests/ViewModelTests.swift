@@ -232,33 +232,85 @@ struct ServerViewModelTests {
         #expect(viewModel.server(atTableRow: 2) == nil)
     }
 
-    @Test("the fixed vault and settings rows trail the server list")
-    func vaultRows() {
+    @Test("the table holds only the section header and server rows")
+    func serversOnlyRows() {
         let server = ServerConfig(id: UUID(), host: "nas", username: "user")
         let viewModel = ServerListViewModel()
 
-        // Empty list: header 0, "本地" header 1, vault row 2, settings row 3.
-        #expect(viewModel.rowCount == 4)
+        // Empty list: just the "服务器" header; the vault and settings
+        // destinations live in the pinned bottom bar, not the table.
+        #expect(viewModel.rowCount == 1)
         #expect(viewModel.isGroupRow(0))
-        #expect(viewModel.isGroupRow(1))
-        #expect(!viewModel.isGroupRow(2))
-        #expect(viewModel.isVaultRow(2))
-        #expect(viewModel.isSettingsRow(3))
-        #expect(!viewModel.isSettingsRow(2))
-        #expect(viewModel.server(atTableRow: 2) == nil)
-        #expect(viewModel.server(atTableRow: 3) == nil)
+        #expect(viewModel.server(atTableRow: 0) == nil)
+        #expect(viewModel.server(atTableRow: 1) == nil)
 
         viewModel.update(servers: [server])
-        #expect(viewModel.rowCount == 5)
-        #expect(viewModel.vaultRow == 3)
-        #expect(viewModel.settingsRow == 4)
-        #expect(viewModel.isVaultRow(3))
-        #expect(viewModel.isSettingsRow(4))
-        #expect(!viewModel.isVaultRow(1))
-        #expect(!viewModel.isSettingsRow(3))
+        #expect(viewModel.rowCount == 2)
+        #expect(viewModel.isGroupRow(0))
+        #expect(!viewModel.isGroupRow(1))
         #expect(viewModel.server(atTableRow: 1) == server)
-        #expect(viewModel.server(atTableRow: 3) == nil)
+        #expect(viewModel.server(atTableRow: 2) == nil)
+
+        // Server count never shifts the header.
+        viewModel.update(servers: [server, server, server])
+        #expect(viewModel.rowCount == 4)
+        #expect(viewModel.isGroupRow(0))
+        #expect(viewModel.server(atTableRow: 3) == server)
         #expect(viewModel.server(atTableRow: 4) == nil)
+    }
+
+    @Test("active destination starts at none, reports changes, and returns")
+    func activeDestinationTransitions() {
+        let viewModel = ServerListViewModel()
+        var observed: [SidebarDestination] = []
+        viewModel.onActiveDestinationChange = { observed.append($0) }
+
+        // Wiring the observer replays the current value, like onStateChange.
+        #expect(observed == [.none])
+        #expect(viewModel.activeDestination == .none)
+
+        viewModel.setActiveDestination(.settings)
+        viewModel.setActiveDestination(.vault)
+        viewModel.setActiveDestination(.none)
+
+        #expect(viewModel.activeDestination == .none)
+        #expect(observed == [.none, .settings, .vault, .none])
+    }
+
+    @Test("only left-mouse activation connects")
+    func mouseActivationGate() {
+        #expect(ServerListViewController.isLeftMouseActivation(eventType: .leftMouseDown))
+        // Right clicks only select to open the context menu.
+        #expect(!ServerListViewController.isLeftMouseActivation(eventType: .rightMouseDown))
+        // Keyboard arrows select without connecting.
+        #expect(!ServerListViewController.isLeftMouseActivation(eventType: .keyDown))
+        // Programmatic selection has no current event.
+        #expect(!ServerListViewController.isLeftMouseActivation(eventType: nil))
+    }
+
+    @Test("a double click only connects when its first click did not")
+    func doubleClickEcho() {
+        // Echo: the first click of the double click just changed the
+        // selection onto this row and already connected it.
+        #expect(!ServerListViewController.shouldConnectOnDoubleClick(
+            clickedRow: 2, lastMouseSelection: (row: 2, elapsed: 0.1), doubleClickInterval: 0.5
+        ))
+        // An echo older than the double-click interval is a fresh intent.
+        #expect(ServerListViewController.shouldConnectOnDoubleClick(
+            clickedRow: 2, lastMouseSelection: (row: 2, elapsed: 0.6), doubleClickInterval: 0.5
+        ))
+        // A different row than the recent mouse selection is a fresh intent.
+        #expect(ServerListViewController.shouldConnectOnDoubleClick(
+            clickedRow: 3, lastMouseSelection: (row: 2, elapsed: 0.1), doubleClickInterval: 0.5
+        ))
+        // No prior mouse selection: the already-selected row re-connects.
+        #expect(ServerListViewController.shouldConnectOnDoubleClick(
+            clickedRow: 3, lastMouseSelection: nil, doubleClickInterval: 0.5
+        ))
+        // Not a row (empty space): never connects.
+        #expect(!ServerListViewController.shouldConnectOnDoubleClick(
+            clickedRow: -1, lastMouseSelection: nil, doubleClickInterval: 0.5
+        ))
     }
 
     @Test("share placeholders reflect loading, empty, and content states")
