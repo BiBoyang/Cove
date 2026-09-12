@@ -75,7 +75,7 @@ targets:
         # distribution / notarization. Empty team + Automatic signing means
         # "Sign to Run Locally" (ad hoc), which is fine for development only.
         DEVELOPMENT_TEAM: ""
-        MARKETING_VERSION: "0.6.0"
+        MARKETING_VERSION: "0.7.0"
         CURRENT_PROJECT_VERSION: "5"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         # Vendored libmpv (Vendor/libmpv): self-built LGPL-clean forest

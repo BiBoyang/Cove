@@ -21,6 +21,9 @@ chrome, dark player) regardless of the system appearance.
   address, is remembered per server, and connection failures suggest
   switching when an idle remote address is configured (see
   [Remote access](#remote-access-tailscale--wireguard)).
+- Single-click a server in the sidebar to connect (arrows select, Return
+  activates); 本地仓库 and 设置 stay pinned in a bottom bar that never
+  moves with the server count, window resize, or fullscreen.
 - Double-click a share card to browse it: directories, navigation into
   folders and back up (the back button returns to the share grid from the
   share root). Rows show a large rounded thumbnail with a name-plus-metadata
@@ -61,7 +64,11 @@ chrome, dark player) regardless of the system appearance.
   The vault lives outside the cache — it is never evicted and answers even
   when the NAS is offline. A "本地仓库" entry in the sidebar browses it
   exactly like a share (reading and playback included); the vault root
-  defaults to the app container and can be changed in Settings.
+  defaults to the app container and can be changed in Settings. Frequently
+  used vault folders can be pinned to the sidebar's bottom bar
+  (right-click → 固定到侧栏, up to 8, optional aliases, full path in the
+  tooltip): a pin row lights up while you browse its subtree, greys out
+  when the folder goes missing, and only ever leaves by hand.
 - Dot-prefixed entries (`.DS_Store`, AppleDouble `._*`, tool metadata files)
   and `__MACOSX` folders are hidden.
 - Files are classified by type (video / image / pdf / comic / text / other)
