@@ -64,8 +64,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Main menu
 
     /// No storyboard, so the menu bar is built by hand: the app menu carries
-    /// "设置…" (Cmd+,) and "退出", plus a standard Edit menu so text fields
-    /// keep their undo/cut/copy/paste/select-all shortcuts.
+    /// "设置…" (Cmd+,), "检查更新…", and "退出", plus a standard Edit menu
+    /// so text fields keep their undo/cut/copy/paste/select-all shortcuts.
     @MainActor private func installMainMenu() {
         let mainMenu = NSMenu()
 
@@ -79,6 +79,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
         preferencesItem.target = self
         appMenu.addItem(preferencesItem)
+        let checkForUpdatesItem = NSMenuItem(
+            title: "检查更新…",
+            action: #selector(checkForUpdates(_:)),
+            keyEquivalent: ""
+        )
+        checkForUpdatesItem.target = self
+        appMenu.addItem(checkForUpdatesItem)
         appMenu.addItem(.separator())
         appMenu.addItem(NSMenuItem(
             title: "退出 Cove",
@@ -117,6 +124,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @MainActor @objc private func openSettings(_ sender: Any?) {
         mainWindowController?.showWindow(nil)
         libraryCoordinator?.openSettings()
+        NSApplication.shared.activate(ignoringOtherApps: true)
+    }
+
+    /// Manual update check: same window-first choreography as settings so
+    /// the result alert always has a sheet host; the flow itself (fetch,
+    /// compare, three-state alert) lives once in the library coordinator.
+    @MainActor @objc private func checkForUpdates(_ sender: Any?) {
+        mainWindowController?.showWindow(nil)
+        libraryCoordinator?.checkForUpdates()
         NSApplication.shared.activate(ignoringOtherApps: true)
     }
 }

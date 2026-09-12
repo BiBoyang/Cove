@@ -126,6 +126,11 @@ chrome, dark player) regardless of the system appearance.
   (MB/s, 0 = unlimited), and the preheat folder list. Folder entries include
   the share name (e.g. `公共空间/动漫/xxx`) and only take effect while that
   share is connected.
+- Update checks are manual and privacy-free: 检查更新… in the app menu
+  (or Settings → 关于与更新, which also shows the running version)
+  compares the running build against the latest GitHub release over the
+  public API — no account, no user data in the request — and offers to
+  open the release page when a newer version is out.
 - Connection failures surface as an alert with the concrete error.
 
 ## Remote access (Tailscale / WireGuard)

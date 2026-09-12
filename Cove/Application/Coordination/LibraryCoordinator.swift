@@ -42,6 +42,10 @@ final class LibraryCoordinator {
     private let playerCoordinator: PlayerCoordinator
     /// Owns the single PDF reader window; a new PDF replaces it.
     private let pdfReaderCoordinator: PdfReaderCoordinator
+    /// The single in-flight update check; a re-click while running is
+    /// ignored until the alert lands.
+    private var updateCheckTask: Task<Void, Never>?
+    private let updateService = UpdateService()
     private var navigationGeneration = 0
     private var activeTask: Task<Void, Never>?
     private let logger = TraceLogger(category: "Library")
@@ -130,6 +134,7 @@ final class LibraryCoordinator {
         browserViewController.onUnsupportedFile = { [weak self] in self?.onUnsupportedFile?($0) }
         browserViewController.onGoUp = { [weak self] in self?.goBack() }
         browserViewController.onPreheatTapped = { [weak self] in self?.toggleDirectoryPreheat() }
+        settingsPaneViewController.onCheckForUpdates = { [weak self] in self?.checkForUpdates() }
         readerCoordinator.onError = { [weak self] in self?.onError?($0, $1) }
         readerCoordinator.onMessageError = { [weak self] in self?.onMessageError?($0, $1) }
         playerCoordinator.onError = { [weak self] in self?.onError?($0, $1) }
@@ -695,6 +700,74 @@ final class LibraryCoordinator {
         serverListViewModel.setActiveDestination(.settings)
         onShowDetail?(settingsPaneViewController)
         onTitleChange?("设置")
+    }
+
+    // MARK: - Update check
+
+    /// Manual update check (app menu and settings pane both land here —
+    /// the flow exists once). Queries GitHub Releases for the latest
+    /// stable tag, compares it with the running MARKETING_VERSION, and
+    /// presents one of three alerts as a sheet on the main window.
+    /// Manual-only by decision: no background polling in 1.0. Every
+    /// failure — offline, rate limit, malformed payload — converges on
+    /// the informational alert, so this path can never crash.
+    func checkForUpdates() {
+        guard updateCheckTask == nil, let window = hostWindowProvider?() else { return }
+        updateCheckTask = Task { [weak self] in
+            guard let self else { return }
+            defer { updateCheckTask = nil }
+            do {
+                let release = try await updateService.latestRelease()
+                guard let running = SemanticVersion(AppVersion.short) else {
+                    presentUpdateFailureAlert(on: window)
+                    return
+                }
+                if release.version > running {
+                    presentUpdateAvailableAlert(release, on: window)
+                } else {
+                    presentUpToDateAlert(on: window)
+                }
+            } catch {
+                if Task.isCancelled || error is CancellationError { return }
+                logger.error("检查更新失败: \(error.localizedDescription)")
+                presentUpdateFailureAlert(on: window)
+            }
+        }
+    }
+
+    /// Outcome 1/3: running the newest stable release.
+    private func presentUpToDateAlert(on window: NSWindow) {
+        let alert = NSAlert()
+        alert.messageText = "当前已是最新版本 (\(AppVersion.short))"
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: "好")
+        alert.beginSheetModal(for: window) { _ in }
+    }
+
+    /// Outcome 2/3: a newer stable tag exists; 前往下载 opens the release
+    /// page in the default browser.
+    private func presentUpdateAvailableAlert(_ release: UpdateCheckResult, on window: NSWindow) {
+        let alert = NSAlert()
+        alert.messageText = "发现新版本 \(release.tag)"
+        alert.informativeText = "当前版本 \(AppVersion.short)，可前往 GitHub Releases 下载新版本。"
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: "前往下载")
+        alert.addButton(withTitle: "取消")
+        alert.beginSheetModal(for: window) { response in
+            guard response == .alertFirstButtonReturn else { return }
+            NSWorkspace.shared.open(release.pageURL)
+        }
+    }
+
+    /// Outcome 3/3: informational only — no retry button, no crash path;
+    /// offline and API rate limits both land here.
+    private func presentUpdateFailureAlert(on window: NSWindow) {
+        let alert = NSAlert()
+        alert.messageText = "无法检查更新"
+        alert.informativeText = "请检查网络连接后重试。"
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: "好")
+        alert.beginSheetModal(for: window) { _ in }
     }
 
     /// Deletes a vault item after confirmation. The wording must stay

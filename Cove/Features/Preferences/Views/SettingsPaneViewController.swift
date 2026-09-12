@@ -40,6 +40,14 @@ final class SettingsPaneViewController: NSViewController {
         wrappingLabelWithString: "书签已失效，请点「更改…」重新选择位置（新下载暂存默认位置）。"
     )
 
+    // About & update section
+    private let versionLabel = NSTextField(labelWithString: "")
+    private let checkUpdatesButton = PillButton(title: "检查更新…", style: .secondary)
+
+    /// Forwards to the coordinator's single update-check flow (the same
+    /// intent-forwarding idiom as the pane's other actions).
+    var onCheckForUpdates: (() -> Void)?
+
     private let byteFormatter: ByteCountFormatter = {
         let formatter = ByteCountFormatter()
         formatter.countStyle = .file
@@ -126,6 +134,13 @@ final class SettingsPaneViewController: NSViewController {
         vaultBookmarkHintLabel.textColor = .systemRed
         vaultBookmarkHintLabel.isHidden = true
 
+        // The version line reads the bundle directly (build-injected
+        // constants), not the view model — it is not session state.
+        versionLabel.font = CoveStyle.formLabelFont
+        versionLabel.stringValue = "版本 \(AppVersion.short) (\(AppVersion.build))"
+        checkUpdatesButton.target = self
+        checkUpdatesButton.action = #selector(checkForUpdatesTapped(_:))
+
         // Return in the input field adds the folder.
         folderField.placeholderString = "公共空间/动漫/xxx"
         folderField.target = self
@@ -200,13 +215,19 @@ final class SettingsPaneViewController: NSViewController {
         let vaultRow = makeRow(makeLabel("位置"), vaultPathLabel, chooseVaultButton, revealVaultButton)
         stack.addArrangedSubview(vaultRow)
         stack.addArrangedSubview(vaultBookmarkHintLabel)
-        stack.addArrangedSubview(makeAuxLabel("更改位置只影响新下载，旧位置的文件不会迁移。"))
+        let vaultAuxLabel = makeAuxLabel("更改位置只影响新下载，旧位置的文件不会迁移。")
+        stack.addArrangedSubview(vaultAuxLabel)
         vaultRow.snp.makeConstraints { make in
             make.width.equalTo(stack)
         }
         vaultBookmarkHintLabel.snp.makeConstraints { make in
             make.width.lessThanOrEqualTo(stack)
         }
+
+        stack.setCustomSpacing(CoveStyle.space16, after: vaultAuxLabel)
+        stack.addArrangedSubview(makeHeader("关于与更新"))
+        stack.addArrangedSubview(makeRow(versionLabel, checkUpdatesButton))
+        stack.addArrangedSubview(makeAuxLabel("通过 GitHub Releases 检查，不含任何用户数据"))
 
         view = root
         render(viewModel.state)
@@ -343,6 +364,12 @@ final class SettingsPaneViewController: NSViewController {
         let root = viewModel.vaultRootURLForReveal()
         try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         NSWorkspace.shared.open(root)
+    }
+
+    /// The update-check flow (fetch, compare, three-state alert) lives in
+    /// the library coordinator; the button only forwards the intent.
+    @objc private func checkForUpdatesTapped(_ sender: Any?) {
+        onCheckForUpdates?()
     }
 
     private func revert(_ field: NSTextField, to text: String) {
