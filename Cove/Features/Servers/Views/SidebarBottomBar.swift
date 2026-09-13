@@ -106,7 +106,9 @@ final class SidebarBottomBar: NSView {
         homeRow.setActive(lastDestination == .home)
         vaultRow.setActive(lastDestination == .vault && activePinPath == nil)
         settingsRow.setActive(lastDestination == .settings)
-        for row in pinRows { row.setActive(row.pinPath == activePinPath) }
+        // Pins light only inside the vault — the rendering-layer backstop
+        // of the one-capsule invariant, even if a stale pin path arrives.
+        for row in pinRows { row.setActive(lastDestination == .vault && row.pinPath == activePinPath) }
     }
 
     /// Replaces the pinned-folder rows between the vault and settings

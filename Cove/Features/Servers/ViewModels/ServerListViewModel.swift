@@ -79,6 +79,12 @@ final class ServerListViewModel {
 
     func setActiveDestination(_ destination: SidebarDestination) {
         activeDestination = destination
+        // The pin capsule is vault-only: leaving the vault drops it, so
+        // the bar can never light a pin row next to another destination.
+        // Vault entry re-pins via loadDirectory after this assignment.
+        if destination != .vault {
+            activePinPath = nil
+        }
     }
 
     func update(pins: [VaultPinRow]) {

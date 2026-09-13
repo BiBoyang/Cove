@@ -902,9 +902,12 @@ final class LibraryCoordinator {
     /// and highlights it in the sidebar's bottom bar. Leaving the
     /// on-screen directory cancels its in-flight loads and directory
     /// preheat, the same discipline as opening a reader; the SMB session
-    /// itself stays connected.
+    /// itself stays connected. The vault context is left too — aligned
+    /// with the home/share-grid exits — so a pin refresh triggered from
+    /// the settings page cannot relight a pin capsule.
     private func showSettings() {
         _ = beginNavigation()
+        browsingVault = false
         serverListViewModel.setActiveDestination(.settings)
         onShowDetail?(settingsPaneViewController)
         onTitleChange?("设置")

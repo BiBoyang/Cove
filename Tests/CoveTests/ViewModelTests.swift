@@ -235,6 +235,51 @@ struct SidebarPinTests {
         #expect(received[2] == nil)
     }
 
+    @Test("leaving the vault destination clears the pin capsule")
+    func leavingVaultClearsPin() {
+        let viewModel = ServerListViewModel()
+        var received: [String?] = []
+        viewModel.onActivePinChange = { received.append($0) }
+
+        // Inside the vault the capsule follows the browsed subtree.
+        viewModel.setActiveDestination(.vault)
+        viewModel.setActivePinPath("/Movies")
+        #expect(viewModel.activePinPath == "/Movies")
+
+        // Settings, home, and server panes each drop the capsule…
+        viewModel.setActiveDestination(.settings)
+        #expect(viewModel.activePinPath == nil)
+
+        viewModel.setActivePinPath("/Movies")
+        viewModel.setActiveDestination(.home)
+        #expect(viewModel.activePinPath == nil)
+
+        viewModel.setActivePinPath("/Movies")
+        viewModel.setActiveDestination(.none)
+        #expect(viewModel.activePinPath == nil)
+
+        // …and every drop fires the callback the bar re-renders on.
+        #expect(received == [nil, "/Movies", nil, "/Movies", nil, "/Movies", nil])
+    }
+
+    @Test("vault-internal pin behavior is unchanged")
+    func vaultKeepsPin() {
+        let viewModel = ServerListViewModel()
+        viewModel.setActiveDestination(.vault)
+        viewModel.setActivePinPath("/Movies")
+
+        // Re-affirming the vault destination keeps the capsule: openVault
+        // sets the destination first, loadDirectory re-pins afterwards.
+        viewModel.setActiveDestination(.vault)
+        #expect(viewModel.activePinPath == "/Movies")
+
+        // Edge inputs stay dark: a nil capsule with no pins at all.
+        let empty = ServerListViewModel()
+        empty.setActiveDestination(.vault)
+        empty.setActiveDestination(.settings)
+        #expect(empty.activePinPath == nil)
+    }
+
     @Test("subscribing the callback replays the current pins")
     func pinsReplayOnSubscribe() {
         let viewModel = ServerListViewModel()
