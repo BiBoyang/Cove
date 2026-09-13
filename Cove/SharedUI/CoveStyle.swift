@@ -209,6 +209,8 @@ enum CoveStyle {
     static let monoDigitFont = NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .medium)
     /// Reader zoom-factor flash overlay.
     static let overlayFlashFont = NSFont.systemFont(ofSize: 15, weight: .semibold)
+    /// Page titles atop feature panes (the home page's "继续观看").
+    static let pageTitleFont = NSFont.systemFont(ofSize: 22, weight: .bold)
 
     // MARK: Colors
 

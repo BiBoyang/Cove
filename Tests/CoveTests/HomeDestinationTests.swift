@@ -173,4 +173,27 @@ struct OpenHomeResetTests {
         #expect(coordinator.homeViewModel.state.entries.count == 1)
         #expect(coordinator.homeViewModel.state.placeholder == nil)
     }
+
+    /// Depth-first search for a label carrying the given text.
+    private func hierarchyContains(_ root: NSView, text: String) -> Bool {
+        if let field = root as? NSTextField, field.stringValue == text { return true }
+        return root.subviews.contains { hierarchyContains($0, text: text) }
+    }
+
+    @Test("the continue-watching page title is in the home view hierarchy, records or not")
+    func pageTitleStaysVisible() throws {
+        let server = ServerConfig(id: UUID(), host: "nas.local", username: "user")
+        let (withRecords, store, cleanupRecords) = try makeCoordinator(seedServers: [server])
+        defer { cleanupRecords() }
+        store.savePosition(60, forKey: "smb://nas.local/media|/movies/a.mp4", duration: 300)
+        withRecords.start()
+        #expect(withRecords.homeViewModel.state.placeholder == nil)
+        #expect(hierarchyContains(withRecords.homeViewController.view, text: "继续观看"))
+
+        let (firstRun, _, cleanupFirstRun) = try makeCoordinator(seedServers: [])
+        defer { cleanupFirstRun() }
+        firstRun.start()
+        #expect(firstRun.homeViewModel.state.placeholder?.kind == .noServers)
+        #expect(hierarchyContains(firstRun.homeViewController.view, text: "继续观看"))
+    }
 }

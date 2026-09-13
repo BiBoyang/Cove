@@ -20,6 +20,12 @@ final class HomeViewController: NSViewController {
     private let collectionView = NSCollectionView()
     private var placeholderView: StatePlaceholderView?
 
+    /// Persistent page title ("继续观看"): the home page is the watch
+    /// history, and the sidebar's "首页" entry alone never says so. Stays
+    /// visible in all three states — the placeholder pins its top to this
+    /// label instead of covering the whole root.
+    private let pageTitleLabel = NSTextField(labelWithString: "继续观看")
+
     init(viewModel: HomeViewModel) {
         self.viewModel = viewModel
         super.init(nibName: nil, bundle: nil)
@@ -71,9 +77,21 @@ final class HomeViewController: NSViewController {
         scrollView.drawsBackground = false
         scrollView.backgroundColor = CoveStyle.libraryBackground
 
+        pageTitleLabel.font = CoveStyle.pageTitleFont
+        pageTitleLabel.textColor = .labelColor
+        pageTitleLabel.alignment = .left
+
+        root.addSubview(pageTitleLabel)
+        pageTitleLabel.snp.makeConstraints { make in
+            make.leading.equalToSuperview().offset(CoveStyle.space20)
+            make.top.equalToSuperview().offset(CoveStyle.space20)
+            make.trailing.lessThanOrEqualToSuperview().offset(-CoveStyle.space20)
+        }
+
         root.addSubview(scrollView)
         scrollView.snp.makeConstraints { make in
-            make.edges.equalToSuperview()
+            make.top.equalTo(pageTitleLabel.snp.bottom).offset(CoveStyle.space8)
+            make.leading.trailing.bottom.equalToSuperview()
         }
 
         view = root
@@ -102,7 +120,9 @@ final class HomeViewController: NSViewController {
         view.onAction = { [weak self] in self?.onAddServer?() }
         self.view.addSubview(view)
         view.snp.makeConstraints { make in
-            make.edges.equalToSuperview()
+            // The page title stays visible above the empty state.
+            make.top.equalTo(pageTitleLabel.snp.bottom)
+            make.leading.trailing.bottom.equalToSuperview()
         }
         placeholderView = view
     }
