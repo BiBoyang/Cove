@@ -10,8 +10,8 @@
 
 - [ ] 批 1（快卡）：plans/TASK-empty-states.md（T1 空态/加载态清扫）
   （browser-search、check-for-updates 已落地归档，2026-09-12）
-- [ ] 批 2（体验）：音频播放（分类表加 audio + 复用 libmpv 桥）
-  （外挂字幕、继续观看已落地归档，2026-09-12/13）
+- [x] 批 2（体验）全部落地：外挂字幕 → 继续观看（首页）→ 音频播放
+  （2026-09-12/13 归档）——1.0 仅剩批 3 压哨
 - [ ] 批 3（压哨）：DEVELOPMENT_TEAM + 真 bundle id，随 1.0.0 tag
 - [ ] 候选（可放 1.x）：图片网格墙
 
@@ -78,6 +78,7 @@
 - 检查更新：app 菜单「检查更新…」+ 设置页「关于与更新」区（版本行 Bundle 直读 + 按钮 + 隐私说明）双入口单流程（LibraryCoordinator.checkForUpdates，主窗口 sheet），GitHub Releases /releases/latest 一次 GET（带 UA、15s 超时、非 2xx 收敛失败态），三态中文 alert（已是最新/有新版「前往下载」跳 release 页/失败信息性无重试），manual-only 无后台轮询；UpdateService fetcher 注入测试缝 + SemanticVersion 容错解析，12 测零网络（见 plans/archive/TASK-check-for-updates.md，2026-09-12 真机通过）
 - 外挂字幕自动挂载：同目录同名（含语言后缀）srt/ass 自动发现并 temp-file + sub-add 挂载，外挂优先选中、弹层带「外挂」标识可切内嵌/关闭，切集按新文件重发现；SubtitleDiscovery 纯函数 + ExternalSubtitleLoader（reader 统一 SMB/vault，session temp 目录随换集/关窗清理）（见 plans/archive/TASK-external-subtitles.md，2026-09-12 真机通过）
 - 首页 = 最近播放页（继续观看）：侧栏底栏「首页」目的地（任意页面一键回、结构高亮不变量），启动即落首页；纵向网格卡片（film 徽标/文件名/进度条/已看至时间码·相对时间，cap 30，旧格式无 duration 降级无进度条），双击走深链续播（重连/进 share/进目录/断点播放，SMB 与 vault 同构；配置或文件不可达即提示并清条目，瞬时失败保留记录）；PlaybackProgressStore 增 duration 字段（旧格式容忍）+ allEntries 只读；空态两级吸收首跑引导（见 plans/archive/TASK-continue-watching.md 含两条 Amendment，2026-09-13 真机通过）
+- 音频播放：分类表增 audio（mp3/flac/aac/m4a/wav/ogg/opus/wma），双击走 libmpv 桥全量继承（进度/音量/倍速/播放模式/Up Next/断点续播），无视频轨时静态壳（music.note + 文件名，track-list 计数判定，内嵌封面不误触）替代裸黑窗，chips 无视频轨整组隐藏；openPlayer 按 fileType 路由队列（video/audio 不混排，深链守卫 kind-agnostic，继续观看音频条目天然可用）；badgeTintAudio=systemPink 令牌入 §1；Fix 1：FFmpeg 矩阵补 mp3/flac/ogg/wav/aac 五个 demuxer（根因=独立音频容器缺席，decoder/parser 链本齐），森林重建 selfcheck 4/4 + 构建矩阵约束用例防回退（见 plans/archive/TASK-audio-playback.md，2026-09-13 真机通过）
 - 浏览器名称过滤：工具条常驻搜索框（⌘F 聚焦）按名称过滤当前目录，大小写/变音符不敏感、纯本地零网络、导航即清零；无匹配空态 + 计数标签；播放列表不受过滤影响（见 plans/archive/TASK-browser-search.md，2026-09-12 真机通过）
 - 浏览器行徽标类型着色：placeholderTint 按类型映射（文件夹蓝/视频紫/PDF 红/漫画橙/图片占位绿/文本提亮/其他不变），CoveStyle badgeTint 令牌族 + 令牌文档 §1 登记；灰瓷贴不变，缩略图仍是行内最跳元素（见 plans/archive/TASK-badge-tints.md，2026-09-12 真机通过）
 - ContinuousReader 测试 deflake：根因=测量落地后窗口扩容使轮询观察窗仅约一个 load 延迟（瞬态中间态被轮询错过）；修复=事件驱动等待 + 闩锁，断言零削弱（2026-09-08，外派 agent 执行、助手 Review）
