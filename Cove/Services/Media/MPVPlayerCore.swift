@@ -41,6 +41,12 @@ enum PlayerCoreEvent {
     /// file switches (which reset the list) all flow through here; mpv
     /// dedups the observation by value, so only real changes arrive.
     case subtitleTracksChanged([SubtitleTrack], selectedID: Int?)
+    /// Whether the current file carries a video track, sourced from the
+    /// same observed `track-list`. False = audio-only session, which the
+    /// player turns into the static shell (TASK-audio-playback). Emitted
+    /// once the real list lands (the empty pre-load list is idle noise)
+    /// and only on actual changes afterwards.
+    case videoTrackPresenceChanged(Bool)
     /// Clean end of file.
     case ended
     /// Playback died with an mpv error (end-file with a negative error code).
@@ -94,6 +100,16 @@ struct MPVTrackEntry: Equatable, Sendable {
     /// mpv's `external` flag: added from an external file (`sub-add`) instead
     /// of being muxed into the container.
     let isExternal: Bool
+}
+
+extension MPVTrackEntry {
+    /// Whether a raw track-list carries at least one video track — the
+    /// audio-shell signal (TASK-audio-playback, seam B). Embedded album
+    /// art counts as video because mpv renders it into the video area,
+    /// which is exactly what the user then sees.
+    static func hasVideoTrack(trackList entries: [MPVTrackEntry]) -> Bool {
+        entries.contains { $0.type == "video" }
+    }
 }
 
 extension SubtitleTrack {
@@ -179,6 +195,10 @@ final class MPVPlayerCore {
     /// the new file's list simply replaces the previous one.
     private(set) var subtitleTracks: [SubtitleTrack] = []
     private(set) var selectedSubtitleTrackID: Int?
+    /// Last emitted video-track presence; nil until a real (non-empty)
+    /// track-list has been seen, so the audio file's first list always
+    /// reports even though its `false` matches the idle default.
+    private var lastHasVideoTrack: Bool?
 
     /// Property-observation reply IDs, matched against `reply_userdata` in
     /// the drain loop.
@@ -476,9 +496,19 @@ final class MPVPlayerCore {
     /// the idle state and must not surface as an event).
     private func handleTrackListChange(_ property: mpv_event_property) {
         guard property.format == MPV_FORMAT_NODE, let data = property.data else { return }
-        let parsed = SubtitleTrack.parse(
-            trackList: Self.readTrackListEntries(data.assumingMemoryBound(to: mpv_node.self).pointee)
-        )
+        let entries = Self.readTrackListEntries(data.assumingMemoryBound(to: mpv_node.self).pointee)
+        // Presence only derives from a real list: the empty pre-load
+        // notification is idle noise (same reasoning as the subtitle
+        // mirror below), and re-notifies that keep the presence (sub-add,
+        // selection flips) must not re-emit.
+        if !entries.isEmpty {
+            let hasVideo = MPVTrackEntry.hasVideoTrack(trackList: entries)
+            if hasVideo != lastHasVideoTrack {
+                lastHasVideoTrack = hasVideo
+                onEvent?(.videoTrackPresenceChanged(hasVideo))
+            }
+        }
+        let parsed = SubtitleTrack.parse(trackList: entries)
         guard parsed.tracks != subtitleTracks || parsed.selectedID != selectedSubtitleTrackID else { return }
         subtitleTracks = parsed.tracks
         selectedSubtitleTrackID = parsed.selectedID

@@ -397,8 +397,9 @@ FFMPEG_FLAGS=(
   --disable-network
   --disable-encoders --disable-muxers
   --disable-everything
-  # containers (audit §2.0 format list)
-  --enable-demuxer=mov,matroska,avi,asf,flv,mpegts,mpegps,mpegvideo,rm,srt,ass,webvtt
+  # containers (audit §2.0 format list) + standalone audio demuxers
+  # (TASK-audio-playback Fix 1: standalone audio files fail to open without them)
+  --enable-demuxer=mov,matroska,avi,asf,flv,mpegts,mpegps,mpegvideo,rm,srt,ass,webvtt,mp3,flac,ogg,wav,aac
   --enable-protocol=file
   # video decoders
   --enable-decoder=h264,hevc,vp8,vp9,mpeg4,msmpeg4v3,h263,flv

@@ -32,6 +32,7 @@ Cove 跨平台 UI 一致性的图纸：所有色值/字号/间距/圆角/动效/
 | badge-tint-image | systemGreen | 浏览器行徽标·图片占位（加载完被真缩略图顶替） | [已拍板] 2026-09-12 · TASK-badge-tints |
 | badge-tint-text | secondaryLabelColor | 浏览器行徽标·文本（只提亮度，保持安静） | [已拍板] 2026-09-12 · TASK-badge-tints |
 | badge-tint-other | tertiaryLabelColor | 浏览器行徽标·其他（维持单色） | [已拍板] 2026-09-12 · TASK-badge-tints |
+| badge-tint-audio | systemPink | 浏览器行徽标·音频 | [已拍板] 2026-09-13 · TASK-audio-playback |
 
 ## 2. 字（刻度表）
 

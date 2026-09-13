@@ -32,6 +32,27 @@ final class ContentItemTests: XCTestCase {
         XCTAssertEqual(item("noextension").fileType, .other)
     }
 
+    func testAudioClassification() {
+        // All eight 1.0 audio extensions classify, case-insensitively.
+        XCTAssertEqual(item("song.mp3").fileType, .audio)
+        XCTAssertEqual(item("song.MP3").fileType, .audio)
+        XCTAssertEqual(item("song.flac").fileType, .audio)
+        XCTAssertEqual(item("song.FLAC").fileType, .audio)
+        XCTAssertEqual(item("song.aac").fileType, .audio)
+        XCTAssertEqual(item("song.m4a").fileType, .audio)
+        XCTAssertEqual(item("song.wav").fileType, .audio)
+        XCTAssertEqual(item("song.WAV").fileType, .audio)
+        XCTAssertEqual(item("song.ogg").fileType, .audio)
+        XCTAssertEqual(item("song.opus").fileType, .audio)
+        XCTAssertEqual(item("song.wma").fileType, .audio)
+        // Out of the 1.0 set: aiff/alac stay unclassified (decision 1).
+        XCTAssertEqual(item("song.aiff").fileType, .other)
+        XCTAssertEqual(item("song.alac").fileType, .other)
+        // Non-audio neighbours are untouched.
+        XCTAssertEqual(item("movie.mp4").fileType, .video)
+        XCTAssertEqual(item("subs.srt").fileType, .text)
+    }
+
     func testDirectoriesAreNotClassified() {
         XCTAssertNil(item("Movies", isDirectory: true).fileType)
     }

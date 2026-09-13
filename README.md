@@ -62,6 +62,11 @@ chrome, dark player) regardless of the system appearance.
     auto-advance and how prev/next behave at the queue edges.
   - **Playback speed**: 0.5–2x from the capsule's speed button; the chosen
     rate carries over across track changes.
+- **Audio playback**: double-click music files (mp3, flac, aac, m4a,
+  wav, ogg, opus, wma) to play them through the same libmpv pipeline —
+  a static shell (music.note + file name) stands in for the video
+  surface while seek, volume, speed, play modes and resume-position all
+  work as with video; audio files queue their audio siblings only.
 - **Home page (首页, recent watches)**: Cove launches onto a home page that
   grids the videos you've watched most recently (up to 30) — file name, a
   mini progress bar, and a 已看至 h:mm:ss · N天前 line per card.

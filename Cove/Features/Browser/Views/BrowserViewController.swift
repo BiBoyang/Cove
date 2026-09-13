@@ -15,6 +15,7 @@ final class BrowserViewController: NSViewController {
     var onOpenImage: ((_ path: String) -> Void)?
     var onOpenComic: ((_ path: String) -> Void)?
     var onOpenVideo: ((_ path: String) -> Void)?
+    var onOpenAudio: ((_ path: String) -> Void)?
     var onOpenPdf: ((_ path: String) -> Void)?
     var onUnsupportedFile: ((_ name: String) -> Void)?
     var onGoUp: (() -> Void)?
@@ -525,6 +526,8 @@ final class BrowserViewController: NSViewController {
             onOpenComic?(item.path)
         } else if item.fileType == .video {
             onOpenVideo?(item.path)
+        } else if item.fileType == .audio {
+            onOpenAudio?(item.path)
         } else if item.fileType == .pdf {
             onOpenPdf?(item.path)
         } else {
@@ -542,6 +545,7 @@ extension BrowserViewController: NSTableViewDataSource, NSTableViewDelegate {
         if item.isDirectory { return CoveStyle.badgeTintFolder }
         switch item.fileType ?? .other {
         case .video: return CoveStyle.badgeTintVideo
+        case .audio: return CoveStyle.badgeTintAudio
         case .image: return CoveStyle.badgeTintImage
         case .pdf: return CoveStyle.badgeTintPdf
         case .comic: return CoveStyle.badgeTintComic
@@ -726,6 +730,7 @@ private final class BrowserRowCellView: NSTableCellView {
         if item.isDirectory { return "folder.fill" }
         switch item.fileType ?? .other {
         case .video: return "film.fill"
+        case .audio: return "music.note"
         case .image: return "photo"
         case .pdf: return "doc.richtext.fill"
         case .comic: return "book.closed.fill"

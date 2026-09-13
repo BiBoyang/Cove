@@ -150,6 +150,7 @@ final class LibraryCoordinator {
         browserViewController.onOpenImage = { [weak self] in self?.openReader(forImageAt: $0) }
         browserViewController.onOpenComic = { [weak self] in self?.openComicReader(at: $0) }
         browserViewController.onOpenVideo = { [weak self] in self?.openPlayer(at: $0) }
+        browserViewController.onOpenAudio = { [weak self] in self?.openPlayer(at: $0) }
         browserViewController.onOpenPdf = { [weak self] in self?.openPdfReader(at: $0) }
         browserViewController.onDownloadToVault = { [weak self] in self?.downloadToVault($0) }
         browserViewController.onDeleteFromVault = { [weak self] in self?.confirmDeleteFromVault($0) }
@@ -824,7 +825,7 @@ final class LibraryCoordinator {
                     if Task.isCancelled || error is CancellationError { throw error }
                     throw ResumeFailure.fileUnreachable
                 }
-                guard browserViewModel.videoItems.contains(where: { $0.path == entry.path }) else {
+                guard listingContainsPlayable(path: entry.path) else {
                     throw ResumeFailure.fileUnreachable
                 }
                 openPlayer(at: entry.path)
@@ -855,7 +856,7 @@ final class LibraryCoordinator {
     private func resumeVaultPlayback(_ entry: RecentWatchEntry) {
         openVault(initialPath: entry.directoryPath) { [weak self] drilled in
             guard let self else { return }
-            if drilled, browserViewModel.videoItems.contains(where: { $0.path == entry.path }) {
+            if drilled, listingContainsPlayable(path: entry.path) {
                 openPlayer(at: entry.path)
             } else {
                 removeRecentWatch(entry)
@@ -1061,22 +1062,40 @@ final class LibraryCoordinator {
         sessionService.makeFileReader()
     }
 
-    /// Opens the player for a video file, carrying the directory's other
-    /// videos as the playlist (prev/next buttons and auto-advance on a
-    /// clean end). The full listing rides along as the siblings snapshot —
-    /// external-subtitle sidecars are text files the videos-only playlist
-    /// cannot see. The PlayerCoordinator owns the single player window; a
-    /// new open or a track change swaps the session in place — window close
-    /// shuts the live mpv handle and stream bridge down via
-    /// `windowWillClose`.
+    /// A deep-linked entry is reachable when the freshly loaded listing
+    /// still carries it as a playable media file — video or audio alike
+    /// (TASK-audio-playback decision 3).
+    private func listingContainsPlayable(path: String) -> Bool {
+        let fileType = browserViewModel.item(atPath: path)?.fileType
+        return fileType == .video || fileType == .audio
+    }
+
+    /// Opens the player for a media file, carrying the directory's other
+    /// same-kind items as the playlist (prev/next buttons and auto-advance
+    /// on a clean end): videos queue videos, audio queues audio
+    /// (TASK-audio-playback decision 3). The full listing rides along as
+    /// the siblings snapshot — external-subtitle sidecars are text files
+    /// the media-only playlist cannot see. The PlayerCoordinator owns the
+    /// single player window; a new open or a track change swaps the
+    /// session in place — window close shuts the live mpv handle and
+    /// stream bridge down via `windowWillClose`.
     private func openPlayer(at path: String) {
-        let videos = browserViewModel.videoItems
-        guard videos.contains(where: { $0.path == path }) else {
-            onMessageError?("无法定位视频文件。", "打开视频失败")
+        // The queue follows the opened file's kind (TASK-audio-playback
+        // decision 3): a video queues the folder's videos, an audio file
+        // its audio — a mixed folder never interleaves the two. Deep-linked
+        // resumes land here too, so audio entries ride the same session.
+        let queue: [ContentItem]
+        switch browserViewModel.item(atPath: path)?.fileType {
+        case .video: queue = browserViewModel.videoItems
+        case .audio: queue = browserViewModel.audioItems
+        default: queue = []
+        }
+        guard queue.contains(where: { $0.path == path }) else {
+            onMessageError?("无法定位媒体文件。", "打开失败")
             return
         }
         playerCoordinator.open(
-            items: videos,
+            items: queue,
             siblings: browserViewModel.state.items,
             selectedPath: path,
             sourceID: sessionService.currentSourceID,

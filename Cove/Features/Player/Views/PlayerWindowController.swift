@@ -78,6 +78,8 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
     /// the frame stays clean while the capsule is hidden.
     private let codecChipsRow = NSStackView()
     private var videoHost: VideoLayerHostView?
+    /// File name the audio shell renders; refreshed on track swaps.
+    private var currentItemName: String
     private var renderedControlsVisible = true
     /// Central loading/buffering/failure presentation over the video
     /// surface (tokens §6.1/§6.2), replacing the old time-slot text swap.
@@ -86,6 +88,12 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
     /// Presented-content guard: `render()` ticks once a second, so the
     /// overlay is only rebuilt when what it says actually changes.
     private var renderedStateOverlayID: String?
+    /// Static audio-only shell (symbol + file name) standing in for the
+    /// bare black video surface; nil while a video track is present or
+    /// the state overlay owns the center (mutually exclusive by state).
+    private var audioShellView: StatePlaceholderView?
+    /// Same rebuild-guard pattern as `renderedStateOverlayID`.
+    private var renderedAudioShellID: String?
     /// Chips content guard: `render()` fires every second on time ticks,
     /// so the chip views are rebuilt only when the info actually changes.
     private var renderedVideoInfo: VideoTrackInfo?
@@ -120,6 +128,7 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
     init(item: ContentItem, core: MPVPlayerCore, viewModel: PlayerViewModel) {
         self.core = core
         self.viewModel = viewModel
+        self.currentItemName = item.name
         let window = PlayerWindow(
             contentRect: NSRect(x: 0, y: 0, width: 960, height: 584),
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
@@ -492,6 +501,7 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
         videoHost = host
 
         window?.title = item.name
+        currentItemName = item.name
         centerTitleLabel.attributedStringValue = Self.makeCenterTitle(item.name)
         startSession()
     }
@@ -686,6 +696,7 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
         durationLabel.stringValue = viewModel.totalText
         renderCodecChips()
         renderStateOverlay()
+        renderAudioShell()
         renderControlsVisibility()
     }
 
@@ -735,10 +746,38 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
         stateOverlay = overlay
     }
 
+    /// Swaps the audio-only static shell in and out: a centered
+    /// `music.note` plus the file name standing in for the bare black
+    /// video surface (TASK-audio-playback decision 4). Never a spinner —
+    /// loading/buffering stay on the state overlay, which is mutually
+    /// exclusive with the shell by view-model state.
+    private func renderAudioShell() {
+        let shown = viewModel.showsAudioShell
+        let id = shown ? currentItemName : ""
+        guard id != renderedAudioShellID else { return }
+        renderedAudioShellID = id
+        audioShellView?.removeFromSuperview()
+        audioShellView = nil
+        guard shown else { return }
+        let shell = StatePlaceholderView(
+            style: .symbol("music.note"),
+            title: currentItemName,
+            message: ""
+        )
+        rootView.addSubview(shell, positioned: .below, relativeTo: controlsCapsule)
+        shell.snp.makeConstraints { make in
+            make.edges.equalToSuperview()
+        }
+        audioShellView = shell
+    }
+
     /// Rebuilds the codec chips when the video info changes (see
     /// `renderedVideoInfo` for why this is guarded per render pass).
     private func renderCodecChips() {
-        let info = viewModel.videoInfo
+        // Audio-only sessions show no chips at all (decision 4: the 1.0
+        // shell stays minimal, no audio codec chip). videoInfo alone would
+        // also stay nil for them, but the hide keys off the decided rule.
+        let info = viewModel.hasVideoTrack ? viewModel.videoInfo : nil
         guard info != renderedVideoInfo else { return }
         renderedVideoInfo = info
         codecChipsRow.arrangedSubviews.forEach { $0.removeFromSuperview() }

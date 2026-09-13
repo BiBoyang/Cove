@@ -241,6 +241,8 @@ enum CoveStyle {
     static let badgeTintFolder = NSColor.systemBlue
     /// Video badge glyph.
     static let badgeTintVideo = NSColor.systemPurple
+    /// Audio badge glyph (TASK-audio-playback, 2026-09-13).
+    static let badgeTintAudio = NSColor.systemPink
     /// PDF badge glyph (Preview association).
     static let badgeTintPdf = NSColor.systemRed
     /// Comic badge glyph.

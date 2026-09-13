@@ -53,6 +53,11 @@ final class PlayerViewModel {
     /// Codec-chip facts for the current video; nil until the track's first
     /// reconfig lands.
     private(set) var videoInfo: VideoTrackInfo?
+    /// Whether the current file carries a video track, mirrored from the
+    /// core's `.videoTrackPresenceChanged` events. Defaults true so an
+    /// ordinary video open never flashes the audio shell in the gap
+    /// before the track-list lands; audio sessions flip to false once.
+    private(set) var hasVideoTrack = true
     /// While true, incoming time-pos updates are ignored so the slider the
     /// user is dragging does not fight playback position updates.
     private(set) var isScrubbing = false
@@ -122,6 +127,8 @@ final class PlayerViewModel {
             isBuffering = buffering
         case .videoInfoChanged(let info):
             videoInfo = info
+        case .videoTrackPresenceChanged(let hasVideo):
+            hasVideoTrack = hasVideo
         case .subtitleTracksChanged(let tracks, let selectedID):
             subtitleTracks = tracks
             selectedSubtitleTrackID = selectedID
@@ -324,6 +331,15 @@ final class PlayerViewModel {
     /// carries at least one subtitle track.
     var hasSubtitleTracks: Bool {
         !subtitleTracks.isEmpty
+    }
+
+    /// True while an audio-only session should show the static shell
+    /// (symbol + file name) instead of the bare black video surface
+    /// (TASK-audio-playback decision 4). Only the steady states belong to
+    /// the shell: loading/buffering keep the spinner overlay, errors the
+    /// failure placeholder.
+    var showsAudioShell: Bool {
+        !hasVideoTrack && (state == .playing || state == .paused)
     }
 
     /// True while the transport button should offer pausing.

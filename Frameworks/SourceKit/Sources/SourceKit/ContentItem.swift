@@ -5,6 +5,7 @@ public struct ContentItem: Sendable, Hashable {
     /// Coarse file classification derived from the file extension.
     public enum FileType: String, Sendable, CaseIterable {
         case video
+        case audio
         case image
         case pdf
         case text
@@ -63,6 +64,11 @@ extension ContentItem.FileType {
         case "mp4", "mkv", "avi", "mov", "wmv", "flv", "webm", "m4v",
              "ts", "m2ts", "mpg", "mpeg", "3gp", "rmvb":
             self = .video
+        // Audio set deliberately narrow for 1.0 (TASK-audio-playback
+        // decision 1): mainstream NAS music formats only — aiff/alac/dsd
+        // stay unclassified until a later card asks for them.
+        case "mp3", "flac", "aac", "m4a", "wav", "ogg", "opus", "wma":
+            self = .audio
         case "jpg", "jpeg", "png", "gif", "bmp", "webp", "heic", "heif",
              "tiff", "tif", "avif", "cr2", "cr3", "nef", "arw", "dng",
              "raf", "orf", "rw2", "jfif", "jpe":

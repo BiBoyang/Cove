@@ -77,6 +77,10 @@ final class BrowserViewModel {
         state.items.filter { $0.fileType == .video }
     }
 
+    var audioItems: [ContentItem] {
+        state.items.filter { $0.fileType == .audio }
+    }
+
     func item(atPath path: String) -> ContentItem? {
         state.items.first { $0.path == path }
     }
