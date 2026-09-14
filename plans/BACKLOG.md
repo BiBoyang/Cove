@@ -38,6 +38,11 @@
 
 ## 已归档（近期完成）
 
+- 播放体验三连：EOF 后点播放=从头重播（非循环）、续播=单视频队列
+  （上一个/下一个置灰不串原文件夹）、历史卡片显示路径+右键「打开所在
+  文件夹」；Amendment：右键高亮累积修复（AppKit selectItems quirk
+  钉住测试）、续播改无头列表不拽走浏览器（2026-09-14 真机七项全过，
+  见 plans/archive/TASK-player-ux-trio.md）
 - 字幕随控制条显隐抬升/回落（mpv sub-margin-y，基线实测 34 读回不写死；
   胶囊高度 View 层测量喂 VM）：2026-09-14 真机通过
   （见 plans/archive/TASK-subtitle-clearance.md）
