@@ -140,6 +140,15 @@ struct OpenHomeResetTests {
         #expect(coordinator.homeViewModel.state.placeholder?.kind == .noRecords)
     }
 
+    @Test("the home page's cover provider is wired at construction")
+    func coverProviderWired() throws {
+        let (coordinator, _, cleanup) = try makeCoordinator(seedServers: [])
+        defer { cleanup() }
+        // Read-only display-pool lookup, present from the start so cards can
+        // resolve covers the moment records carry file facts.
+        #expect(coordinator.homeViewController.thumbnailProvider != nil)
+    }
+
     @Test("first run is the home page too: no-servers level with an add action")
     func firstRunHighlightsHome() throws {
         let (coordinator, _, cleanup) = try makeCoordinator(seedServers: [])

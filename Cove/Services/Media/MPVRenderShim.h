@@ -32,6 +32,13 @@ NS_ASSUME_NONNULL_BEGIN
 /// discovery).
 - (void)renderInCGLContext:(CGLContextObj)context;
 
+/// Drains mpv's render dispatch queue once (mpv_render_context_update).
+/// The calling thread must hold a current CGL context — the layer's
+/// wrapper makes one current around this call. Returns the update flags
+/// mpv reported; callers that only need the drain (the screenshot-raw
+/// reply path) ignore them.
+- (uint64_t)drainRenderDispatch;
+
 /// Tears down the render context. Must be called before
 /// mpv_terminate_destroy on the owning handle.
 - (void)invalidate;
@@ -46,6 +53,13 @@ NS_ASSUME_NONNULL_BEGIN
 /// Marks the layer dirty on the main thread; also safe to call after the
 /// renderer went away (draw then no-ops on a black frame).
 - (void)mpvNeedsDisplay;
+
+/// Makes this layer's own CGL context current, drains mpv's render
+/// dispatch queue once through the renderer, and restores the previous
+/// context. This is what services a parked `screenshot-raw` reply when
+/// playback is paused and no layer redraw happens to drain it. Main
+/// thread only, like the rest of the shim.
+- (void)drainRenderDispatch;
 
 @end
 

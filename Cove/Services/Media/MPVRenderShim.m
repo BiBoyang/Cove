@@ -135,6 +135,15 @@ static void coveWithCurrentGLContext(void (^block)(void)) {
     }
     CGLSetCurrentContext(context);
 
+    // With ADVANCED_CONTROL mpv parks work on the render context's
+    // dispatch queue (screenshot-raw readbacks among them) and this update
+    // call is the only drain; it also requires the calling thread to hold
+    // a current GL context, which the layer's draw just established. The
+    // returned flags are ignored: what follows renders unconditionally,
+    // exactly as before — queued mpv work now simply runs at its natural
+    // point (each draw) instead of never.
+    mpv_render_context_update(_renderContext);
+
     // Clear first so undrawn edges stay black even if mpv skips a pass.
     glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT);
@@ -168,6 +177,13 @@ static void coveWithCurrentGLContext(void (^block)(void)) {
     mpv_render_context_render(_renderContext, params);
     // With advanced control on, mpv needs the swap report for frame timing.
     mpv_render_context_report_swap(_renderContext);
+}
+
+- (uint64_t)drainRenderDispatch {
+    if (!_renderContext) {
+        return 0;
+    }
+    return mpv_render_context_update(_renderContext);
 }
 
 - (void)invalidate {
@@ -215,6 +231,16 @@ static void coveWithCurrentGLContext(void (^block)(void)) {
 
 - (void)mpvNeedsDisplay {
     [self setNeedsDisplay];
+}
+
+- (void)drainRenderDispatch {
+    if (!_context || !self.renderer) {
+        return;
+    }
+    CGLContextObj previous = CGLGetCurrentContext();
+    CGLSetCurrentContext(_context);
+    [self.renderer drainRenderDispatch];
+    CGLSetCurrentContext(previous);
 }
 
 // Pin the layer's GL personality to the same attribute set the shim uses

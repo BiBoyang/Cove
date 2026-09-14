@@ -155,6 +155,72 @@ struct PlaybackProgressEntryTests {
         store.savePosition(20, forKey: "smb://nas/media|/b.mp4", duration: 200)
         #expect(store.allEntries().allSatisfy { $0.duration != nil })
     }
+
+    @Test("records written before file facts existed read with nil facts")
+    func legacyFactsTolerated() {
+        let (store, defaults) = makeStore()
+        // The pre-facts on-disk shape: no fileSize/modified fields at all.
+        defaults.set(
+            ["smb://nas/media|/old.mp4": [
+                "position": 42.0, "duration": 100.0, "lastWatched": 1_000_000.0,
+            ]],
+            forKey: "cove.playbackProgress.entries"
+        )
+
+        let entries = store.allEntries()
+        #expect(entries.count == 1)
+        #expect(entries[0].fileSize == nil)
+        #expect(entries[0].modifiedDate == nil)
+    }
+
+    @Test("file facts annotated by the session ride along on every save")
+    func factsRoundTrip() {
+        let (store, _) = makeStore()
+        let key = "smb://nas/media|/a.mp4"
+        let modified = Date(timeIntervalSince1970: 1_730_000_000)
+        store.setFileFacts(size: 1_234_567, modified: modified, forKey: key)
+
+        store.savePosition(60, forKey: key, duration: 120)
+        // A throttled later rewrite keeps the facts without re-annotating.
+        store.savePosition(90, forKey: key, duration: 120)
+
+        let entries = store.allEntries()
+        #expect(entries.count == 1)
+        #expect(entries[0].fileSize == 1_234_567)
+        #expect(entries[0].modifiedDate == modified)
+        #expect(entries[0].position == 90)
+    }
+
+    @Test("annotating an already-stored legacy record upgrades it in place")
+    func factsUpgradeInPlace() {
+        let (store, _) = makeStore()
+        let key = "vault://|/downloads/a.mp4"
+        store.savePosition(30, forKey: key, duration: 100)
+        #expect(store.allEntries()[0].fileSize == nil)
+
+        let modified = Date(timeIntervalSince1970: 1_731_000_000)
+        store.setFileFacts(size: 999, modified: modified, forKey: key)
+
+        let entries = store.allEntries()
+        #expect(entries[0].fileSize == 999)
+        #expect(entries[0].modifiedDate == modified)
+        // The rest of the record is untouched by the upgrade.
+        #expect(entries[0].position == 30)
+        #expect(entries[0].duration == 100)
+    }
+
+    @Test("an annotation for one key never leaks into another key's save")
+    func annotationIsKeyed() {
+        let (store, _) = makeStore()
+        store.setFileFacts(size: 100, modified: nil, forKey: "srcA|/a.mp4")
+
+        store.savePosition(10, forKey: "srcB|/b.mp4", duration: 60)
+        store.savePosition(10, forKey: "srcA|/a.mp4", duration: 60)
+
+        let byKey = Dictionary(uniqueKeysWithValues: store.allEntries().map { ($0.key, $0) })
+        #expect(byKey["srcA|/a.mp4"]?.fileSize == 100)
+        #expect(byKey["srcB|/b.mp4"]?.fileSize == nil)
+    }
 }
 
 @Suite("Recent watch entry parsing")
@@ -164,12 +230,16 @@ struct RecentWatchEntryParsingTests {
         _ key: String,
         position: Double = 90,
         duration: Double? = 300,
+        fileSize: Int64? = nil,
+        modified: Double? = nil,
         lastWatched: Double = 1_000_000
     ) -> PlaybackProgressEntry {
         PlaybackProgressEntry(
             key: key,
             position: position,
             duration: duration,
+            fileSize: fileSize,
+            modifiedDate: modified.map { Date(timeIntervalSince1970: $0) },
             lastWatched: Date(timeIntervalSince1970: lastWatched)
         )
     }

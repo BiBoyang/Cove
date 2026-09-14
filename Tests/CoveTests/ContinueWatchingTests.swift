@@ -6,11 +6,18 @@ import Testing
 @Suite("Continue watching state")
 @MainActor
 struct ContinueWatchingStateTests {
-    private func record(_ key: String, lastWatched: Double) -> PlaybackProgressEntry {
+    private func record(
+        _ key: String,
+        lastWatched: Double,
+        fileSize: Int64? = nil,
+        modified: Double? = nil
+    ) -> PlaybackProgressEntry {
         PlaybackProgressEntry(
             key: key,
             position: 60,
             duration: 300,
+            fileSize: fileSize,
+            modifiedDate: modified.map { Date(timeIntervalSince1970: $0) },
             lastWatched: Date(timeIntervalSince1970: lastWatched)
         )
     }
@@ -75,6 +82,28 @@ struct ContinueWatchingStateTests {
         #expect(viewModel.state.entries.first?.fileName == "34.mp4")
         #expect(viewModel.state.entries.last?.fileName == "5.mp4")
     }
+
+    @Test("file facts flow from the record into the card model, legacy stays nil")
+    func fileFactsFlowToEntries() {
+        let records = [
+            record(
+                "smb://n/s|/new.mp4", lastWatched: 2000,
+                fileSize: 123_456, modified: 1_730_000_000
+            ),
+            record("smb://n/s|/old.mp4", lastWatched: 1000),
+        ]
+        let viewModel = HomeViewModel(recentWatchRecords: { records }, serverCount: { 1 })
+        viewModel.refresh()
+
+        let entries = viewModel.state.entries
+        #expect(entries.map(\.fileName) == ["new.mp4", "old.mp4"])
+        #expect(entries[0].fileSize == 123_456)
+        #expect(entries[0].modifiedDate == Date(timeIntervalSince1970: 1_730_000_000))
+        // The pre-facts record degrades: no facts, no cover key — the card
+        // keeps the film icon.
+        #expect(entries[1].fileSize == nil)
+        #expect(entries[1].modifiedDate == nil)
+    }
 }
 
 @Suite("Continue watching deep link")
@@ -138,6 +167,8 @@ struct ContinueWatchingDeepLinkTests {
             fileName: "a.mp4",
             position: 60,
             duration: 300,
+            fileSize: nil,
+            modifiedDate: nil,
             lastWatched: Date(timeIntervalSince1970: 1_000_000)
         )
     }
@@ -232,6 +263,8 @@ struct ContinueWatchingDeepLinkTests {
             fileName: "a.mp4",
             position: 60,
             duration: 300,
+            fileSize: nil,
+            modifiedDate: nil,
             lastWatched: Date(timeIntervalSince1970: 1_000_000)
         )
         coordinator.homeViewController.onResumeWatch?(entry)

@@ -11,6 +11,25 @@ protocol PlayerPlaybackControlling: AnyObject {
     func setSpeed(_ speed: Double)
     /// Selects a subtitle track by mpv track id; nil turns subtitles off.
     func setSubtitle(trackID: Int?)
+    /// Grabs the currently displayed frame as raw BGRA (the video-cover
+    /// pipeline's write side, TASK-video-thumbnails).
+    func captureCurrentFrame() -> BGRAVideoFrame?
+}
+
+extension PlayerPlaybackControlling {
+    /// Default: no capture. Engines that cannot grab frames (the tests'
+    /// fake controller) simply never produce covers.
+    func captureCurrentFrame() -> BGRAVideoFrame? { nil }
+}
+
+/// The file-identity facts a captured cover's cache key is computed from,
+/// handed over by the coordinator at session build (TASK-video-thumbnails:
+/// the player writes under the same key contract the home cards read).
+struct ThumbnailFileFacts {
+    let sourceID: String
+    let path: String
+    let fileSize: Int64
+    let modified: Date?
 }
 
 /// UI-facing playback state for one video session. Raw mpv events
@@ -35,6 +54,12 @@ final class PlayerViewModel {
     /// not be remembered (e.g. no source id at open time).
     private let progressStore: PlaybackProgressStoring?
     private let progressKey: String?
+    /// Video-cover write side (TASK-video-thumbnails): where captured
+    /// frames go, plus the file facts the cover key is computed from.
+    /// Either nil = covers disabled (test fakes, sessions without a source
+    /// id) and captures are skipped entirely.
+    private let thumbnailWriter: VideoThumbnailWriter?
+    private let thumbnailFacts: ThumbnailFileFacts?
 
     private var hasLoaded = false
     private var hasFailed = false
@@ -94,12 +119,16 @@ final class PlayerViewModel {
         controller: PlayerPlaybackControlling,
         idleHideInterval: TimeInterval = 2.5,
         progressStore: PlaybackProgressStoring? = nil,
-        progressKey: String? = nil
+        progressKey: String? = nil,
+        thumbnailWriter: VideoThumbnailWriter? = nil,
+        thumbnailFacts: ThumbnailFileFacts? = nil
     ) {
         self.controller = controller
         self.idleHideInterval = idleHideInterval
         self.progressStore = progressStore
         self.progressKey = progressKey
+        self.thumbnailWriter = thumbnailWriter
+        self.thumbnailFacts = thumbnailFacts
     }
 
     // MARK: - Event reduction
@@ -178,20 +207,46 @@ final class PlayerViewModel {
 
     /// Persists `position` as the resume point, or drops the record when
     /// the position says the video is finished. Never writes before a real
-    /// duration is known.
-    private func persistProgress(_ position: Double) {
+    /// duration is known. A real save also captures the current frame for
+    /// the video-cover pipeline — deferred to the next main-actor turn,
+    /// because the capture polls mpv events and must never nest inside the
+    /// event drain this call may be running in.
+    private func persistProgress(_ position: Double, captureDeferred: Bool = true) {
         guard duration > 0, let progressStore, let progressKey else { return }
         lastPersistedPosition = position
         if position >= duration * 0.95 {
             progressStore.removePosition(forKey: progressKey)
         } else if position > 5 {
             progressStore.savePosition(position, forKey: progressKey, duration: duration)
+            if captureDeferred {
+                Task { [weak self] in self?.captureThumbnail() }
+            }
         }
     }
 
-    /// Final write, invoked by the window controller just before teardown.
+    /// Final write, invoked by the window controller just before teardown
+    /// (window close, track-swap install). The capture runs synchronously
+    /// here — the caller tears the render context and mpv handle down right
+    /// after this returns — which is safe because this call site is never
+    /// inside the event drain.
     func persistProgressOnClose() {
-        persistProgress(currentTime)
+        persistProgress(currentTime, captureDeferred: false)
+        captureThumbnail()
+    }
+
+    /// Grabs the current frame and hands it to the cover writer together
+    /// with the session's file facts. Every miss is silent: a nil capture
+    /// or missing writer/facts just means the card keeps its film icon.
+    private func captureThumbnail() {
+        guard let thumbnailWriter, let thumbnailFacts, hasVideoTrack else { return }
+        guard let frame = controller.captureCurrentFrame() else { return }
+        thumbnailWriter.store(
+            frame: frame,
+            sourceID: thumbnailFacts.sourceID,
+            path: thumbnailFacts.path,
+            fileSize: thumbnailFacts.fileSize,
+            modified: thumbnailFacts.modified
+        )
     }
 
     // MARK: - User intents

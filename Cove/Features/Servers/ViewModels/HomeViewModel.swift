@@ -31,6 +31,12 @@ struct RecentWatchEntry: Equatable, Sendable {
     /// Total seconds; nil on pre-duration records — the card then shows
     /// no progress bar, only the timecode (decision 1).
     let duration: Double?
+    /// File size and modification date at watch time; nil on pre-facts
+    /// records. They pin the video-thumbnail cache key — a card without
+    /// them (and without a stat backfill) keeps the film icon
+    /// (TASK-video-thumbnails decision: never generate on the read path).
+    let fileSize: Int64?
+    let modifiedDate: Date?
     let lastWatched: Date
 
     var isVault: Bool {
@@ -95,6 +101,8 @@ struct RecentWatchEntry: Equatable, Sendable {
             fileName: fileName,
             position: record.position,
             duration: record.duration,
+            fileSize: record.fileSize,
+            modifiedDate: record.modifiedDate,
             lastWatched: record.lastWatched
         )
     }

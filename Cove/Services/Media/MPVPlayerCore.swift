@@ -211,6 +211,21 @@ final class MPVPlayerCore {
         static let trackList: UInt64 = 6
     }
 
+    /// Reply-userdata space for `screenshot-raw` commands, clear of the
+    /// property-observation IDs above; bumped per capture, so two captures
+    /// issued within one main-actor turn (a persist tick racing a close)
+    /// can never consume each other's reply.
+    private static let captureReplyBase: UInt64 = 0xC0FFEE
+    /// Frames parsed out of `MPV_EVENT_COMMAND_REPLY` by the event drain,
+    /// keyed by reply userdata and picked up by their capture call.
+    private var capturedFrames: [UInt64: BGRAVideoFrame] = [:]
+    /// Next free screenshot-raw reply ID.
+    private var nextCaptureReplyID: UInt64 = MPVPlayerCore.captureReplyBase
+    /// Nested-capture guard: a capture polls the event queue, and a capture
+    /// re-entered from inside that poll's drain would call wait_event while
+    /// the outer loop still holds its (about-to-die) borrowed event.
+    private var isCapturingFrame = false
+
     /// Receives playback events on the main actor; wired to the view model
     /// by the player coordinator.
     var onEvent: ((PlayerCoreEvent) -> Void)?
@@ -341,6 +356,127 @@ final class MPVPlayerCore {
         command(["sub-add", path])
     }
 
+    /// Grabs the currently displayed frame as raw BGRA via `screenshot-raw`
+    /// (the video-cover pipeline's write side). Nil on any failure — a
+    /// missing cover degrades to the film icon, never an error surface.
+    ///
+    /// mpv services the command on the render context's dispatch queue, and
+    /// the only drain is `mpv_render_context_update()` on a thread holding
+    /// a current GL context. During playback the layer's own draws do it
+    /// (the shim's render path ends in an update), but a paused session
+    /// never redraws, so this poll drives `videoLayer.drainRenderDispatch`
+    /// itself and picks the reply up through the regular event drain.
+    ///
+    /// Synchronous and bounded to 250ms by contract: it runs on the main
+    /// actor at progress-persistence points, and the window-close point
+    /// must finish the capture before the caller tears the render context
+    /// and mpv handle down. The bound is what keeps that off the main
+    /// thread's throat — a serviced reply lands within the first iteration
+    /// (one render-context update), and the timeout degrades to nil rather
+    /// than ever wedging the run loop or abandoning the flow.
+    func captureCurrentFrame() -> BGRAVideoFrame? {
+        guard !isShutdown, !isCapturingFrame else { return nil }
+        isCapturingFrame = true
+        defer { isCapturingFrame = false }
+
+        let replyID = nextCaptureReplyID
+        nextCaptureReplyID += 1
+        guard issueCaptureCommand(replyID: replyID) >= 0 else {
+            logger.error("screenshot-raw issue failed")
+            return nil
+        }
+        let deadline = ContinuousClock.now + .milliseconds(250)
+        while ContinuousClock.now < deadline {
+            videoLayer.drainRenderDispatch()
+            drainEvents()
+            if let frame = capturedFrames.removeValue(forKey: replyID) {
+                return frame
+            }
+            Thread.sleep(forTimeInterval: 0.004)
+        }
+        capturedFrames[replyID] = nil
+        logger.notice("screenshot-raw timed out; no cover captured")
+        return nil
+    }
+
+    /// Issues `screenshot-raw video bgra` as a node command under `replyID`.
+    /// Both arguments are OPT_CHOICE properties and take the string
+    /// spellings only (integer nodes are rejected). mpv duplicates the node
+    /// tree when enqueueing, so the C memory only has to live for this call.
+    private func issueCaptureCommand(replyID: UInt64) -> Int32 {
+        guard let handle, !isShutdown else { return -1 }
+        let cStrings: [UnsafeMutablePointer<CChar>?] =
+            (["screenshot-raw", "video", "bgra"] as [String]).map { strdup($0) }
+        defer { cStrings.forEach { free($0) } }
+        var argNodes: [mpv_node] = cStrings.compactMap { pointer in
+            guard let pointer else { return nil }
+            var node = mpv_node()
+            node.format = MPV_FORMAT_STRING
+            node.u.string = pointer
+            return node
+        }
+        return argNodes.withUnsafeMutableBufferPointer { argBuffer in
+            var argList = mpv_node_list()
+            argList.num = Int32(argBuffer.count)
+            argList.values = argBuffer.baseAddress
+            argList.keys = nil
+            return withUnsafeMutablePointer(to: &argList) { argListPointer in
+                var commandNode = mpv_node()
+                commandNode.format = MPV_FORMAT_NODE_ARRAY
+                commandNode.u.list = argListPointer
+                return withUnsafeMutablePointer(to: &commandNode) { commandPointer in
+                    mpv_command_node_async(handle, replyID, commandPointer)
+                }
+            }
+        }
+    }
+
+    /// Pure seam: one `screenshot-raw` reply node (a NODE_MAP with `w` /
+    /// `h` / `stride` / `format` / `data`) → a BGRA frame with the bytes
+    /// copied out. The node memory is event-owned — dead at the next
+    /// `mpv_wait_event` — so the byte array is copied here, synchronously
+    /// at the drain site. Nil on anything that cannot describe a real BGRA
+    /// frame (wrong pixel format, degenerate sizes, a buffer shorter than
+    /// stride × height). Internal for the synthetic-node unit tests.
+    /// `nonisolated`: pure function over the node, no core state.
+    nonisolated static func bgraFrame(fromScreenshotReply node: mpv_node) -> BGRAVideoFrame? {
+        guard node.format == MPV_FORMAT_NODE_MAP,
+              let list = node.u.list,
+              list.pointee.num > 0,
+              let keys = list.pointee.keys,
+              let values = list.pointee.values else { return nil }
+        var width = 0
+        var height = 0
+        var stride = 0
+        var format: String?
+        var data: Data?
+        for index in 0..<Int(list.pointee.num) {
+            guard let key = keys[index] else { continue }
+            let value = values[index]
+            switch String(cString: key) {
+            case "w":
+                if value.format == MPV_FORMAT_INT64 { width = Int(value.u.int64) }
+            case "h":
+                if value.format == MPV_FORMAT_INT64 { height = Int(value.u.int64) }
+            case "stride":
+                if value.format == MPV_FORMAT_INT64 { stride = Int(value.u.int64) }
+            case "format":
+                format = nodeString(value)
+            case "data":
+                // The byte array dies with the event; own a copy now.
+                if value.format == MPV_FORMAT_BYTE_ARRAY, let byteArray = value.u.ba {
+                    data = Data(bytes: byteArray.pointee.data, count: byteArray.pointee.size)
+                }
+            default:
+                break
+            }
+        }
+        guard format == "bgra",
+              width > 0, height > 0, stride > 0,
+              let data, data.count >= stride * height else { return nil }
+        return BGRAVideoFrame(data: data, width: width, height: height, stride: stride)
+    }
+
     /// Observes the properties the player UI reads. Replies (including each
     /// property's initial value) arrive as MPV_EVENT_PROPERTY_CHANGE in the
     /// drain loop, distinguished by `reply_userdata`.
@@ -428,7 +564,7 @@ final class MPVPlayerCore {
         return MPVTrackEntry(id: id, type: type, title: title, lang: lang, codec: codec, isSelected: isSelected, isExternal: isExternal)
     }
 
-    private static func nodeString(_ node: mpv_node) -> String? {
+    private nonisolated static func nodeString(_ node: mpv_node) -> String? {
         guard node.format == MPV_FORMAT_STRING, let cString = node.u.string else { return nil }
         return String(cString: cString)
     }
@@ -599,6 +735,22 @@ final class MPVPlayerCore {
                         data.assumingMemoryBound(to: mpv_event_property.self).pointee,
                         replyUserdata: event.pointee.reply_userdata
                     )
+                }
+            case MPV_EVENT_COMMAND_REPLY:
+                // `screenshot-raw` replies (captureCurrentFrame). The result
+                // node's memory dies at the next wait_event, so the parse —
+                // which copies the byte array out — happens right here.
+                let replyID = event.pointee.reply_userdata
+                guard replyID >= Self.captureReplyBase else { break }
+                if let data = event.pointee.data,
+                   let frame = Self.bgraFrame(
+                       fromScreenshotReply: data
+                           .assumingMemoryBound(to: mpv_event_command.self)
+                           .pointee.result
+                   ) {
+                    capturedFrames[replyID] = frame
+                } else {
+                    logger.error("screenshot-raw reply unusable")
                 }
             case MPV_EVENT_END_FILE:
                 if let data = event.pointee.data {

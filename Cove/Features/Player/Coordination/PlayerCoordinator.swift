@@ -18,6 +18,9 @@ final class PlayerCoordinator {
     private static let upNextDuration = 5
 
     private let progressStore: PlaybackProgressStoring?
+    /// Video-cover write side (TASK-video-thumbnails): sessions built by
+    /// this coordinator hand captured frames here. Nil = covers disabled.
+    private let thumbnailWriter: VideoThumbnailWriter?
     private var windowController: PlayerWindowController?
     private var playlist = PlayerPlaylist(items: [], selectedPath: "")
     private var sourceID: String?
@@ -47,8 +50,9 @@ final class PlayerCoordinator {
     var onError: ((_ error: Error, _ title: String) -> Void)?
     var onMessageError: ((_ message: String, _ title: String) -> Void)?
 
-    init(progressStore: PlaybackProgressStoring? = nil) {
+    init(progressStore: PlaybackProgressStoring? = nil, thumbnailWriter: VideoThumbnailWriter? = nil) {
         self.progressStore = progressStore
+        self.thumbnailWriter = thumbnailWriter
     }
 
     /// One session's external-subtitle staging: the temp directory handed
@@ -267,7 +271,32 @@ final class PlayerCoordinator {
             // Resume positions are remembered per source, so same-named
             // files on different servers never collide.
             let progressKey = sourceID.map { "\($0)|\(item.path)" }
-            let viewModel = PlayerViewModel(controller: core, progressStore: progressStore, progressKey: progressKey)
+            // Hand the opened file's identity facts to the concrete store
+            // (nil for injected test fakes): the next save under the key
+            // persists them alongside the position, where the home page's
+            // cover lookup reads them back. The view model's persistence
+            // protocol deliberately stays three methods, so the facts ride
+            // this annotation seam instead.
+            if let progressKey {
+                (progressStore as? PlaybackProgressStore)?.setFileFacts(
+                    size: item.size, modified: item.modifiedDate, forKey: progressKey
+                )
+            }
+            // The cover write side rides the same identity facts (the
+            // opened item's size/mtime plus this session's source id);
+            // writer nil (tests) = captures skipped entirely.
+            let thumbnailFacts = sourceID.map {
+                ThumbnailFileFacts(
+                    sourceID: $0, path: item.path, fileSize: item.size, modified: item.modifiedDate
+                )
+            }
+            let viewModel = PlayerViewModel(
+                controller: core,
+                progressStore: progressStore,
+                progressKey: progressKey,
+                thumbnailWriter: thumbnailWriter,
+                thumbnailFacts: thumbnailFacts
+            )
             if playbackSpeed != 1 {
                 // Keep the chosen rate across track changes; setting speed
                 // on the idle handle applies to the upcoming file.

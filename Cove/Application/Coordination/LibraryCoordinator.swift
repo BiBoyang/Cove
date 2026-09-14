@@ -88,7 +88,10 @@ final class LibraryCoordinator {
         self.shareOpenStore = shareOpenStore
         self.pinStore = pinStore
         self.progressStore = progressStore
-        playerCoordinator = PlayerCoordinator(progressStore: progressStore)
+        playerCoordinator = PlayerCoordinator(
+            progressStore: progressStore,
+            thumbnailWriter: VideoThumbnailWriter(cache: cache)
+        )
         pdfReaderCoordinator = PdfReaderCoordinator(cache: cache)
         shareGridViewModel = ShareGridViewModel(
             lastOpened: { [shareOpenStore] serverID, share in
@@ -106,6 +109,14 @@ final class LibraryCoordinator {
         serverListViewController = ServerListViewController(viewModel: serverListViewModel)
         shareGridViewController = ShareGridViewController(viewModel: shareGridViewModel)
         homeViewController = HomeViewController(viewModel: homeViewModel)
+        homeViewController.thumbnailProvider = RecentWatchThumbnailReader(
+            cache: cache,
+            stat: { [sessionService, vaultService] entry in
+                await Self.statFileFacts(
+                    of: entry, sessionService: sessionService, vaultService: vaultService
+                )
+            }
+        )
         browserViewController = BrowserViewController(viewModel: browserViewModel)
         settingsPaneViewController = SettingsPaneViewController(viewModel: preferencesViewModel)
         wireCallbacks()
@@ -865,6 +876,29 @@ final class LibraryCoordinator {
                     informative: "文件可能已移动或删除，已从最近播放中移除。"
                 )
             }
+        }
+    }
+
+    /// Supplies file facts for legacy watch records — written before the
+    /// store kept them — so the home cards can compute a cover key.
+    /// Read-only, bounded by the grid, and it never opens a connection:
+    /// vault entries stat the local disk; SMB entries reuse the live
+    /// session only when it already points at the record's share (the
+    /// directory listing is the reachable stat seam). Anything else keeps
+    /// the film icon.
+    private static func statFileFacts(
+        of entry: RecentWatchEntry,
+        sessionService: SMBSessionService,
+        vaultService: VaultService
+    ) async -> ContentItem? {
+        switch entry.source {
+        case .vault:
+            return try? await LocalFileSource(root: vaultService.rootURL).metadata(at: entry.path)
+        case .smb:
+            guard sessionService.currentSourceID == entry.sourceID else { return nil }
+            let list = sessionService.makeLister()
+            guard let listing = try? await list(entry.directoryPath) else { return nil }
+            return listing.first { $0.path == entry.path }
         }
     }
 

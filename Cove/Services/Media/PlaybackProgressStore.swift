@@ -24,6 +24,13 @@ struct PlaybackProgressEntry: Equatable, Sendable {
     /// Total seconds; nil on records written before the store kept
     /// durations, so old entries degrade gracefully (decision 1).
     let duration: Double?
+    /// File size in bytes and the source's modification date at watch time;
+    /// nil on records written before the store kept them (TASK-video-
+    /// thumbnails). They pin the video-thumbnail cache key, so a missing
+    /// pair degrades the home card to the film icon instead of a stale
+    /// cover.
+    let fileSize: Int64?
+    let modifiedDate: Date?
     let lastWatched: Date
 }
 
@@ -48,12 +55,20 @@ final class PlaybackProgressStore: PlaybackProgressStoring {
         static let position = "position"
         static let duration = "duration"
         static let lastWatched = "lastWatched"
+        static let fileSize = "fileSize"
+        static let modified = "modified"
     }
 
     private let defaults: UserDefaults
     private let capacity: Int
     /// Clock injection so eviction tests can order entries deterministically.
     private let now: () -> Date
+    /// File facts for the key the live player session has open, supplied by
+    /// the player coordinator when it builds a session (it owns the
+    /// `ContentItem`; the view model's persistence protocol stays three
+    /// methods). Merged into the record by `savePosition`; keyed so a stale
+    /// annotation from a dead session can never relabel another key's save.
+    private var annotatedFacts: [String: (size: Int64, modified: Date?)] = [:]
 
     init(
         defaults: UserDefaults = .standard,
@@ -65,17 +80,46 @@ final class PlaybackProgressStore: PlaybackProgressStoring {
         self.now = now
     }
 
+    /// Records the file facts of the video the player is about to open.
+    /// Purely an in-memory annotation: the next `savePosition` under this
+    /// key persists them (and an already-stored record is upgraded in
+    /// place, so a resumed legacy record gains the fields during the very
+    /// session that opened it).
+    func setFileFacts(size: Int64, modified: Date?, forKey key: String) {
+        annotatedFacts[key] = (size, modified)
+        var entries = entries()
+        guard entries[key]?[Field.position] != nil else { return }
+        entries[key]?[Field.fileSize] = Double(size)
+        if let modified {
+            entries[key]?[Field.modified] = modified.timeIntervalSince1970
+        }
+        defaults.set(entries, forKey: Keys.entries)
+    }
+
     func position(forKey key: String) -> Double? {
         entries()[key]?[Field.position]
     }
 
     func savePosition(_ position: Double, forKey key: String, duration: Double) {
         var entries = entries()
-        entries[key] = [
+        var fields: [String: Double] = [
             Field.position: position,
             Field.duration: duration,
             Field.lastWatched: now().timeIntervalSince1970,
         ]
+        if let facts = annotatedFacts[key] {
+            fields[Field.fileSize] = Double(facts.size)
+            if let modified = facts.modified {
+                fields[Field.modified] = modified.timeIntervalSince1970
+            }
+        } else if let existing = entries[key] {
+            // Keep facts across throttled rewrites of the same record when
+            // no live session re-annotated them (defensive; the coordinator
+            // annotates every open).
+            if let size = existing[Field.fileSize] { fields[Field.fileSize] = size }
+            if let modified = existing[Field.modified] { fields[Field.modified] = modified }
+        }
+        entries[key] = fields
         while entries.count > capacity {
             guard let oldest = entries.min(by: { ($0.value[Field.lastWatched] ?? 0) < ($1.value[Field.lastWatched] ?? 0) })?.key else {
                 break
@@ -92,9 +136,9 @@ final class PlaybackProgressStore: PlaybackProgressStoring {
     }
 
     /// Every stored record, for the recent-watches list. Tolerates the
-    /// pre-duration format (duration reads as nil — decision 1) and skips
-    /// entries with no position field, so one malformed entry can never
-    /// hide the rest of the history.
+    /// pre-duration and pre-facts formats (nil fields — decision 1,
+    /// TASK-video-thumbnails) and skips entries with no position field, so
+    /// one malformed entry can never hide the rest of the history.
     func allEntries() -> [PlaybackProgressEntry] {
         entries().compactMap { key, fields in
             guard let position = fields[Field.position] else { return nil }
@@ -102,6 +146,8 @@ final class PlaybackProgressStore: PlaybackProgressStoring {
                 key: key,
                 position: position,
                 duration: fields[Field.duration],
+                fileSize: fields[Field.fileSize].map(Int64.init),
+                modifiedDate: fields[Field.modified].map(Date.init(timeIntervalSince1970:)),
                 lastWatched: Date(timeIntervalSince1970: fields[Field.lastWatched] ?? 0)
             )
         }

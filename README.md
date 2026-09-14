@@ -68,8 +68,10 @@ chrome, dark player) regardless of the system appearance.
   surface while seek, volume, speed, play modes and resume-position all
   work as with video; audio files queue their audio siblings only.
 - **Home page (首页, recent watches)**: Cove launches onto a home page that
-  grids the videos you've watched most recently (up to 30) — file name, a
-  mini progress bar, and a 已看至 h:mm:ss · N天前 line per card.
+  grids the videos you've watched most recently (up to 30) — each card shows
+  the frame you last saw as its cover (captured during playback; videos
+  never played keep the film badge), the file name, a mini progress bar,
+  and a 已看至 h:mm:ss · N天前 line.
   Double-click a card to resume: the app reconnects the recorded server,
   re-enters its share and folder, and the player picks up at the saved
   position; SMB and vault entries work alike. Tapping a card whose file or

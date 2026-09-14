@@ -1,3 +1,4 @@
+import CacheKit
 import Foundation
 import Testing
 @testable import Cove
@@ -17,6 +18,10 @@ struct PlayerViewModelTests {
         }
 
         private(set) var commands: [Command] = []
+        /// Frame the next `captureCurrentFrame()` returns; nil = the engine
+        /// failed to grab one.
+        var frameToCapture: BGRAVideoFrame?
+        private(set) var captureCount = 0
 
         func togglePause() { commands.append(.togglePause) }
         func seek(bySeconds seconds: Int) { commands.append(.seekBy(seconds)) }
@@ -24,6 +29,10 @@ struct PlayerViewModelTests {
         func setVolume(_ volume: Double) { commands.append(.setVolume(volume)) }
         func setSpeed(_ speed: Double) { commands.append(.setSpeed(speed)) }
         func setSubtitle(trackID: Int?) { commands.append(.setSubtitle(trackID)) }
+        func captureCurrentFrame() -> BGRAVideoFrame? {
+            captureCount += 1
+            return frameToCapture
+        }
     }
 
     private func makeViewModel(
@@ -470,5 +479,129 @@ struct PlayerViewModelTests {
         // Playback resumes from the drop point; normal ticks persist again.
         viewModel.apply(.timePosChanged(85))
         #expect(store.saves == [85])
+    }
+
+    // MARK: Video-cover capture (TASK-video-thumbnails)
+
+    /// 2×2 opaque BGRA frame; content is irrelevant, dimensions honest.
+    private func captureFrame() -> BGRAVideoFrame {
+        BGRAVideoFrame(
+            data: Data(repeating: 200, count: 16), width: 2, height: 2, stride: 8
+        )
+    }
+
+    private func makeCaptureViewModel(
+        _ controller: FakeController,
+        cache: CacheStore,
+        modified: Date,
+        hasWriter: Bool = true
+    ) -> PlayerViewModel {
+        PlayerViewModel(
+            controller: controller,
+            progressStore: FakeProgressStore(),
+            progressKey: "src|/a.mp4",
+            thumbnailWriter: hasWriter ? VideoThumbnailWriter(cache: cache) : nil,
+            thumbnailFacts: hasWriter
+                ? ThumbnailFileFacts(sourceID: "src", path: "/a.mp4", fileSize: 4096, modified: modified)
+                : nil
+        )
+    }
+
+    /// Waits until the (detached) writer's encode landed in the display pool.
+    private func waitForPool(_ cache: CacheStore, key: CacheKey) async throws {
+        let deadline = ContinuousClock.now + .seconds(10)
+        while !cache.contains(forKey: key, pool: .display) {
+            if ContinuousClock.now > deadline {
+                Issue.record("cover never reached the display pool")
+                return
+            }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+    }
+
+    @Test("closing persists and captures the cover in the same turn")
+    func closeCapturesCover() async throws {
+        let controller = FakeController()
+        controller.frameToCapture = captureFrame()
+        let cache = makeTestCache()
+        let modified = Date(timeIntervalSince1970: 1_730_000_000)
+        let viewModel = makeCaptureViewModel(controller, cache: cache, modified: modified)
+        viewModel.apply(.fileLoaded)
+        viewModel.apply(.durationChanged(120))
+        viewModel.apply(.timePosChanged(30))
+
+        viewModel.persistProgressOnClose()
+
+        // Synchronous by contract: the capture is recorded before this
+        // returns, because the window controller tears the session down
+        // right after.
+        #expect(controller.captureCount == 1)
+
+        let key = try #require(VideoThumbnailStore.cacheKey(
+            sourceID: "src", path: "/a.mp4", fileSize: 4096, modified: modified
+        ))
+        try await waitForPool(cache, key: key)
+    }
+
+    @Test("a throttled persist tick defers the capture out of the event drain")
+    func tickCapturesCover() async throws {
+        let controller = FakeController()
+        controller.frameToCapture = captureFrame()
+        let cache = makeTestCache()
+        let modified = Date(timeIntervalSince1970: 1_730_000_000)
+        let viewModel = makeCaptureViewModel(controller, cache: cache, modified: modified)
+        viewModel.apply(.fileLoaded)
+        viewModel.apply(.durationChanged(120))
+
+        viewModel.apply(.timePosChanged(10))
+        // Not synchronously: the capture must never nest inside the event
+        // drain this apply may be running in.
+        #expect(controller.captureCount == 0)
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(controller.captureCount == 1)
+
+        let key = try #require(VideoThumbnailStore.cacheKey(
+            sourceID: "src", path: "/a.mp4", fileSize: 4096, modified: modified
+        ))
+        try await waitForPool(cache, key: key)
+    }
+
+    @Test("a failed capture degrades to no cover")
+    func failedCaptureStoresNothing() async throws {
+        let controller = FakeController()  // frameToCapture = nil
+        let cache = makeTestCache()
+        let modified = Date(timeIntervalSince1970: 1_730_000_000)
+        let viewModel = makeCaptureViewModel(controller, cache: cache, modified: modified)
+        viewModel.apply(.fileLoaded)
+        viewModel.apply(.durationChanged(120))
+        viewModel.apply(.timePosChanged(30))
+
+        viewModel.persistProgressOnClose()
+        #expect(controller.captureCount == 1)
+        try await Task.sleep(for: .milliseconds(100))
+
+        let key = try #require(VideoThumbnailStore.cacheKey(
+            sourceID: "src", path: "/a.mp4", fileSize: 4096, modified: modified
+        ))
+        #expect(!cache.contains(forKey: key, pool: .display))
+    }
+
+    @Test("sessions without a writer or video track never capture")
+    func captureSkippedWithoutWriterOrVideo() {
+        let writerless = FakeController()
+        let cache = makeTestCache()
+        makeCaptureViewModel(writerless, cache: cache, modified: Date(), hasWriter: false)
+            .persistProgressOnClose()
+        #expect(writerless.captureCount == 0)
+
+        let audio = FakeController()
+        audio.frameToCapture = captureFrame()
+        let audioViewModel = makeCaptureViewModel(audio, cache: cache, modified: Date())
+        audioViewModel.apply(.fileLoaded)
+        audioViewModel.apply(.durationChanged(120))
+        audioViewModel.apply(.videoTrackPresenceChanged(false))
+        audioViewModel.apply(.timePosChanged(30))
+        audioViewModel.persistProgressOnClose()
+        #expect(audio.captureCount == 0)
     }
 }

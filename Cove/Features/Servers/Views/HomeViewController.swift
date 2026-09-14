@@ -10,11 +10,14 @@ import SourceKit
 final class HomeViewController: NSViewController {
     private let viewModel: HomeViewModel
 
-    /// Continue-watching card double-clicks, forwarded to the
-    /// coordinator's resume deep link (decision 4).
+    /// Continue-watching card double-clicks, forwarded to the coordinator's
+    /// resume deep link (decision 4).
     var onResumeWatch: ((RecentWatchEntry) -> Void)?
     /// First-run empty-state action (add server), mapped from the state.
     var onAddServer: (() -> Void)?
+    /// Read-only cover lookup for the cards (display pool only; a miss
+    /// keeps the film icon — never generates). Injected by the coordinator.
+    var thumbnailProvider: (any RecentWatchThumbnailProviding)?
 
     private let scrollView = NSScrollView()
     private let collectionView = NSCollectionView()
@@ -150,12 +153,13 @@ extension HomeViewController: NSCollectionViewDataSource {
         )
         let entries = viewModel.state.entries
         guard let card = item as? RecentWatchCardItem, indexPath.item < entries.count else { return item }
-        card.configure(with: entries[indexPath.item])
+        card.configure(with: entries[indexPath.item], thumbnailProvider: thumbnailProvider)
         return card
     }
 }
 
-/// One card of the home grid: film badge, two-line truncating file name,
+/// One card of the home grid: cover well (film symbol, or the player's
+/// captured cover fading in over it), two-line truncating file name,
 /// mini progress bar (only with a known duration), and the
 /// "已看至 h:mm:ss · N天前" line. Same rounded-fill/border/hover recipe as
 /// the share cards (Amendment 2 decision 1); a double click resumes
@@ -164,11 +168,21 @@ extension HomeViewController: NSCollectionViewDataSource {
 final class RecentWatchCardItem: NSCollectionViewItem {
     static let identifier = NSUserInterfaceItemIdentifier("RecentWatchCardItem")
 
+    /// Cover well side: matches the browser row's badge tile so both
+    /// thumbnail surfaces speak the same size language.
+    private static let coverSide: CGFloat = 40
+
     private let cardView = RoundedFillView()
     private let iconView = NSImageView()
     private let nameLabel = NSTextField(wrappingLabelWithString: "")
     private let progressBar = NSProgressIndicator()
     private let subtitleLabel = NSTextField(labelWithString: "")
+    /// In-flight cover request for the currently shown entry; cancelled on
+    /// reuse (cell-reuse-driven loads are View lifecycle work, rule 12).
+    private var coverTask: Task<Void, Never>?
+    /// Store key of the entry the cover task was issued for, so a late
+    /// result never lands on a reused card.
+    private var coverKey: String?
     private var trackingAreaRef: NSTrackingArea?
     private var isHovering = false {
         didSet {
@@ -190,12 +204,13 @@ final class RecentWatchCardItem: NSCollectionViewItem {
         // background (tokens §6.4); kept on hover/selection.
         cardView.borderColor = CoveStyle.cardBorderColor
 
-        let filmIcon = NSImage(systemSymbolName: "film", accessibilityDescription: nil)?
-            .withSymbolConfiguration(
-                NSImage.SymbolConfiguration(pointSize: CoveStyle.symbolLarge, weight: .regular)
-            )
-        iconView.image = filmIcon
-        iconView.contentTintColor = CoveStyle.badgeTintVideo
+        // The same well carries the film symbol fallback and, when the
+        // display pool has a captured cover, the thumbnail (clipped to the
+        // same rounded corners as the browser badge).
+        iconView.wantsLayer = true
+        iconView.layer?.cornerRadius = CoveStyle.radiusSmall
+        iconView.layer?.masksToBounds = true
+        showFilmIcon()
 
         nameLabel.alignment = .center
         nameLabel.font = CoveStyle.bodyFont
@@ -227,6 +242,9 @@ final class RecentWatchCardItem: NSCollectionViewItem {
         contentStack.snp.makeConstraints { make in
             make.center.equalToSuperview()
         }
+        iconView.snp.makeConstraints { make in
+            make.width.height.equalTo(Self.coverSide)
+        }
         nameLabel.snp.makeConstraints { make in
             make.width.equalTo(cardView).offset(-CoveStyle.space16)
         }
@@ -239,6 +257,14 @@ final class RecentWatchCardItem: NSCollectionViewItem {
 
         view = cardView
         updateHighlight(animated: false)
+    }
+
+    override func prepareForReuse() {
+        super.prepareForReuse()
+        coverTask?.cancel()
+        coverTask = nil
+        coverKey = nil
+        showFilmIcon()
     }
 
     override func viewDidLoad() {
@@ -255,7 +281,14 @@ final class RecentWatchCardItem: NSCollectionViewItem {
     override func mouseEntered(with event: NSEvent) { isHovering = true }
     override func mouseExited(with event: NSEvent) { isHovering = false }
 
-    func configure(with entry: RecentWatchEntry) {
+    func configure(
+        with entry: RecentWatchEntry,
+        thumbnailProvider: (any RecentWatchThumbnailProviding)?
+    ) {
+        coverTask?.cancel()
+        coverTask = nil
+        coverKey = entry.key
+        showFilmIcon()
         nameLabel.stringValue = entry.fileName
         if let fraction = entry.progressFraction {
             progressBar.isHidden = false
@@ -265,6 +298,42 @@ final class RecentWatchCardItem: NSCollectionViewItem {
             progressBar.isHidden = true
         }
         subtitleLabel.stringValue = entry.subtitleText(relativeTo: Date())
+
+        // Covers come from the display pool only: a hit fades in over the
+        // symbol, a miss (never watched through the player, unknown file
+        // facts) keeps the film icon — the view never generates work.
+        guard let thumbnailProvider else { return }
+        let key = entry.key
+        coverTask = Task { [weak self] in
+            let cover = await thumbnailProvider.thumbnail(for: entry)
+            guard let self, !Task.isCancelled, self.coverKey == key, let cover else { return }
+            self.showCover(cover)
+        }
+    }
+
+    /// Restores the tinted film symbol at its natural point size.
+    private func showFilmIcon() {
+        iconView.imageScaling = .scaleNone
+        iconView.image = NSImage(systemSymbolName: "film", accessibilityDescription: nil)?
+            .withSymbolConfiguration(
+                NSImage.SymbolConfiguration(pointSize: CoveStyle.symbolLarge, weight: .regular)
+            )
+        iconView.contentTintColor = CoveStyle.badgeTintVideo
+        iconView.alphaValue = 1
+    }
+
+    /// Fades the captured cover in over the symbol (same recipe as the
+    /// browser rows' thumbnails).
+    private func showCover(_ image: CGImage) {
+        iconView.contentTintColor = nil
+        iconView.imageScaling = .scaleProportionallyUpOrDown
+        iconView.image = NSImage(cgImage: image, size: .zero)
+        iconView.alphaValue = 0
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = CoveStyle.motionFast
+            context.timingFunction = CoveStyle.motionTimingFunction
+            iconView.animator().alphaValue = 1
+        }
     }
 
     // `RoundedFillView` re-resolves the fill on appearance changes, so the
