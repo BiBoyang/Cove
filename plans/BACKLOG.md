@@ -16,6 +16,8 @@
   命令行注入（secrets 齐备、v0.6/0.7 发布实战全绿），bundle id
   com.biboyang.cove 定型保留，零代码改动。1.0 三批全齐，发布待发令
 - [ ] 候选（可放 1.x）：图片网格墙
+- [ ] 候选：控制条可见时遮挡底部字幕——字幕随控制条显隐抬升/回落
+  （IINA 惯例，mpv sub-margin-y），2026-09-14 真机复测时亲历
 
 ## 上架前必须
 
@@ -25,10 +27,6 @@
 
 ## 远期（North Star：Mac 上的一流 NAS 媒体中心）
 
-- [ ] 外挂字幕非 UTF-8 编码（GBK/BIG5）渲染为空（2026-09-12 验收观察项）：2026-09-14
-  诊断 spike 在当前森林上**不可复现**（uchardet/iconv 链全程实证正常，见
-  plans/TASK-subtitle-charset.md）——下一步 = 真机复测原始失败文件；通过则按环境
-  漂移闭卡，复现则取原始文件做字节级分析再定修复
 - [ ] iPad 端扩展（优先 iPad）：UIKit 手写（全平台禁用 SwiftUI，沿用 SnapKit
   DSL 与 MVVM/Coordinator 范式），Frameworks/Services/ViewModel 整体复用（前提见
   AGENTS.md 规矩 16），视频播放最后攻（待 libmpv 供应链收敛）。跨端 UI 一致性靠
@@ -42,6 +40,9 @@
 
 ## 已归档（近期完成）
 
+- 外挂字幕 GBK/BIG5 渲染为空观察项：2026-09-14 闭卡——当前工件三重排除
+  （spike 解码链 12 组实验 / 原文件字节级验尸 / 真机渲染复测），按环境漂移
+  归档（见 plans/archive/TASK-subtitle-charset.md）
 - A1 单页阅读器 + 模块化架构（v0.2.0）
 - A2 文件夹点击预热 + 递归预热（v0.3.0）
 - 相邻页预取（目录模式）、CBZ 页预解码
