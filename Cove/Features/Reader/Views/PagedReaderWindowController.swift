@@ -23,7 +23,11 @@ final class PagedReaderWindowController: NSWindowController {
 
     private let rootView = PagedReaderRootView()
     private let imageView = NonInteractiveImageView()
-    private let statusLabel = NSTextField(labelWithString: "")
+    /// Central state overlay (loading spinner / failure placeholder),
+    /// Player `renderStateOverlay` precedent: above the page surface,
+    /// below every chrome piece, paged mode only.
+    private var stateOverlay: StatePlaceholderView?
+    private var renderedStateOverlayID = ""
     private let previousButton = FrostedCircleButton(
         symbolName: "chevron.left", pointSize: CoveStyle.symbolMedium, accessibilityDescription: "上一张"
     )
@@ -38,6 +42,13 @@ final class PagedReaderWindowController: NSWindowController {
     /// chrome language across both reader modes.
     private let pageChromePill = NSView()
     private let progressLabel = NSTextField(labelWithString: "")
+    /// Page-turn loading spinner inside the chrome pill: page turns keep
+    /// the previous image on screen while the next one downloads, so a
+    /// still spinner would read as "stuck on the wrong page". Shown only
+    /// while a load is in flight with an old page still visible (first
+    /// load and failure have the centered overlay instead). No text —
+    /// the pill is chrome, not a status bar.
+    private let loadingIndicator = NSProgressIndicator()
     /// Auto-advance (自动翻页) play/pause inside the chrome pill; a bare
     /// white symbol that reads as part of the pill (same treatment as the
     /// strip's auto-scroll button). Shows the pause symbol while the
@@ -147,11 +158,6 @@ final class PagedReaderWindowController: NSWindowController {
         // monitors (`NSImage(cgImage:size:.zero)` claims pixel dims as
         // points). Zoom just scales that fitted rect by the tier.
 
-        statusLabel.alignment = .center
-        statusLabel.font = CoveStyle.bodyFont
-        statusLabel.textColor = .secondaryLabelColor
-        statusLabel.isHidden = true
-
         previousButton.target = self
         previousButton.action = #selector(handlePrevious(_:))
         nextButton.target = self
@@ -171,6 +177,10 @@ final class PagedReaderWindowController: NSWindowController {
         progressLabel.font = CoveStyle.monoDigitFont
         progressLabel.textColor = CoveStyle.textOnMedia1
 
+        loadingIndicator.style = .spinning
+        loadingIndicator.controlSize = .small
+        loadingIndicator.isHidden = true
+
         // The chrome pill: same board recipe as the strip's scrubber pill
         // (opaque surfaceOverlay, radius large).
         pageChromePill.wantsLayer = true
@@ -186,10 +196,10 @@ final class PagedReaderWindowController: NSWindowController {
         zoomFlashLabel.shadow = CoveStyle.shadowTextOnMedia
 
         rootView.addSubview(imageView)
-        rootView.addSubview(statusLabel)
         rootView.addSubview(previousButton)
         rootView.addSubview(nextButton)
         rootView.addSubview(modeButton)
+        pageChromePill.addSubview(loadingIndicator)
         pageChromePill.addSubview(progressLabel)
         pageChromePill.addSubview(autoAdvanceButton)
         rootView.addSubview(pageChromePill)
@@ -199,9 +209,6 @@ final class PagedReaderWindowController: NSWindowController {
         // a frame on every layout pass (see `rootView.onLayout`), so resize
         // and full-screen transitions re-fit the page in code instead of via
         // the Auto Layout solver. Everything else stays constraint-based.
-        statusLabel.snp.makeConstraints { make in
-            make.center.equalToSuperview()
-        }
         previousButton.snp.makeConstraints { make in
             make.leading.equalToSuperview().offset(CoveStyle.space16)
             make.centerY.equalToSuperview()
@@ -222,8 +229,12 @@ final class PagedReaderWindowController: NSWindowController {
             make.bottom.equalToSuperview().offset(-CoveStyle.space16)
             make.height.equalTo(CoveStyle.pillReaderChrome)
         }
-        progressLabel.snp.makeConstraints { make in
+        loadingIndicator.snp.makeConstraints { make in
             make.leading.equalToSuperview().offset(CoveStyle.space12)
+            make.centerY.equalToSuperview()
+        }
+        progressLabel.snp.makeConstraints { make in
+            make.leading.equalTo(loadingIndicator.snp.trailing).offset(CoveStyle.space6)
             make.centerY.equalToSuperview()
         }
         autoAdvanceButton.snp.makeConstraints { make in
@@ -269,6 +280,15 @@ final class PagedReaderWindowController: NSWindowController {
 
     private func render(_ state: ReaderViewModel.State) {
         progressLabel.stringValue = state.progressText
+        // Spin only while a page turn is loading over a still-visible old
+        // page; the centered overlay owns first load and failure feedback.
+        let showLoading = state.isLoading && state.image != nil
+        loadingIndicator.isHidden = !showLoading
+        if showLoading {
+            loadingIndicator.startAnimation(nil)
+        } else {
+            loadingIndicator.stopAnimation(nil)
+        }
         setAutoAdvanceSymbol(running: state.isAutoAdvancing)
         previousButton.isEnabled = state.canGoPrevious
         nextButton.isEnabled = state.canGoNext
@@ -287,8 +307,60 @@ final class PagedReaderWindowController: NSWindowController {
         } else {
             applyZoomedFrameFromLayoutPass()
         }
-        statusLabel.stringValue = state.errorMessage ?? ""
-        statusLabel.isHidden = state.errorMessage == nil
+        renderStateOverlay(state)
+    }
+
+    /// Swaps the central state presentation for the paged surface: a
+    /// spinner while the first load has no page to show, a failure
+    /// placeholder with a retry action on error, nothing once a page is
+    /// visible (page turns keep the old image, so a spinner then would
+    /// cover a perfectly readable page). Paged mode only — in strip mode
+    /// the strip reports its own per-slot states (Player overlay
+    /// precedent, including chrome staying usable above it).
+    private func renderStateOverlay(_ state: ReaderViewModel.State) {
+        let presentation: (
+            style: StatePlaceholderView.Style, title: String, message: String, action: String?
+        )?
+        if mode == .paged {
+            if let errorMessage = state.errorMessage {
+                presentation = (
+                    .symbol("exclamationmark.triangle"),
+                    errorMessage,
+                    "无法加载这一页",
+                    "重试"
+                )
+            } else if state.image == nil {
+                presentation = (.loading, "加载中", state.pageTitle, nil)
+            } else {
+                presentation = nil
+            }
+        } else {
+            presentation = nil
+        }
+        let id = presentation.map { "\($0.title)|\($0.message)|\($0.action ?? "-")" } ?? ""
+        guard id != renderedStateOverlayID else { return }
+        renderedStateOverlayID = id
+        stateOverlay?.removeFromSuperview()
+        stateOverlay = nil
+        guard let presentation else { return }
+        let overlay = StatePlaceholderView(
+            style: presentation.style,
+            title: presentation.title,
+            message: presentation.message,
+            actionTitle: presentation.action
+        )
+        if presentation.action != nil {
+            overlay.onAction = { [weak self] in self?.viewModel.retry() }
+        }
+        // Directly above the page surface: every chrome piece (nav
+        // buttons, pill, resume hint) was added after the image view, so
+        // this keeps all of it usable — a dead page can still be paged
+        // away from (Player precedent).
+        rootView.addSubview(overlay, positioned: .above, relativeTo: imageView)
+        overlay.snp.makeConstraints { make in
+            make.edges.equalToSuperview()
+        }
+        stateOverlay = overlay
     }
 
     @objc private func handlePrevious(_ sender: NSButton) {
@@ -458,6 +530,7 @@ final class PagedReaderWindowController: NSWindowController {
         zoomTier = 1
         zoomPanOffset = .zero
         setPagedChromeVisible(false)
+        renderStateOverlay(viewModel.state)
         modeButton.setSymbol("rectangle.portrait", accessibilityDescription: "切换到单页模式")
         window?.makeFirstResponder(rootView)
     }
@@ -471,6 +544,7 @@ final class PagedReaderWindowController: NSWindowController {
         zoomTier = 1
         zoomPanOffset = .zero
         setPagedChromeVisible(true)
+        renderStateOverlay(viewModel.state)
         modeButton.setSymbol("scroll", accessibilityDescription: "切换到条带模式")
         // Idempotent: starts the paged session on the first switch-back of
         // a strip-default (comic) session.
@@ -486,7 +560,6 @@ final class PagedReaderWindowController: NSWindowController {
 
     private func setPagedChromeVisible(_ visible: Bool) {
         imageView.isHidden = !visible
-        statusLabel.isHidden = !visible || viewModel.state.errorMessage == nil
         previousButton.isHidden = !visible
         nextButton.isHidden = !visible
         pageChromePill.isHidden = !visible

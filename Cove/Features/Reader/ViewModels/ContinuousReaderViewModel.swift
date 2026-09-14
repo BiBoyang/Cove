@@ -74,6 +74,11 @@ final class ContinuousReaderViewModel {
     /// A slot's decoded image; the view re-validates the pinned index.
     var onSlotImage: ((Int, CGImage) -> Void)?
 
+    /// A slot's load failure, published under the same generation/slot
+    /// hard rule as `onSlotImage`. The view shows the failure face until
+    /// the slot is destroyed — scrolling out and back retries the load.
+    var onSlotFailure: ((Int) -> Void)?
+
     /// Document height changed; the view re-lays out resident slots and
     /// applies the given anchor-preserving content offset.
     var onRelayout: ((CGFloat) -> Void)?
@@ -119,6 +124,7 @@ final class ContinuousReaderViewModel {
         onWarmWindow = nil
         onSlotsChanged = nil
         onSlotImage = nil
+        onSlotFailure = nil
         onRelayout = nil
         onZoomChange = nil
         onScrollTo = nil
@@ -309,10 +315,17 @@ final class ContinuousReaderViewModel {
     }
 
     private func applyLoadFailure(_ error: Error, index: Int, generation: Int) {
-        guard !isTornDown, slots[index]?.generation == generation else { return }
+        // Same hard rule as applyLoaded: never report on a slot that was
+        // destroyed or re-created while the request was in flight.
+        guard !isTornDown,
+              let slot = slots[index],
+              slot.pageIndex == index,
+              slot.generation == generation else { return }
         loadTasks[index] = nil
-        // The placeholder stays; scrolling out and back retries the load.
+        // The failure face stays until the slot leaves the window;
+        // scrolling out and back retries the load.
         logger.error("Strip page \(index) load failed: \(error.localizedDescription)", privacy: .private)
+        onSlotFailure?(index)
     }
 
     // MARK: - Anchored reflow

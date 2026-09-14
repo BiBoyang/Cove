@@ -19,6 +19,10 @@ final class ReaderViewModel: NSObject {
         let image: CGImage?
         let errorMessage: String?
         let isAutoAdvancing: Bool
+        /// A page load is in flight. The chrome pill shows a spinner only
+        /// while an old page is still on screen — first load and failure
+        /// have their own centered overlay.
+        let isLoading: Bool
     }
 
     private let logger: TraceLogger
@@ -27,6 +31,7 @@ final class ReaderViewModel: NSObject {
     private var currentIndex: Int
     private var currentImage: CGImage?
     private var errorMessage: String?
+    private var isLoading = false
     private var loadGeneration = 0
     private var loadingTask: Task<Void, Never>?
     private var isTornDown = false
@@ -63,7 +68,8 @@ final class ReaderViewModel: NSObject {
             canGoNext: currentIndex < pages.count - 1,
             image: currentImage,
             errorMessage: errorMessage,
-            isAutoAdvancing: isAutoAdvancing
+            isAutoAdvancing: isAutoAdvancing,
+            isLoading: isLoading
         )
     }
 
@@ -106,6 +112,14 @@ final class ReaderViewModel: NSObject {
     func jumpToPage(_ index: Int) {
         stopAutoAdvance()
         goToPage(index)
+    }
+
+    /// Re-issues the current page load after a failure (the failure
+    /// overlay's retry button). Goes through the regular load path, so
+    /// the error clears and the generation bumps exactly like a page
+    /// turn landing here.
+    func retry() {
+        loadCurrentPage()
     }
 
     /// Play/pause toggle for the auto-advance slideshow (Space and the HUD
@@ -201,6 +215,7 @@ final class ReaderViewModel: NSObject {
         let requestedGeneration = loadGeneration
         loadingTask?.cancel()
         errorMessage = nil
+        isLoading = true
         publishState()
 
         let index = currentIndex
@@ -224,6 +239,7 @@ final class ReaderViewModel: NSObject {
     ) {
         guard !isTornDown, generation == loadGeneration else { return }
         loadingTask = nil
+        isLoading = false
         currentImage = loaded.image
         errorMessage = nil
         logger.debug(
@@ -235,6 +251,7 @@ final class ReaderViewModel: NSObject {
     private func applyFailure(_ error: Error, index: Int, generation: Int) {
         guard !isTornDown, generation == loadGeneration else { return }
         loadingTask = nil
+        isLoading = false
         currentImage = nil
         errorMessage = "加载失败"
         logger.error("Page \(index) load failed: \(error.localizedDescription)", privacy: .private)

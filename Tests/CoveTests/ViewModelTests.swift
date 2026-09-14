@@ -763,6 +763,85 @@ struct ReaderViewModelTests {
 
         #expect(indices == [1, 2, 1, 0])
     }
+
+    @Test("retry re-issues the current page load and clears the failure", .timeLimit(.minutes(1)))
+    func retryClearsFailureAndReloads() async throws {
+        let loader = FlakyReaderLoader()
+        let viewModel = ReaderViewModel(
+            pages: [ReaderPage(id: "1", title: "1")],
+            startIndex: 0,
+            loader: loader,
+            logger: TraceLogger(category: "ReaderTests")
+        )
+        defer { viewModel.tearDown() }
+
+        viewModel.start()
+        try await waitUntil("first load never failed") { viewModel.state.errorMessage != nil }
+        #expect(viewModel.state.image == nil)
+
+        viewModel.retry()
+        try await waitUntil("retry never landed the page") { viewModel.state.image != nil }
+        #expect(viewModel.state.errorMessage == nil)
+        #expect(await loader.attemptCount(for: 0) == 2)
+    }
+
+    @Test("a page turn sets isLoading while the previous page stays visible", .timeLimit(.minutes(1)))
+    func pageTurnSetsIsLoading() async throws {
+        let pages = [ReaderPage(id: "1", title: "1"), ReaderPage(id: "2", title: "2")]
+        let viewModel = ReaderViewModel(
+            pages: pages,
+            startIndex: 0,
+            loader: DelayedReaderLoader(),
+            logger: TraceLogger(category: "ReaderTests")
+        )
+        defer { viewModel.tearDown() }
+
+        viewModel.start()
+        try await waitUntil("first page never loaded") { viewModel.state.image != nil }
+        #expect(!viewModel.state.isLoading)
+
+        viewModel.goNext()
+        // The load is in flight and the old page is still on screen — the
+        // exact moment the chrome pill's spinner exists for.
+        #expect(viewModel.state.isLoading)
+        #expect(viewModel.state.image?.width == 1)
+
+        try await waitUntil("second page never loaded") { viewModel.state.image?.width == 2 }
+        #expect(!viewModel.state.isLoading)
+    }
+
+    @Test("a successful load resets isLoading", .timeLimit(.minutes(1)))
+    func successfulLoadResetsIsLoading() async throws {
+        let viewModel = ReaderViewModel(
+            pages: [ReaderPage(id: "1", title: "1")],
+            startIndex: 0,
+            loader: DelayedReaderLoader(),
+            logger: TraceLogger(category: "ReaderTests")
+        )
+        defer { viewModel.tearDown() }
+
+        viewModel.start()
+        #expect(viewModel.state.isLoading)
+        try await waitUntil("page never loaded") { viewModel.state.image != nil }
+        #expect(!viewModel.state.isLoading)
+    }
+
+    @Test("a failed load resets isLoading", .timeLimit(.minutes(1)))
+    func failedLoadResetsIsLoading() async throws {
+        let viewModel = ReaderViewModel(
+            pages: [ReaderPage(id: "1", title: "1")],
+            startIndex: 0,
+            loader: FlakyReaderLoader(),
+            logger: TraceLogger(category: "ReaderTests")
+        )
+        defer { viewModel.tearDown() }
+
+        viewModel.start()
+        #expect(viewModel.state.isLoading)
+        try await waitUntil("load never failed") { viewModel.state.errorMessage != nil }
+        #expect(!viewModel.state.isLoading)
+        #expect(viewModel.state.image == nil)
+    }
 }
 
 @MainActor
@@ -880,6 +959,46 @@ private actor DelayedReaderLoader: ReaderPageLoading {
     }
 
     private func makeImage(width: Int) -> CGImage {
+        let bytes = [UInt8](repeating: 0xFF, count: width * 4)
+        let provider = CGDataProvider(data: Data(bytes) as CFData)!
+        return CGImage(
+            width: width,
+            height: 1,
+            bitsPerComponent: 8,
+            bitsPerPixel: 32,
+            bytesPerRow: width * 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
+            provider: provider,
+            decode: nil,
+            shouldInterpolate: false,
+            intent: .defaultIntent
+        )!
+    }
+}
+
+/// Fails the first load of every page, then serves it — exercises the
+/// failure overlay's retry path.
+private actor FlakyReaderLoader: ReaderPageLoading {
+    private struct LoadFailed: Error {}
+    private var attempts: [Int: Int] = [:]
+
+    func load(pageAt index: Int) async throws -> ReaderLoadedImage {
+        attempts[index, default: 0] += 1
+        if attempts[index] == 1 {
+            throw LoadFailed()
+        }
+        return ReaderLoadedImage(
+            image: makeFlakyImage(width: index + 1),
+            size: CGSize(width: index + 1, height: 1)
+        )
+    }
+
+    func attemptCount(for index: Int) -> Int {
+        attempts[index] ?? 0
+    }
+
+    private func makeFlakyImage(width: Int) -> CGImage {
         let bytes = [UInt8](repeating: 0xFF, count: width * 4)
         let provider = CGDataProvider(data: Data(bytes) as CFData)!
         return CGImage(

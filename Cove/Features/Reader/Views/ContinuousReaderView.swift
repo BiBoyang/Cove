@@ -232,6 +232,9 @@ final class ContinuousReaderView: NSView {
         viewModel.onSlotImage = { [weak self] index, image in
             self?.slotViews[index]?.show(image: image, forPage: index)
         }
+        viewModel.onSlotFailure = { [weak self] index in
+            self?.slotViews[index]?.showFailure(forPage: index)
+        }
         viewModel.onRelayout = { [weak self] newOffset in
             self?.relayout(to: newOffset)
         }
@@ -498,6 +501,9 @@ private final class StripSlotView: NSView {
     let pageIndex: Int
     private let imageView = NSImageView()
     private let numberLabel = NSTextField(labelWithString: "")
+    private let failureStack = NSStackView()
+    private let failureIcon = NSImageView()
+    private let failureLabel = NSTextField(labelWithString: "")
 
     init(pageIndex: Int) {
         self.pageIndex = pageIndex
@@ -510,6 +516,24 @@ private final class StripSlotView: NSView {
         numberLabel.alignment = .center
         numberLabel.stringValue = "\(pageIndex + 1)"
 
+        // Failure face: replaces the page number (they never co-show) —
+        // a centered ⚠ (textOnMedia2 family) plus 「加载失败 · 第 N 页」.
+        failureIcon.image = NSImage(
+            systemSymbolName: "exclamationmark.triangle",
+            accessibilityDescription: "加载失败"
+        )?.withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 16, weight: .regular))
+        failureIcon.contentTintColor = CoveStyle.textOnMedia2
+        failureLabel.font = CoveStyle.captionFont
+        failureLabel.textColor = CoveStyle.textOnMedia2
+        failureLabel.alignment = .center
+        failureLabel.stringValue = "加载失败 · 第 \(pageIndex + 1) 页"
+        failureStack.orientation = .vertical
+        failureStack.alignment = .centerX
+        failureStack.spacing = CoveStyle.space10
+        failureStack.addArrangedSubview(failureIcon)
+        failureStack.addArrangedSubview(failureLabel)
+        failureStack.isHidden = true
+
         imageView.imageScaling = .scaleProportionallyUpOrDown
         imageView.imageAlignment = .alignCenter
         // Same solver insurance as the paged reader: the image's pixel-size
@@ -521,10 +545,14 @@ private final class StripSlotView: NSView {
 
         addSubview(imageView)
         addSubview(numberLabel)
+        addSubview(failureStack)
         imageView.snp.makeConstraints { make in
             make.edges.equalToSuperview()
         }
         numberLabel.snp.makeConstraints { make in
+            make.center.equalToSuperview()
+        }
+        failureStack.snp.makeConstraints { make in
             make.center.equalToSuperview()
         }
     }
@@ -538,5 +566,17 @@ private final class StripSlotView: NSView {
         guard index == pageIndex else { return }
         imageView.image = NSImage(cgImage: image, size: .zero)
         numberLabel.isHidden = true
+        failureStack.isHidden = true
+    }
+
+    /// Shows the failure face in place of the page number. No explicit
+    /// retry button: scrolling the slot out and back re-creates it,
+    /// which naturally resets this face and reloads (the tooltip says
+    /// so). A fresh slot starts hidden — see init.
+    func showFailure(forPage index: Int) {
+        guard index == pageIndex else { return }
+        numberLabel.isHidden = true
+        failureStack.isHidden = false
+        toolTip = "滚动离开再返回即可自动重试"
     }
 }

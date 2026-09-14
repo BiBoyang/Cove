@@ -1,3 +1,4 @@
+import CacheKit
 import Foundation
 import PDFKit
 import SourceKit
@@ -70,6 +71,55 @@ struct PdfReaderViewModelTests {
         }
     }
 
+    @Test("retry after a failure reloads and can succeed")
+    func retryAfterFailure() async {
+        struct TestError: Error {}
+        let bytes = makeTestPDFData()
+        let attempts = Mutex(0)
+        let viewModel = PdfReaderViewModel(title: "doc.pdf") {
+            let attempt = attempts.withLock { $0 += 1; return $0 }
+            if attempt == 1 { throw TestError() }
+            return bytes
+        }
+
+        viewModel.start()
+        await viewModel.waitForLoad()
+        guard case .failed = viewModel.state else {
+            Issue.record("expected failed, got \(viewModel.state)")
+            return
+        }
+
+        viewModel.retry()
+        #expect(viewModel.isLoading)
+        await viewModel.waitForLoad()
+
+        guard case .ready = viewModel.state else {
+            Issue.record("expected ready after retry, got \(viewModel.state)")
+            return
+        }
+        #expect(attempts.withLock { $0 } == 2)
+    }
+
+    @Test("retry outside the failed state is a no-op")
+    func retryOnlyFromFailure() async {
+        let bytes = makeTestPDFData()
+        let attempts = Mutex(0)
+        let viewModel = PdfReaderViewModel(title: "doc.pdf") {
+            attempts.withLock { $0 += 1 }
+            return bytes
+        }
+
+        viewModel.start()
+        await viewModel.waitForLoad()
+        guard case .ready = viewModel.state else {
+            Issue.record("expected ready, got \(viewModel.state)")
+            return
+        }
+
+        viewModel.retry()
+        #expect(attempts.withLock { $0 } == 1)
+    }
+
     @Test("a second open hits the original pool without downloading again")
     func cacheHitSkipsDownload() async {
         let cache = makeTestCache()
@@ -99,6 +149,50 @@ struct PdfReaderViewModelTests {
         }
 
         #expect(reads.withLock { $0 } == 1)
+    }
+
+    @Test("bytes read before a cancellation still land in the original pool")
+    func cancelledReadStillStoresInPool() async throws {
+        let cache = makeTestCache()
+        let bytes = makeTestPDFData()
+        let item = makeItem(byteCount: bytes.count)
+        let started = Mutex(false)
+        // Latched reader: stays in flight until the awaiting task is
+        // cancelled, then still returns the bytes — the read on the SMB
+        // actor finishes even though the caller has already moved on.
+        let fileReader: @Sendable (String) async throws -> Data = { _ in
+            started.withLock { $0 = true }
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .milliseconds(5))
+            }
+            return bytes
+        }
+
+        let load = Task {
+            try await ReaderContent.originalBytes(
+                for: item, fileReader: fileReader, cache: cache, sourceID: "s"
+            )
+        }
+        let deadline = ContinuousClock.now + .seconds(5)
+        while !started.withLock({ $0 }) {
+            if ContinuousClock.now > deadline {
+                Issue.record("reader never started")
+                return
+            }
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        load.cancel()
+        await #expect(throws: CancellationError.self) { try await load.value }
+
+        // The bytes were paid for on the wire before the cancellation,
+        // so the store must have run: flipping back to this page is a
+        // pool hit instead of a full re-download.
+        let key = CacheKey.sourceFile(
+            sourceID: "s", path: item.path, fileSize: item.size,
+            modified: item.modifiedDate, variant: CacheKey.rawVariant
+        )
+        let stored = try? cache.data(forKey: key, pool: .original)
+        #expect(stored == bytes)
     }
 }
 

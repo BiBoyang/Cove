@@ -59,8 +59,13 @@ extension ReaderContent {
         }
         try Task.checkCancellation()
         let data = try await fileReader(item.path)
-        try Task.checkCancellation()
+        // Store before the post-read cancellation check: when an in-flight
+        // load is cancelled (e.g. rapid paging) the bytes were already
+        // paid for on the wire, so they must still land in the original
+        // pool — otherwise flipping back to this page downloads the whole
+        // file again and discards it every time.
         try? cache.store(data, forKey: key, pool: .original)
+        try Task.checkCancellation()
         return data
     }
 

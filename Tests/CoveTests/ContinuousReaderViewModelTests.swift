@@ -91,6 +91,34 @@ struct ContinuousReaderViewModelTests {
         #expect(await loader.callCount(for: 2) == 2)
     }
 
+    @Test("a failed slot publishes onSlotFailure under the slot rules", .timeLimit(.minutes(1)))
+    func slotFailurePublishes() async throws {
+        let loader = RecordingStripLoader(failingPages: [2])
+        let vm = makeViewModel(loader: loader)
+        var failures: [Int] = []
+        vm.onSlotFailure = { failures.append($0) }
+        vm.updateViewport(width: 300, height: 550)
+
+        try await waitUntil("page 2's failure never published") { failures == [2] }
+    }
+
+    @Test("a destroyed slot's late failure never lands", .timeLimit(.minutes(1)))
+    func destroyedSlotLateFailureNeverLands() async throws {
+        let loader = RecordingStripLoader(delay: .milliseconds(250), failingPages: [2])
+        let vm = makeViewModel(loader: loader)
+        var failures: [Int] = []
+        vm.onSlotFailure = { failures.append($0) }
+        vm.updateViewport(width: 300, height: 550)
+
+        // Jump far in one step before page 2's failing load returns: the
+        // slot is destroyed and its task cancelled, so the late failure
+        // must be discarded by the generation/slot rule.
+        vm.updateScrollOffset(6000)
+
+        try await waitUntil("failed load for page 2 never finished") { await loader.finishCount(for: 2) == 1 }
+        #expect(!failures.contains(2))
+    }
+
     @Test("measurements land as one anchored batch", .timeLimit(.minutes(1)))
     func measurementsLandAsAnchoredBatch() async throws {
         let vm = makeViewModel(loader: RecordingStripLoader(delay: .milliseconds(10)))
@@ -265,9 +293,12 @@ private actor RecordingStripLoader: ReaderPageLoading {
     /// course instead of betting on a fixed sleep.
     private var finished: [Int] = []
     private let delay: Duration
+    /// Pages whose load throws after the delay (injected failures).
+    private let failingPages: Set<Int>
 
-    init(delay: Duration = .milliseconds(20)) {
+    init(delay: Duration = .milliseconds(20), failingPages: Set<Int> = []) {
         self.delay = delay
+        self.failingPages = failingPages
     }
 
     func load(pageAt index: Int) async throws -> ReaderLoadedImage {
@@ -279,6 +310,9 @@ private actor RecordingStripLoader: ReaderPageLoading {
             throw error
         }
         finished.append(index)
+        if failingPages.contains(index) {
+            throw InjectedLoadFailure()
+        }
         return ReaderLoadedImage(image: makeStripImage(), size: CGSize(width: 300, height: 300))
     }
 
@@ -290,6 +324,8 @@ private actor RecordingStripLoader: ReaderPageLoading {
         finished.filter { $0 == index }.count
     }
 }
+
+private struct InjectedLoadFailure: Error {}
 
 private func makeStripImage() -> CGImage {
     let bytes = [UInt8](repeating: 0xFF, count: 4)

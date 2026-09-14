@@ -55,7 +55,7 @@ enum SessionError: LocalizedError {
 /// Sendable holder for the live interactive source. Background readers
 /// (reader pipeline, thumbnails) go through it without touching the main
 /// actor: a read hops straight onto the SMB actor.
-private final class SMBReadRouter: Sendable {
+final class SMBReadRouter: Sendable {
     private let state = Mutex<(any ContentSource)?>(nil)
 
     func update(_ source: (any ContentSource)?) {
@@ -67,6 +67,18 @@ private final class SMBReadRouter: Sendable {
             throw SourceError.notConnected
         }
         return try await source.read(at: path)
+    }
+
+    /// Whole-file read on this (background/preheat) lane, transparently
+    /// falling back to the interactive lane while no source is installed
+    /// here — during the preheat connect window, or on local/vault
+    /// sessions where the lane never exists. Internal (not private) so
+    /// the lane fallback is directly unit-testable.
+    func read(at path: String, fallback: SMBReadRouter) async throws -> Data {
+        if state.withLock({ $0 }) == nil {
+            return try await fallback.read(at: path)
+        }
+        return try await read(at: path)
     }
 
     func read(at path: String, range: Range<Int64>) async throws -> Data {
@@ -116,6 +128,10 @@ final class SMBSessionService {
     /// The dedicated preheat connection; nil until the background connect
     /// succeeds, and whenever the session is down.
     private var preheatSource: SMBSource?
+    /// Nonisolated view of `preheatSource` for background lane readers
+    /// (thumbnails, preheat); written only from the main actor, alongside
+    /// `preheatSource`.
+    private let preheatReadRouter = SMBReadRouter()
     /// The in-flight background connect of the preheat connection; a new
     /// session cancels it.
     private var preheatConnectTask: Task<Void, Never>?
@@ -309,6 +325,22 @@ final class SMBSessionService {
         }
     }
 
+    /// A whole-file read closure riding the preheat lane. Thumbnail
+    /// loads and other background display warming share the dedicated
+    /// preheat connection, so a thumbnail read storm can no longer queue
+    /// behind interactive reader/paging reads on the main lane (and vice
+    /// versa). While no preheat connection is installed — the connect
+    /// window, or local/vault sessions where the lane never exists —
+    /// reads fall back to the main lane, keeping vault behavior
+    /// unchanged. Accepted trade-off: thumbnails now share the preheat
+    /// lane's queue with bulk preheating; decorative background reads
+    /// yielding to interactive reads is the intended priority.
+    func makePreheatLaneFileReader() -> @Sendable (String) async throws -> Data {
+        { [preheatReadRouter, readRouter] path in
+            try await preheatReadRouter.read(at: path, fallback: readRouter)
+        }
+    }
+
     /// A ranged-read closure with the same non-main-actor routing as
     /// `makeFileReader()`. Drives the video player's mpv stream bridge:
     /// mpv's demuxer issues the byte ranges it needs and this hops them
@@ -376,6 +408,7 @@ final class SMBSessionService {
                 return
             }
             self.preheatSource = preheat
+            self.preheatReadRouter.update(preheat)
             self.logger.info("Preheat connection ready for \(host)/\(share)", privacy: .private)
             let connection: PreheatConnection = (source: preheat, share: share)
             self.onPreheatConnectionChanged?(connection)
@@ -386,6 +419,10 @@ final class SMBSessionService {
     private func tearDownPreheatConnection() {
         let old = preheatSource
         preheatSource = nil
+        // Clear the lane first: the router must stop handing out the
+        // connection before the early-exit below, or reads would keep
+        // targeting a source that is about to disconnect.
+        preheatReadRouter.update(nil)
         guard let old else { return }
         onPreheatConnectionChanged?(nil)
         Task { await old.disconnect() }

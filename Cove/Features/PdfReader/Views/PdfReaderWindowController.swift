@@ -17,7 +17,10 @@ final class PdfReaderWindowController: NSWindowController {
 
     private let rootView = PdfReaderRootView()
     private let pdfView = PDFView()
-    private let statusLabel = NSTextField(labelWithString: "")
+    /// Central state overlay (loading spinner / failure placeholder),
+    /// Player `renderStateOverlay` precedent.
+    private var stateOverlay: StatePlaceholderView?
+    private var renderedStateOverlayID = ""
 
     /// True while the document bytes are still on the way; the coordinator
     /// uses this to treat the open as pending (navigation cancels it).
@@ -74,19 +77,10 @@ final class PdfReaderWindowController: NSWindowController {
         pdfView.backgroundColor = CoveStyle.readerBackground
         pdfView.isHidden = true
 
-        statusLabel.alignment = .center
-        statusLabel.font = CoveStyle.bodyFont
-        statusLabel.textColor = .secondaryLabelColor
-
-
         rootView.addSubview(pdfView)
-        rootView.addSubview(statusLabel)
 
         pdfView.snp.makeConstraints { make in
             make.edges.equalToSuperview()
-        }
-        statusLabel.snp.makeConstraints { make in
-            make.center.equalToSuperview()
         }
 
         rootView.onKeyDown = { [weak self] event in
@@ -112,18 +106,59 @@ final class PdfReaderWindowController: NSWindowController {
     private func render(_ state: PdfReaderViewModel.State) {
         switch state {
         case .loading:
-            statusLabel.stringValue = "加载中…"
-            statusLabel.isHidden = false
             pdfView.isHidden = true
         case .ready(let document):
             pdfView.document = document
             pdfView.isHidden = false
-            statusLabel.isHidden = true
-        case .failed(let message):
-            statusLabel.stringValue = message
-            statusLabel.isHidden = false
+        case .failed:
             pdfView.isHidden = true
         }
+        renderStateOverlay(state)
+    }
+
+    /// Swaps the central state presentation: a spinner (with the document
+    /// title) while loading, a failure placeholder with a retry action on
+    /// error, nothing once the document is up (tokens §6.1/§6.2 via
+    /// StatePlaceholderView — no static text posing as a loading state).
+    private func renderStateOverlay(_ state: PdfReaderViewModel.State) {
+        let presentation: (
+            style: StatePlaceholderView.Style, title: String, message: String, action: String?
+        )?
+        switch state {
+        case .loading:
+            presentation = (.loading, "加载中", viewModel.title, nil)
+        case .ready:
+            presentation = nil
+        case .failed(let message):
+            presentation = (
+                .symbol("exclamationmark.triangle"),
+                "加载失败",
+                message,
+                "重试"
+            )
+        }
+        let id = presentation.map { "\($0.title)|\($0.message)|\($0.action ?? "-")" } ?? ""
+        guard id != renderedStateOverlayID else { return }
+        renderedStateOverlayID = id
+        stateOverlay?.removeFromSuperview()
+        stateOverlay = nil
+        guard let presentation else { return }
+        let overlay = StatePlaceholderView(
+            style: presentation.style,
+            title: presentation.title,
+            message: presentation.message,
+            actionTitle: presentation.action
+        )
+        if presentation.action != nil {
+            overlay.onAction = { [weak self] in self?.viewModel.retry() }
+        }
+        // Above the (hidden) PDF view; the window keeps no in-content
+        // chrome to duck under (Player overlay precedent).
+        rootView.addSubview(overlay, positioned: .above, relativeTo: pdfView)
+        overlay.snp.makeConstraints { make in
+            make.edges.equalToSuperview()
+        }
+        stateOverlay = overlay
     }
 
     // MARK: - Keyboard
@@ -159,7 +194,7 @@ final class PdfReaderWindowController: NSWindowController {
 }
 
 /// The window's content view: first responder so Esc works in full screen.
-/// Black background behind the `PDFView` and the status label.
+/// Black background behind the `PDFView` and the state placeholder.
 @MainActor
 private final class PdfReaderRootView: NSView {
     /// Returns true when the key was consumed.

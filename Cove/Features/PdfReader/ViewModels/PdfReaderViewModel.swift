@@ -58,7 +58,7 @@ final class PdfReaderViewModel {
                 transition(to: .ready(document))
             } catch {
                 if Task.isCancelled || error is CancellationError { return }
-                fail("PDF 加载失败，请关闭后重试。", failure: .load(error))
+                fail("文件未能完整载入。", failure: .load(error))
             }
         }
     }
@@ -67,6 +67,18 @@ final class PdfReaderViewModel {
     /// deterministic without polling.
     func waitForLoad() async {
         await loadTask?.value
+    }
+
+    /// Re-runs the whole load after a failure (the in-window retry
+    /// button). Only the failed state can retry — loading and ready are
+    /// no-ops — and the loading semantics plus the `waitForLoad` seam
+    /// are untouched.
+    func retry() {
+        guard !isTornDown else { return }
+        guard case .failed = state else { return }
+        loadTask = nil
+        transition(to: .loading)
+        start()
     }
 
     func tearDown() {

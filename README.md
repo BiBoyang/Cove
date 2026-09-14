@@ -82,7 +82,8 @@ chrome, dark player) regardless of the system appearance.
 - **PDF reading**: double-click a `.pdf` to read it with PDFKit — the file
   is cached whole in the original pool (instant on reopen) and shown as
   continuous pages with breaks (`.cbr`-style one-offs are not special-cased;
-  any valid PDF works).
+  any valid PDF works). Loading shows a centered spinner, failures a
+  placeholder with an in-window retry.
 - **Vault (local library)**: right-click any file or folder and choose
   "下载到本地仓库" to download a permanent local copy (folders are
   downloaded recursively, unchanged files are skipped on re-download).
@@ -108,7 +109,9 @@ chrome, dark player) regardless of the system appearance.
   `Esc`, and a page counter support manual navigation. The two pages after
   the current one are prefetched in the background so page turns hit the
   local cache. Originals and downsampled display variants use the disk
-  cache.
+  cache. First loads show a centered spinner and failures a placeholder
+  with retry; a small spinner inside the page counter pill marks page
+  turns that are still downloading over the kept previous page.
   - **Paged zoom**: `⌘=` / `⌘−` / `⌘0` step between 100% (fit) / 150% /
     200% / 300%, with drag-to-pan while zoomed; turning the page or resizing
     the window resets to fit.
@@ -122,7 +125,9 @@ chrome, dark player) regardless of the system appearance.
   between single-page and strip, preserving the current page), with the
   archive cached whole in the original pool, image entries sorted
   naturally (`1, 2, …, 10`), pages decoded into the display pool, and the
-  next pages pre-decoded ahead. (`.cbr`/`.cbt` are not supported yet.)
+  next pages pre-decoded ahead. A strip page that fails to load shows a
+  ⚠ 加载失败 · 第 N 页 face and retries when scrolled out and back.
+  (`.cbr`/`.cbt` are not supported yet.)
   - **Strip zoom**: `⌘=` / `⌘−` / `⌘0` step the strip between 100% / 125% /
     150% / 200% of the window width; beyond 100% the strip scrolls
     horizontally too. Zoom is per session (reopens at 100%).

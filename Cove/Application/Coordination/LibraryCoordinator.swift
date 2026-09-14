@@ -421,8 +421,12 @@ final class LibraryCoordinator {
                 navigationPath.reset()
                 onTitleChange?("\(server.displayName) / \(share.name)")
                 if let sourceID = sessionService.currentSourceID {
+                    // Thumbnails ride the preheat lane: a thumbnail read
+                    // storm must not queue behind interactive reader
+                    // paging reads on the main lane. Vault sessions have
+                    // no preheat lane and transparently fall back.
                     browserViewController.thumbnailProvider = ThumbnailService(
-                        readFile: makeFileReader(), cache: cache, sourceID: sourceID
+                        readFile: sessionService.makePreheatLaneFileReader(), cache: cache, sourceID: sourceID
                     )
                 }
                 onShowDetail?(browserViewController)
@@ -553,8 +557,12 @@ final class LibraryCoordinator {
                 try await sessionService.connectLocal(LocalFileSource(root: vaultService.rootURL))
                 guard generation == navigationGeneration else { return }
                 if let sourceID = sessionService.currentSourceID {
+                    // Thumbnails ride the preheat lane: a thumbnail read
+                    // storm must not queue behind interactive reader
+                    // paging reads on the main lane. Vault sessions have
+                    // no preheat lane and transparently fall back.
                     browserViewController.thumbnailProvider = ThumbnailService(
-                        readFile: makeFileReader(), cache: cache, sourceID: sourceID
+                        readFile: sessionService.makePreheatLaneFileReader(), cache: cache, sourceID: sourceID
                     )
                 }
                 try await loadDirectory(at: "/", generation: generation)
@@ -817,8 +825,9 @@ final class LibraryCoordinator {
                     // record lands once the connection is established.
                     shareOpenStore.recordOpen(forServer: server.id, share: share)
                     if let sourceID = sessionService.currentSourceID {
+                        // Same preheat-lane routing as `openShare`.
                         browserViewController.thumbnailProvider = ThumbnailService(
-                            readFile: makeFileReader(), cache: cache, sourceID: sourceID
+                            readFile: sessionService.makePreheatLaneFileReader(), cache: cache, sourceID: sourceID
                         )
                     }
                 }
