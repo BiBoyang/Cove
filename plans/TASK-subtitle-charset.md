@@ -1,6 +1,7 @@
 # TASK-subtitle-charset：外挂字幕非 UTF-8 编码（GBK/BIG5）渲染为空
 
-状态：Step 1（诊断 spike）已派发 2026-09-14；Step 2（修复）待 spike 报告定线。
+状态：Step 1（诊断 spike）2026-09-14 完结——**当前工件不可复现**（见下文
+「Step 1 结果」）；Step 2 改为路线 D：真机复测原始失败文件，待 Owner 验收。
 
 ## 现象
 
@@ -80,7 +81,28 @@
       影响发布供应链，需 Owner 拍板）。
 3. 需要改任何 git 跟踪文件才能完成诊断。
 
-## Step 2：修复（路线待 spike 报告，Planner 定线后另行派发）
+## Step 1 结果（2026-09-14，Executor spike + Planner 独立复跑互证）
+
+矩阵 6 行 + 补充 6 组（ass/CRLF/App 选项仿真/长文本/参照系 brew mpv）
+全部正确：默认选项下 uchardet 探测 GB18030/BIG5 成功、iconv 转换正常、
+`sub-text` 输出正确中文。H1/H2/H3 全部证伪。Planner 亲跑 GBK×默认行
+复核：`libuchardet detected charset as GB18030` + `sub-text` hex 解码
+为正确 UTF-8 中文，与 Executor 报告一致。
+
+结论：09-12 验收观察为真（TASK-external-subtitles 卡原始记录），但失败
+现场（当时的 Vendor/libmpv 二进制 + App 构建）已被 09-13 重建替换，
+不可复得；build-libmpv.sh 09-08→09-13 唯一 diff 为音频 demuxer 白名单，
+字幕链脚本逐字未动。残余嫌疑按优先级：① 原始失败文件本身的字节形态
+（BOM/UTF-16/混合编码/截断——合成夹具覆盖不到）；② 渲染层
+（vo=libmpv，嫌疑弱——UTF-8 同机渲染正常）。
+
+## Step 2：路线 D——真机复测（优先，零代码）
+
+用当前 main + 当前森林跑「用户验收清单」。通过 → 按环境漂移闭卡，
+残余风险（原始文件形态未知）登记 BACKLOG；复现 → 取原始失败字幕文件
+做字节级分析（hexdump 头部 + spike 直接喂该文件），再定 A/B/C。
+
+### 历史候选路线（复现后选用，非承诺）
 
 候选路线（预判，非承诺）：
 

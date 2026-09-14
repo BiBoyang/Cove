@@ -25,7 +25,10 @@
 
 ## 远期（North Star：Mac 上的一流 NAS 媒体中心）
 
-- [ ] 外挂字幕非 UTF-8 编码（GBK/BIG5）渲染为空：挂载与选中正常但画面无字幕（2026-09-12 外挂字幕验收观察项）；先与参照系 mpv（brew/IINA）同片对比，定位自构建 FFmpeg 链 iconv/uchardet 裁剪 vs mpv 上游小样本检测，再定修复（显式 sub-codepage 或补链）
+- [ ] 外挂字幕非 UTF-8 编码（GBK/BIG5）渲染为空（2026-09-12 验收观察项）：2026-09-14
+  诊断 spike 在当前森林上**不可复现**（uchardet/iconv 链全程实证正常，见
+  plans/TASK-subtitle-charset.md）——下一步 = 真机复测原始失败文件；通过则按环境
+  漂移闭卡，复现则取原始文件做字节级分析再定修复
 - [ ] iPad 端扩展（优先 iPad）：UIKit 手写（全平台禁用 SwiftUI，沿用 SnapKit
   DSL 与 MVVM/Coordinator 范式），Frameworks/Services/ViewModel 整体复用（前提见
   AGENTS.md 规矩 16），视频播放最后攻（待 libmpv 供应链收敛）。跨端 UI 一致性靠
