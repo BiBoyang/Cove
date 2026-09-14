@@ -9,15 +9,19 @@
 ## 下一波（1.0 批次，顺序即排期）
 
 - [x] 批 1（快卡）全部落地：T1 空态/加载态清扫 2026-09-14 归档
-  （browser-search、check-for-updates 2026-09-12 归档）——1.0 仅剩批 3 压哨
+  （browser-search、check-for-updates 2026-09-12 归档）
 - [x] 批 2（体验）全部落地：外挂字幕 → 继续观看（首页）→ 音频播放
-  （2026-09-12/13 归档）——1.0 仅剩批 3 压哨
-- [ ] 批 3（压哨）：DEVELOPMENT_TEAM + 真 bundle id，随 1.0.0 tag
+  （2026-09-12/13 归档）
+- [x] 批 3（压哨）2026-09-14 闭环：实证已被 release.yml 消融——TEAM 由 CI
+  命令行注入（secrets 齐备、v0.6/0.7 发布实战全绿），bundle id
+  com.biboyang.cove 定型保留，零代码改动。1.0 三批全齐，发布待发令
 - [ ] 候选（可放 1.x）：图片网格墙
 
 ## 上架前必须
 
-- [ ] project.yml 填 DEVELOPMENT_TEAM + 替换占位 bundle id（AGENTS.md 已记）
+- [x] project.yml 填 DEVELOPMENT_TEAM + 替换占位 bundle id（2026-09-14
+  闭环：均不需要——TEAM 由 release.yml CI 注入不落 project.yml，bundle
+  id 保留定型）
 
 ## 远期（North Star：Mac 上的一流 NAS 媒体中心）
 

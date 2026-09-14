@@ -115,7 +115,8 @@ git log --oneline -1`，确认自己在正确的工作树上**——本机曾经
 开发期：`CODE_SIGN_STYLE=Automatic` + 空 `DEVELOPMENT_TEAM`（即 Sign to Run
 Locally）。分发签名不落 project.yml：Release 工作流在 CI 侧以命令行注入
 Team ID（见下方「发布流程」）；只有本地手工做签名构建时才需要把 Team ID
-填进 `project.yml`。上架前另需替换占位 bundle id `com.biboyang.cove`。
+填进 `project.yml`。Bundle id `com.biboyang.cove` 已定型（随 v0.6.0 起
+公证发布），保留不换——更换会让已装用户的设置与钥匙串条目失联。
 
 ## 发布流程（GitHub Release）
 

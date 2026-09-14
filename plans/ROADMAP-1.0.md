@@ -16,8 +16,9 @@
 
 ## B. 分发与信任（进 1.0）
 
-5. **DEVELOPMENT_TEAM + 真 bundle id**：BACKLOG「上架前必须」，随
-   1.0.0 tag 压哨做。
+5. **DEVELOPMENT_TEAM + 真 bundle id**（2026-09-14 闭环）：TEAM 由
+   release.yml CI 命令行注入，secrets 齐备、v0.6/0.7 发布实战全绿；
+   bundle id `com.biboyang.cove` 定型保留。零代码改动。
 6. **更新通道**：无 Sparkle（实证）；一期=「检查更新」（gh releases
    API 比对 + 跳转），可升级 Sparkle 2。工作量小-中。
 
