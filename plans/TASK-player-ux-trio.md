@@ -1,8 +1,38 @@
 # TASK-player-ux-trio：播放体验意见三连（重播 / 续播队列 / 历史卡片路径）
 
-状态：2026-09-14 Executor 交付 + Review Approved（365/55 全绿、构建零警告、
-diff 全审吻合、runSMBWatchChain 抽取逐行保语义）。待 Owner 真机验收
-（五项清单见下）。
+状态：2026-09-14 Executor 交付 + Review Approved；真机验收中 Owner 报告
+两个新问题 → Amendment 1 已派发（见下）。
+
+## Amendment 1（2026-09-14，Owner 验收反馈驱动）
+
+**A1-1 右键高亮累积**：轮流右键卡片后多张保持高亮（疑似 hover 态被
+右键菜单事件流吞掉 mouseExited 而残留，或右键移选中未互斥；
+allowsMultipleSelection=false 已设，需实证哪个状态在累积）。
+要求：任意点击序列后至多一张卡片处于选中高亮；菜单关闭且鼠标移开
+后无 hover 残留。先复现定位根因（isHovering vs isSelected），
+按根因最小修复（如 menuDidClose 按当前鼠标位置重算 hover，或右键
+选中前先 deselectAll——以实证为准，不许两个都盲糊）。
+
+**A1-2 续播深链拽走浏览器**：从「继续观看」双击打开时浏览器被导航
+到视频所在文件夹（resumeSMB/VaultPlayback 的深链机制），Owner 判定
+体验怪异。改为**无头目录列表**：连接链保留（SMB 仍需连），但目录
+listing 走无头枚举（预热体系已有无头枚举先例，Executor 找现成 API；
+vault 本地列表同理），验证文件存在 + 取 siblings（字幕发现）+
+构建单视频队列后直接 openPlayer，**浏览器停留原页**（首页或用户
+正在浏览的目录）。失败语义不变：文件/文件夹消失 → 移除记录 +
+alert；连接/枚举瞬态失败 → 占位 + 记录保留。「打开所在文件夹」
+（revealWatchLocation）是有意导航，**保持不变**。openPlayer 需
+支持显式传入 items/siblings（不再只能读 browserViewModel）。
+
+**Amendment 白名单增补**：为无头列表可触碰 Services 层既有文件
+（SMBSessionService.swift / VaultService.swift / BrowserViewModel
+所在文件），只许复用或新增方法，禁止改既有方法语义；其余白名单
+不变。新增硬停止：无现成无头枚举 API 且需大改 Services → 停，
+报 Planner 重议。
+
+**Amendment DoD**：A1-1/A1-2 各自修复 + 既有 365 测试不回归 +
+新行为有对应验证（纯值/集成层能测则测，视图层真机兜底）+
+`make generate && make test` 全绿、`make build` 零警告。
 
 ## 背景（Owner 三条意见，Plan Card 已拍板）
 
