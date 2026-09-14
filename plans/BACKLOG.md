@@ -8,8 +8,8 @@
 
 ## 下一波（1.0 批次，顺序即排期）
 
-- [ ] 批 1（快卡）：plans/TASK-empty-states.md（T1 空态/加载态清扫）
-  （browser-search、check-for-updates 已落地归档，2026-09-12）
+- [x] 批 1（快卡）全部落地：T1 空态/加载态清扫 2026-09-14 归档
+  （browser-search、check-for-updates 2026-09-12 归档）——1.0 仅剩批 3 压哨
 - [x] 批 2（体验）全部落地：外挂字幕 → 继续观看（首页）→ 音频播放
   （2026-09-12/13 归档）——1.0 仅剩批 3 压哨
 - [ ] 批 3（压哨）：DEVELOPMENT_TEAM + 真 bundle id，随 1.0.0 tag
@@ -81,6 +81,8 @@
 - 音频播放：分类表增 audio（mp3/flac/aac/m4a/wav/ogg/opus/wma），双击走 libmpv 桥全量继承（进度/音量/倍速/播放模式/Up Next/断点续播），无视频轨时静态壳（music.note + 文件名，track-list 计数判定，内嵌封面不误触）替代裸黑窗，chips 无视频轨整组隐藏；openPlayer 按 fileType 路由队列（video/audio 不混排，深链守卫 kind-agnostic，继续观看音频条目天然可用）；badgeTintAudio=systemPink 令牌入 §1；Fix 1：FFmpeg 矩阵补 mp3/flac/ogg/wav/aac 五个 demuxer（根因=独立音频容器缺席，decoder/parser 链本齐），森林重建 selfcheck 4/4 + 构建矩阵约束用例防回退（见 plans/archive/TASK-audio-playback.md，2026-09-13 真机通过）
 - 侧栏 pin 胶囊泄漏修复（双高亮根治）：非 vault 目的地 VM 层清 activePinPath + showSettings 离开 vault 上下文堵 refreshPins 回亮 + 渲染层 pin 行 vault 门控兜底，单高亮不变量闭环（见 plans/archive/TASK-pin-capsule-leak.md，2026-09-13）
 - 主页「继续观看」常驻标题：page-title 字体令牌（22 bold）入令牌文档 §2，标题三态（有记录/无记录/无服务器）常驻、空态占位让位标题（见 plans/archive/TASK-home-page-title.md，2026-09-13）
+- 阅读器空态/加载态清扫（T1 残余三处）：单页阅读器仿 Player overlay（首载 spinner + 页标题、失败 ⚠+重试钮，retry() 重发当前页加载，翻页保留旧图不遮挡、条带模式随模式门控摘除）；条带失败槽位 ⚠+「加载失败 · 第 N 页」+toolTip（onSlotFailure 与 onSlotImage 同 generation/slot 硬规则，滚出滚回自然重试）；PDF StatePlaceholderView 换裸 statusLabel（spinner+文档标题/失败+重试，retry() 仅 failed 态可入）（见 plans/archive/TASK-empty-states.md，2026-09-14 真机通过）
+- 阅读器读车道分离（翻页停旧图根治）：缩略图读改走预热车道（SMBReadRouter read(at:fallback:)，预热源在/不在自动回退主车道，vault 恒回退行为不变），前台翻页读不再排缩略图风暴之后；被取消的读取字节必落 original pool（写池前移到取消检查前）；翻页加载 pill 内嵌小菊花（isLoading && 旧图在屏才转）（见 plans/archive/TASK-reader-read-lane.md，2026-09-14 真机通过）
 - 视频缩略图（播放截帧 → 观看历史卡片封面）：播放 persist tick 延迟截帧 + 关窗同步截帧（MPVRenderShim screenshot-raw：独立 reply ID 空间防串台、防嵌套 wait_event、250ms 有界排空、逐行拷贝防 stride 对齐垫），VideoThumbnailService 写读同键（display 池 320px 方图 variant，读路径纯查缓存零额外流量），PlaybackProgressStore 记录扩展封面键，首页卡片封面井真实帧替换 film 图标（未播视频不变，音频会话跳过；≥95% 或 ≤5s 关窗存封面无害）（见 plans/archive/TASK-video-thumbnails.md 含 Amendment 1，2026-09-14 真机通过）
 - 浏览器名称过滤：工具条常驻搜索框（⌘F 聚焦）按名称过滤当前目录，大小写/变音符不敏感、纯本地零网络、导航即清零；无匹配空态 + 计数标签；播放列表不受过滤影响（见 plans/archive/TASK-browser-search.md，2026-09-12 真机通过）
 - 浏览器行徽标类型着色：placeholderTint 按类型映射（文件夹蓝/视频紫/PDF 红/漫画橙/图片占位绿/文本提亮/其他不变），CoveStyle badgeTint 令牌族 + 令牌文档 §1 登记；灰瓷贴不变，缩略图仍是行内最跳元素（见 plans/archive/TASK-badge-tints.md，2026-09-12 真机通过）
