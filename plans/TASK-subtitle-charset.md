@@ -96,6 +96,13 @@
 （BOM/UTF-16/混合编码/截断——合成夹具覆盖不到）；② 渲染层
 （vo=libmpv，嫌疑弱——UTF-8 同机渲染正常）。
 
+追加（2026-09-14 晚，Planner）：经播放记录 + vault bookmark 定位到 09-12
+验收原始夹具 `/Users/boyang/Desktop/agents/字幕夹具/E/GbkMovie.srt`（纯 GBK、
+无 BOM、形态规整，与合成夹具无异）。spike 直接喂**原文件**：uchardet 探测
+GB18030、`sub-text` 输出正确 UTF-8 中文——原文件与解码链双重排除。唯一
+剩余 delta = 渲染层（vo=libmpv，嫌疑弱：当夜 UTF-8 外挂渲染验收通过）。
+真机复测目标锁定：本地仓库 → 字幕夹具 → E → GbkMovie.mkv。
+
 ## Step 2：路线 D——真机复测（优先，零代码）
 
 用当前 main + 当前森林跑「用户验收清单」。通过 → 按环境漂移闭卡，
