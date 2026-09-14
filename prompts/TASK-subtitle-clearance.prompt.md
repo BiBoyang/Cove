@@ -1,6 +1,6 @@
 ---
 task: /Users/boyang/code/Cove/plans/TASK-subtitle-clearance.md
-status: dispatched
+status: done
 from: Planner
 to: Executor
 created: 2026-09-14

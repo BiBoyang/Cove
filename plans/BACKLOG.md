@@ -4,8 +4,6 @@
 
 ## 进行中 / 待验收
 
-- [ ] 控制条遮挡底部字幕 → 字幕随显隐抬升/回落（sub-margin-y 路线）：
-  2026-09-14 派发 Executor（plans/TASK-subtitle-clearance.md），待真机验收
 - [ ] UI 统一优化主线：选题池与证据见 plans/UI-AUDIT-2026-09-05.md（按 §4 性价比顺序推进），令牌图纸 design/DESIGN-TOKENS.md；P1–P6 + 设置迁移 + 胶囊重构 + audit 清扫 + spacing 令牌族全部落地，audit 散点清零（2026-09-07 真机通过）；候选下一张卡 = 新选题（用户点题）
 
 ## 下一波（1.0 批次，顺序即排期）
@@ -40,6 +38,9 @@
 
 ## 已归档（近期完成）
 
+- 字幕随控制条显隐抬升/回落（mpv sub-margin-y，基线实测 34 读回不写死；
+  胶囊高度 View 层测量喂 VM）：2026-09-14 真机通过
+  （见 plans/archive/TASK-subtitle-clearance.md）
 - 外挂字幕 GBK/BIG5 渲染为空观察项：2026-09-14 闭卡——当前工件三重排除
   （spike 解码链 12 组实验 / 原文件字节级验尸 / 真机渲染复测），按环境漂移
   归档（见 plans/archive/TASK-subtitle-charset.md）

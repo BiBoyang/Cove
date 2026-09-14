@@ -1,7 +1,7 @@
 # TASK-subtitle-clearance：控制条可见时字幕自动抬升
 
-状态：2026-09-14 Executor 交付 + Review Approved（356/55 全绿、构建零警告、
-diff 全审吻合）。待 Owner 真机验收（DoD 3）。
+状态：**landed 2026-09-14**（356/55 全绿、构建零警告、Review Approved；
+真机验收通过：控制条常亮时字幕抬升不被遮挡、隐藏后回落原位）。
 
 ## Amendment 1（2026-09-14，Planner 追认）
 
