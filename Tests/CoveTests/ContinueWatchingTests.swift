@@ -262,13 +262,18 @@ struct ContinueWatchingDeepLinkTests {
         coordinator.onMessageError = { _, _ in alerts += 1 }
 
         coordinator.homeViewController.onResumeWatch?(smbEntry())
-        #expect(coordinator.shareGridViewModel.state.placeholder?.kind == .loading)
+        // Headless resume (Amendment 1, A1-2): the browser is never
+        // navigated — the share grid keeps its idle guidance placeholder
+        // while the connect runs; no loading state is imposed.
+        #expect(coordinator.shareGridViewModel.state.placeholder?.kind
+                == .info(symbol: "externaldrive"))
         // The user opens settings before the connect settles: the chain
         // must die quietly — no failure placeholder, no alert, no prune.
         coordinator.openSettings()
 
         try await Task.sleep(for: .milliseconds(200))
-        #expect(coordinator.shareGridViewModel.state.placeholder?.kind == .loading)
+        #expect(coordinator.shareGridViewModel.state.placeholder?.kind
+                == .info(symbol: "externaldrive"))
         #expect(store.position(forKey: progressKey) == 60)
         #expect(alerts == 0)
     }

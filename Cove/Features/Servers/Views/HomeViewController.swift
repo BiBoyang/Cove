@@ -163,7 +163,10 @@ extension HomeViewController: NSMenuDelegate {
         guard let indexPath = collectionView.indexPathForItem(at: point),
               indexPath.item < viewModel.state.entries.count else { return }
         if !collectionView.selectionIndexPaths.contains(indexPath) {
-            collectionView.selectItems(at: [indexPath], scrollPosition: [])
+            // `selectItems` is additive even with
+            // `allowsMultipleSelection = false` — the A1-1 highlight
+            // accumulation. Assignment replaces the selection.
+            collectionView.selectionIndexPaths = [indexPath]
         }
         let entry = viewModel.state.entries[indexPath.item]
 
@@ -185,6 +188,7 @@ extension HomeViewController: NSMenuDelegate {
         guard let entry = sender.representedObject as? RecentWatchEntry else { return }
         onRevealInBrowser?(entry)
     }
+
 }
 
 extension HomeViewController: NSCollectionViewDataSource {

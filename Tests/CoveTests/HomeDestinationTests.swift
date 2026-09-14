@@ -26,6 +26,59 @@ struct HomeDestinationHighlightTests {
     }
 }
 
+@Suite("Home card right-click highlight")
+@MainActor
+struct HomeCardHighlightTests {
+    private final class TwoItemDataSource: NSObject, NSCollectionViewDataSource {
+        func collectionView(
+            _ collectionView: NSCollectionView, numberOfItemsInSection section: Int
+        ) -> Int { 2 }
+
+        func collectionView(
+            _ collectionView: NSCollectionView, itemForRepresentedObjectAt indexPath: IndexPath
+        ) -> NSCollectionViewItem {
+            NSCollectionViewItem()
+        }
+    }
+
+    private func makeCollectionView(dataSource: TwoItemDataSource) -> NSCollectionView {
+        let collectionView = NSCollectionView()
+        collectionView.dataSource = dataSource
+        collectionView.collectionViewLayout = NSCollectionViewFlowLayout()
+        collectionView.frame = NSRect(x: 0, y: 0, width: 400, height: 400)
+        collectionView.allowsMultipleSelection = false
+        collectionView.reloadData()
+        collectionView.layoutSubtreeIfNeeded()
+        return collectionView
+    }
+
+    /// A1-1 root cause, reproduced: `selectItems` ADDS to the selection
+    /// even with `allowsMultipleSelection = false` — so right-clicking
+    /// cards in turn stacked their isSelected highlights, the exact
+    /// "multi-select look" the owner reported. This test pins the AppKit
+    /// behavior so the quirk can never silently flip back.
+    @Test("selectItems is additive even under single selection (the A1-1 root cause)")
+    func selectItemsStacksEvenInSingleSelection() {
+        let collectionView = makeCollectionView(dataSource: TwoItemDataSource())
+        collectionView.selectItems(at: [IndexPath(item: 0, section: 0)], scrollPosition: [])
+        collectionView.selectItems(at: [IndexPath(item: 1, section: 0)], scrollPosition: [])
+        #expect(collectionView.selectionIndexPaths
+                == [IndexPath(item: 0, section: 0), IndexPath(item: 1, section: 0)])
+    }
+
+    /// The A1-1 fix: assigning `selectionIndexPaths` REPLACES the
+    /// selection, which is what the card context menu's right-click
+    /// selection now uses — after any right-click sequence at most one
+    /// card carries the selection highlight.
+    @Test("assigning selectionIndexPaths replaces, never stacks (the A1-1 fix)")
+    func selectionIndexPathsAssignmentReplaces() {
+        let collectionView = makeCollectionView(dataSource: TwoItemDataSource())
+        collectionView.selectionIndexPaths = [IndexPath(item: 0, section: 0)]
+        collectionView.selectionIndexPaths = [IndexPath(item: 1, section: 0)]
+        #expect(collectionView.selectionIndexPaths == [IndexPath(item: 1, section: 0)])
+    }
+}
+
 @Suite("openHome reset")
 @MainActor
 struct OpenHomeResetTests {

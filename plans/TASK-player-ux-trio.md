@@ -1,7 +1,9 @@
 # TASK-player-ux-trio：播放体验意见三连（重播 / 续播队列 / 历史卡片路径）
 
-状态：2026-09-14 Executor 交付 + Review Approved；真机验收中 Owner 报告
-两个新问题 → Amendment 1 已派发（见下）。
+状态：2026-09-14 主体 + Amendment 1 均交付并 Review Approved（367/56 全绿、
+零警告）。Amendment 1 根因：A1-1 = AppKit quirk（selectItems 单选下
+additive，已配钉住测试）；A1-2 = 续播改无头列表（Services 零改动，
+失败语义逐行对齐旧链）。全部待 Owner 真机验收（七项见下）。
 
 ## Amendment 1（2026-09-14，Owner 验收反馈驱动）
 
