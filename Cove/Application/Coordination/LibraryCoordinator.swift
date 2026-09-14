@@ -156,6 +156,7 @@ final class LibraryCoordinator {
         shareGridViewController.onRetry = { [weak self] in self?.retryEnumeration() }
         shareGridViewController.onAddServer = { [weak self] in self?.presentAddServerSheet() }
         homeViewController.onResumeWatch = { [weak self] in self?.resumePlayback($0) }
+        homeViewController.onRevealInBrowser = { [weak self] in self?.revealWatchLocation($0) }
         homeViewController.onAddServer = { [weak self] in self?.presentAddServerSheet() }
         browserViewController.onOpenDirectory = { [weak self] in self?.navigateInto($0) }
         browserViewController.onOpenImage = { [weak self] in self?.openReader(forImageAt: $0) }
@@ -794,13 +795,53 @@ final class LibraryCoordinator {
     /// the grid's failure placeholder and keep the record; only a gone
     /// server config or an unreachable file prunes it.
     private func resumeSMBPlayback(_ entry: RecentWatchEntry, host: String, share: String) {
+        runSMBWatchChain(
+            entry, host: host, share: share,
+            unreachableMessage: "无法打开“\(entry.fileName)”",
+            isReachable: { self.listingContainsPlayable(path: entry.path) },
+            onReady: { self.openPlayer(at: entry.path, queueMode: .singleVideo) }
+        )
+    }
+
+    /// Card context menu "打开所在文件夹" (TASK-player-ux-trio Step 3): the
+    /// same SMB chain as the resume deep link, but the terminal step
+    /// reveals the record's file in the browser instead of opening the
+    /// player. Reachability is plain existence — the action navigates, it
+    /// does not play — while the failure split (certain prune + alert vs.
+    /// transient placeholder, record kept) is the resume link's, verbatim.
+    private func revealSMBWatchLocation(_ entry: RecentWatchEntry, host: String, share: String) {
+        runSMBWatchChain(
+            entry, host: host, share: share,
+            unreachableMessage: "无法打开“\(entry.fileName)”所在文件夹",
+            isReachable: { self.browserViewModel.item(atPath: entry.path) != nil },
+            onReady: { self.browserViewController.revealItem(atPath: entry.path) }
+        )
+    }
+
+    /// The SMB chain every continue-watching deep link rides: match the
+    /// recorded server, connect (reusing a live same-source session),
+    /// navigate to the record's directory, load its listing, then hand
+    /// the terminal step to `onReady`. Failure semantics mirror the
+    /// manual flow (decision 4) and are identical for every caller:
+    /// transient connect/listing failures surface as the grid's failure
+    /// placeholder and keep the record; a gone server config or an
+    /// unreachable file prunes the record with an alert whose message
+    /// the caller words for its action (play vs. reveal).
+    private func runSMBWatchChain(
+        _ entry: RecentWatchEntry,
+        host: String,
+        share: String,
+        unreachableMessage: String,
+        isReachable: @escaping @MainActor () -> Bool,
+        onReady: @escaping @MainActor () -> Void
+    ) {
         guard let server = sessionService.servers.first(where: {
             $0.host == host || $0.remoteHost == host
         }) else {
             // Certain failure #1: the server config is gone for good.
             removeRecentWatch(entry)
             presentResumeFailureAlert(
-                message: "无法打开“\(entry.fileName)”",
+                message: unreachableMessage,
                 informative: "该视频所在的服务器已被删除，已从最近播放中移除。"
             )
             return
@@ -845,10 +886,10 @@ final class LibraryCoordinator {
                     if Task.isCancelled || error is CancellationError { throw error }
                     throw ResumeFailure.fileUnreachable
                 }
-                guard listingContainsPlayable(path: entry.path) else {
+                guard isReachable() else {
                     throw ResumeFailure.fileUnreachable
                 }
-                openPlayer(at: entry.path)
+                onReady()
             } catch {
                 if Task.isCancelled || error is CancellationError { return }
                 guard generation == navigationGeneration else { return }
@@ -856,7 +897,7 @@ final class LibraryCoordinator {
                     // Certain failure #2: the file or its folder is gone.
                     removeRecentWatch(entry)
                     presentResumeFailureAlert(
-                        message: "无法打开“\(entry.fileName)”",
+                        message: unreachableMessage,
                         informative: "文件可能已移动或删除，已从最近播放中移除。"
                     )
                 } else {
@@ -877,7 +918,7 @@ final class LibraryCoordinator {
         openVault(initialPath: entry.directoryPath) { [weak self] drilled in
             guard let self else { return }
             if drilled, listingContainsPlayable(path: entry.path) {
-                openPlayer(at: entry.path)
+                openPlayer(at: entry.path, queueMode: .singleVideo)
             } else {
                 removeRecentWatch(entry)
                 presentResumeFailureAlert(
@@ -885,6 +926,39 @@ final class LibraryCoordinator {
                     informative: "文件可能已移动或删除，已从最近播放中移除。"
                 )
             }
+        }
+    }
+
+    /// Card context menu "打开所在文件夹" (TASK-player-ux-trio Step 3):
+    /// the same vault drill as the resume deep link, but the completion
+    /// reveals the record's file in the browser. Existence (not
+    /// playability) decides reachability — the action navigates — while
+    /// a vanished file/folder takes the resume link's certain-failure
+    /// cleanup, verbatim.
+    private func revealVaultWatchLocation(_ entry: RecentWatchEntry) {
+        openVault(initialPath: entry.directoryPath) { [weak self] drilled in
+            guard let self else { return }
+            if drilled, browserViewModel.item(atPath: entry.path) != nil {
+                browserViewController.revealItem(atPath: entry.path)
+            } else {
+                removeRecentWatch(entry)
+                presentResumeFailureAlert(
+                    message: "无法打开“\(entry.fileName)”所在文件夹",
+                    informative: "文件可能已移动或删除，已从最近播放中移除。"
+                )
+            }
+        }
+    }
+
+    /// Routes a card's "打开所在文件夹" intent by the record's source:
+    /// both routes reuse the resume deep link's connection chain and
+    /// failure semantics unchanged — only the terminal step differs.
+    private func revealWatchLocation(_ entry: RecentWatchEntry) {
+        switch entry.source {
+        case .vault:
+            revealVaultWatchLocation(entry)
+        case .smb(let host, let share):
+            revealSMBWatchLocation(entry, host: host, share: share)
         }
     }
 
@@ -1119,23 +1193,28 @@ final class LibraryCoordinator {
     /// Opens the player for a media file, carrying the directory's other
     /// same-kind items as the playlist (prev/next buttons and auto-advance
     /// on a clean end): videos queue videos, audio queues audio
-    /// (TASK-audio-playback decision 3). The full listing rides along as
-    /// the siblings snapshot — external-subtitle sidecars are text files
-    /// the media-only playlist cannot see. The PlayerCoordinator owns the
-    /// single player window; a new open or a track change swaps the
-    /// session in place — window close shuts the live mpv handle and
-    /// stream bridge down via `windowWillClose`.
-    private func openPlayer(at path: String) {
+    /// (TASK-audio-playback decision 3). Continue-watching resumes pass
+    /// `.singleVideo`: the opened file queues only itself, so prev/next
+    /// grey out and auto-advance never leaks back into the original
+    /// folder (TASK-player-ux-trio Step 2); the browser keeps the folder
+    /// queue for episode binge-watching. The full listing rides along as
+    /// the siblings snapshot regardless — external-subtitle sidecars are
+    /// text files the media-only playlist cannot see. The
+    /// PlayerCoordinator owns the single player window; a new open or a
+    /// track change swaps the session in place — window close shuts the
+    /// live mpv handle and stream bridge down via `windowWillClose`.
+    private func openPlayer(at path: String, queueMode: PlayerQueueMode = .folder) {
         // The queue follows the opened file's kind (TASK-audio-playback
         // decision 3): a video queues the folder's videos, an audio file
         // its audio — a mixed folder never interleaves the two. Deep-linked
         // resumes land here too, so audio entries ride the same session.
-        let queue: [ContentItem]
-        switch browserViewModel.item(atPath: path)?.fileType {
-        case .video: queue = browserViewModel.videoItems
-        case .audio: queue = browserViewModel.audioItems
-        default: queue = []
-        }
+        let queue = makePlayerQueue(
+            selectedPath: path,
+            fileType: browserViewModel.item(atPath: path)?.fileType,
+            videos: browserViewModel.videoItems,
+            audios: browserViewModel.audioItems,
+            mode: queueMode
+        )
         guard queue.contains(where: { $0.path == path }) else {
             onMessageError?("无法定位媒体文件。", "打开失败")
             return

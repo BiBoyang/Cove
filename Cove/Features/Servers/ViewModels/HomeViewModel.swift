@@ -51,16 +51,50 @@ struct RecentWatchEntry: Equatable, Sendable {
         return min(max(position / duration, 0), 1)
     }
 
-    /// "已看至 h:mm:ss · N天前" (decision 3). The timecode reuses the
-    /// player's formatter and the relative part the share card's, so the
-    /// home cards speak exactly like the rest of the app; `now` is
-    /// injected to keep tests deterministic. MainActor-bound because the
-    /// reused formatters live on MainActor types; every caller (card
+    /// "已看至 h:mm:ss · N天前 · /所在/目录" (decision 3; the location is
+    /// TASK-player-ux-trio Step 3). The timecode reuses the player's
+    /// formatter and the relative part the share card's, so the home
+    /// cards speak exactly like the rest of the app; `now` is injected
+    /// to keep tests deterministic. The directory is middle-truncated —
+    /// it identifies the folder from both ends and the label's own tail
+    /// truncation stays the last-resort backstop. MainActor-bound because
+    /// the reused formatters live on MainActor types; every caller (card
     /// item, VM tests) already is.
     @MainActor func subtitleText(relativeTo now: Date) -> String {
         let timecode = PlayerViewModel.formatTime(position)
         let relative = ShareGridViewModel.ShareCardInfo.relativeText(for: lastWatched, relativeTo: now)
-        return "已看至 \(timecode) · \(relative)"
+        let location = Self.middleTruncated(locationText(), maxLength: Self.locationMaxLength)
+        return "已看至 \(timecode) · \(relative) · \(location)"
+    }
+
+    /// Cap on the location segment inside the card's one-line subtitle;
+    /// the layout truncates the whole line further if the timecode and
+    /// relative part leave less room.
+    static let locationMaxLength = 20
+
+    /// The card's location line: the parent directory the file lives in,
+    /// as the browser would show it. Vault paths are prefixed with the
+    /// vault's display root ("本地仓库"), matching the browser pane's
+    /// title contract; SMB paths are share-relative as browsed. Pure so
+    /// the rule is unit-testable; the card's tooltip shows the untruncated
+    /// full path instead.
+    func locationText() -> String {
+        switch source {
+        case .vault: return "本地仓库\(directoryPath)"
+        case .smb: return directoryPath
+        }
+    }
+
+    /// Middle ellipsis truncation: keeps the leading and trailing
+    /// segments that identify a folder and collapses the middle to "…".
+    /// A text at or under the cap is returned untouched. Pure so the
+    /// truncation rule is unit-testable.
+    static func middleTruncated(_ text: String, maxLength: Int) -> String {
+        guard text.count > maxLength else { return text }
+        let keep = maxLength - 1
+        let head = keep / 2
+        let tail = keep - head
+        return String(text.prefix(head)) + "…" + String(text.suffix(tail))
     }
 
     /// Parses one stored record; nil for malformed keys (decision 2

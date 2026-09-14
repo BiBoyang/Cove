@@ -239,6 +239,67 @@ struct PlayerViewModelTests {
         #expect(controller.commands.last == .seekTo(0))
     }
 
+    // MARK: EOF replay (TASK-player-ux-trio Step 1)
+
+    /// Drives the view model to a clean EOF: loaded, at the end, paused,
+    /// ended fired — the parked-on-the-last-frame state.
+    private func reachCleanEOF(_ viewModel: PlayerViewModel) {
+        viewModel.apply(.fileLoaded)
+        viewModel.apply(.durationChanged(120))
+        viewModel.apply(.timePosChanged(120))
+        viewModel.apply(.pauseChanged(true))
+        viewModel.apply(.ended)
+    }
+
+    @Test("parked at a clean EOF with nowhere to go, play replays from the top")
+    func eofParkReplaysFromStart() {
+        let (viewModel, controller) = makeViewModel()
+        reachCleanEOF(viewModel)
+        // The coordinator arms the park only when no Up-Next jump is
+        // pending (the queue-end park); that arming is what turns the
+        // play intent into a replay.
+        viewModel.markParkedWithNoPendingAdvance()
+
+        viewModel.togglePause()
+        #expect(controller.commands == [.seekTo(0), .togglePause])
+    }
+
+    @Test("a pending Up-Next jump keeps the plain unpause at EOF")
+    func eofWithPendingAdvanceKeepsToggle() {
+        let (viewModel, controller) = makeViewModel()
+        reachCleanEOF(viewModel)
+        // Unarmed: the coordinator parks only when stepIndex is nil, so an
+        // unarmed EOF models a countdown (or replay/wrap) already pending.
+        viewModel.togglePause()
+        #expect(controller.commands == [.togglePause])
+    }
+
+    @Test("play away from EOF is an ordinary unpause")
+    func playBeforeEOFIsPlainToggle() {
+        let (viewModel, controller) = makeViewModel()
+        viewModel.apply(.fileLoaded)
+        viewModel.apply(.pauseChanged(true))
+        viewModel.togglePause()
+        #expect(controller.commands == [.togglePause])
+    }
+
+    @Test("a fresh load or a user seek disarms the EOF park")
+    func eofParkDisarmedByLoadAndSeek() {
+        let (viewModel, controller) = makeViewModel()
+        reachCleanEOF(viewModel)
+        viewModel.markParkedWithNoPendingAdvance()
+        viewModel.apply(.fileLoaded)
+        viewModel.togglePause()
+        #expect(controller.commands == [.togglePause])
+
+        reachCleanEOF(viewModel)
+        viewModel.markParkedWithNoPendingAdvance()
+        viewModel.seekBy(seconds: -10)
+        viewModel.togglePause()
+        // The recorder still holds the first half's plain togglePause.
+        #expect(Array(controller.commands.suffix(2)) == [.seekBy(-10), .togglePause])
+    }
+
     @Test("time formatting")
     func timeFormatting() {
         #expect(PlayerViewModel.formatTime(0) == "0:00")

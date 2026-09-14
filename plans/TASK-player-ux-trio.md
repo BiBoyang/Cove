@@ -1,6 +1,8 @@
 # TASK-player-ux-trio：播放体验意见三连（重播 / 续播队列 / 历史卡片路径）
 
-状态：2026-09-14 派发 Executor。
+状态：2026-09-14 Executor 交付 + Review Approved（365/55 全绿、构建零警告、
+diff 全审吻合、runSMBWatchChain 抽取逐行保语义）。待 Owner 真机验收
+（五项清单见下）。
 
 ## 背景（Owner 三条意见，Plan Card 已拍板）
 

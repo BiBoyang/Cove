@@ -15,6 +15,43 @@ enum PlayMode: Sendable, Equatable, CaseIterable {
     case shuffle
 }
 
+/// How the queue behind one opened file is assembled
+/// (TASK-player-ux-trio Step 2): the browser keeps the whole folder
+/// (episode binge-watching), a continue-watching resume opens as a
+/// single-video queue so prev/next and auto-advance never leak back
+/// into the original folder.
+enum PlayerQueueMode: Sendable, Equatable {
+    /// The folder's same-kind items, in browser order.
+    case folder
+    /// Just the opened file itself.
+    case singleVideo
+}
+
+/// The queue behind one opened media file: the folder's same-kind items,
+/// or only the file itself for a single-video open. Pure so the selection
+/// rule (video/audio/unknown × both modes) is unit-testable without
+/// AppKit or an SMB session. An unknown file type yields no queue, exactly
+/// like the folder mode's media-only rule always has.
+func makePlayerQueue(
+    selectedPath: String,
+    fileType: ContentItem.FileType?,
+    videos: [ContentItem],
+    audios: [ContentItem],
+    mode: PlayerQueueMode
+) -> [ContentItem] {
+    guard let fileType else { return [] }
+    let sameKind: [ContentItem]
+    switch fileType {
+    case .video: sameKind = videos
+    case .audio: sameKind = audios
+    default: return []
+    }
+    switch mode {
+    case .folder: return sameKind
+    case .singleVideo: return sameKind.filter { $0.path == selectedPath }
+    }
+}
+
 /// The player's sibling-video queue: a snapshot of the browser's video
 /// items at open time plus the current position. Pure value type so the
 /// advance/clamp rules are unit-testable without AppKit or mpv.

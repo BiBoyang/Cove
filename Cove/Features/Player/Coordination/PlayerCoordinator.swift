@@ -22,6 +22,9 @@ final class PlayerCoordinator {
     /// this coordinator hand captured frames here. Nil = covers disabled.
     private let thumbnailWriter: VideoThumbnailWriter?
     private var windowController: PlayerWindowController?
+    /// The live session's view model, kept so a clean-EOF park can arm
+    /// the replay-from-start flag on it (TASK-player-ux-trio Step 1).
+    private weak var liveViewModel: PlayerViewModel?
     private var playlist = PlayerPlaylist(items: [], selectedPath: "")
     private var sourceID: String?
     private var reader: VideoStreamBridge.RangedReader?
@@ -181,7 +184,14 @@ final class PlayerCoordinator {
         guard let windowController else { return }
         // The ended event can repeat; a live countdown absorbs it.
         guard upNextCountdown == nil else { return }
-        guard let next = playlist.autoAdvanceIndex(mode: playMode) else { return }
+        guard let next = playlist.autoAdvanceIndex(mode: playMode) else {
+            // Nowhere to advance: park on the last frame and tell the
+            // view model no jump is pending, so its next play intent
+            // replays from the top instead of unpausing at EOF
+            // (TASK-player-ux-trio Step 1).
+            liveViewModel?.markParkedWithNoPendingAdvance()
+            return
+        }
         if next == playlist.currentIndex {
             // Repeat-one: replay without the countdown ceremony.
             windowController.replayCurrentTrack()
@@ -297,6 +307,7 @@ final class PlayerCoordinator {
                 thumbnailWriter: thumbnailWriter,
                 thumbnailFacts: thumbnailFacts
             )
+            liveViewModel = viewModel
             if playbackSpeed != 1 {
                 // Keep the chosen rate across track changes; setting speed
                 // on the idle handle applies to the upcoming file.

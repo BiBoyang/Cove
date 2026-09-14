@@ -104,6 +104,40 @@ struct ContinueWatchingStateTests {
         #expect(entries[1].fileSize == nil)
         #expect(entries[1].modifiedDate == nil)
     }
+
+    // MARK: Card location (TASK-player-ux-trio Step 3)
+
+    @Test("location: vault prefixed with 本地仓库, smb share-relative")
+    func locationTextBySource() throws {
+        let smb = try #require(RecentWatchEntry.parse(record("smb://n/s|/share/dir/sub/m.mp4", lastWatched: 1000)))
+        #expect(smb.locationText() == "/share/dir/sub")
+
+        let vault = try #require(RecentWatchEntry.parse(record("vault://local|/Movies/a.mp4", lastWatched: 1000)))
+        #expect(vault.locationText() == "本地仓库/Movies")
+
+        // A file at the share root lives in "/".
+        let root = try #require(RecentWatchEntry.parse(record("smb://n/s|/a.mp4", lastWatched: 1000)))
+        #expect(root.locationText() == "/")
+    }
+
+    @Test("middle truncation keeps head and tail around one ellipsis")
+    func middleTruncation() {
+        #expect(RecentWatchEntry.middleTruncated("/short/path", maxLength: 20) == "/short/path")
+        #expect(RecentWatchEntry.middleTruncated("/very/deep/nested/folder", maxLength: 12) == "/very…folder")
+        #expect(RecentWatchEntry.middleTruncated("abcde", maxLength: 3) == "a…e")
+    }
+
+    @Test("the subtitle line appends the location segment")
+    func subtitleAppendsLocation() throws {
+        let entry = try #require(RecentWatchEntry.parse(record("smb://n/s|/a.mp4", lastWatched: 1_000_000)))
+        let text = entry.subtitleText(relativeTo: Date(timeIntervalSince1970: 2_000_000))
+        #expect(text.hasPrefix("已看至 1:00 · "))
+        #expect(text.hasSuffix(" · /"))
+
+        let vault = try #require(RecentWatchEntry.parse(record("vault://local|/Movies/a.mp4", lastWatched: 1_000_000)))
+        #expect(vault.subtitleText(relativeTo: Date(timeIntervalSince1970: 2_000_000)).hasSuffix(" · 本地仓库/Movies"))
+    }
+
 }
 
 @Suite("Continue watching deep link")

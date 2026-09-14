@@ -13,6 +13,9 @@ final class HomeViewController: NSViewController {
     /// Continue-watching card double-clicks, forwarded to the coordinator's
     /// resume deep link (decision 4).
     var onResumeWatch: ((RecentWatchEntry) -> Void)?
+    /// Continue-watching card right-clicks: "打开所在文件夹" reveals the
+    /// record's directory in the browser (TASK-player-ux-trio Step 3).
+    var onRevealInBrowser: ((RecentWatchEntry) -> Void)?
     /// First-run empty-state action (add server), mapped from the state.
     var onAddServer: (() -> Void)?
     /// Read-only cover lookup for the cards (display pool only; a miss
@@ -75,6 +78,13 @@ final class HomeViewController: NSViewController {
         doubleClick.numberOfClicksRequired = 2
         collectionView.addGestureRecognizer(doubleClick)
 
+        // Right-click menu: rebuilt per click by menuNeedsUpdate — the
+        // first item shows the card's location (disabled), then
+        // "打开所在文件夹" (TASK-player-ux-trio Step 3).
+        let contextMenu = NSMenu()
+        contextMenu.delegate = self
+        collectionView.menu = contextMenu
+
         scrollView.documentView = collectionView
         scrollView.hasVerticalScroller = true
         scrollView.drawsBackground = false
@@ -135,6 +145,45 @@ final class HomeViewController: NSViewController {
         guard let indexPath = collectionView.indexPathForItem(at: point),
               indexPath.item < viewModel.state.entries.count else { return }
         onResumeWatch?(viewModel.state.entries[indexPath.item])
+    }
+}
+
+extension HomeViewController: NSMenuDelegate {
+    /// Finder-style right-click: clicking an unselected card moves the
+    /// selection to it before the menu appears (same rule as the
+    /// browser's `selectionOnRightClick`), so the menu never acts on a
+    /// card that doesn't look selected. The menu carries the clicked
+    /// card's location as a disabled first item plus the reveal action;
+    /// empty space (no card under the click) yields an empty menu, which
+    /// simply does not appear.
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        menu.removeAllItems()
+        guard let event = NSApp.currentEvent else { return }
+        let point = collectionView.convert(event.locationInWindow, from: nil)
+        guard let indexPath = collectionView.indexPathForItem(at: point),
+              indexPath.item < viewModel.state.entries.count else { return }
+        if !collectionView.selectionIndexPaths.contains(indexPath) {
+            collectionView.selectItems(at: [indexPath], scrollPosition: [])
+        }
+        let entry = viewModel.state.entries[indexPath.item]
+
+        let pathItem = NSMenuItem(title: entry.locationText(), action: nil, keyEquivalent: "")
+        pathItem.isEnabled = false
+        menu.addItem(pathItem)
+
+        let revealItem = NSMenuItem(
+            title: "打开所在文件夹",
+            action: #selector(handleRevealInBrowser(_:)),
+            keyEquivalent: ""
+        )
+        revealItem.target = self
+        revealItem.representedObject = entry
+        menu.addItem(revealItem)
+    }
+
+    @objc private func handleRevealInBrowser(_ sender: NSMenuItem) {
+        guard let entry = sender.representedObject as? RecentWatchEntry else { return }
+        onRevealInBrowser?(entry)
     }
 }
 
@@ -264,6 +313,7 @@ final class RecentWatchCardItem: NSCollectionViewItem {
         coverTask?.cancel()
         coverTask = nil
         coverKey = nil
+        cardView.toolTip = nil
         showFilmIcon()
     }
 
@@ -290,6 +340,9 @@ final class RecentWatchCardItem: NSCollectionViewItem {
         coverKey = entry.key
         showFilmIcon()
         nameLabel.stringValue = entry.fileName
+        // The subtitle's directory segment is middle-truncated; the
+        // tooltip carries the untruncated full path (Step 3).
+        cardView.toolTip = entry.path
         if let fraction = entry.progressFraction {
             progressBar.isHidden = false
             progressBar.doubleValue = fraction

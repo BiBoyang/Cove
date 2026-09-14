@@ -129,6 +129,17 @@ final class PlayerViewModel {
     /// Failure detail behind `.error`, rendered by the central failure
     /// placeholder; nil otherwise.
     private(set) var errorDetail: String?
+    /// Clean end-of-file reached: playback finished and the session is
+    /// parked on the last frame. Set by `.ended`, cleared by a fresh file
+    /// load or any user seek — afterwards a play intent is an ordinary
+    /// unpause again.
+    private var endedAtCleanEOF = false
+    /// Whether the coordinator parked this clean EOF with no Up-Next
+    /// auto-advance pending (which step follows an EOF is coordinator
+    /// knowledge). Fed back through `markParkedWithNoPendingAdvance()`;
+    /// only together with `endedAtCleanEOF` does a play intent replay
+    /// from the top (TASK-player-ux-trio Step 1).
+    private var hasNoPendingAdvance = false
 
     private var isPointerOverControls = false
     private var idleHideTask: Task<Void, Never>?
@@ -175,6 +186,10 @@ final class PlayerViewModel {
         switch event {
         case .fileLoaded:
             hasLoaded = true
+            // A fresh file resets the EOF park: the previous video's
+            // end says nothing about the new one.
+            endedAtCleanEOF = false
+            hasNoPendingAdvance = false
             readSubtitleMarginBaseline()
         case .timePosChanged(let time):
             if !isScrubbing {
@@ -204,6 +219,7 @@ final class PlayerViewModel {
             // A finished video is forgotten so a replay starts from the
             // top; the coordinator then decides whether to auto-advance
             // (the last video in the queue keeps the last frame up).
+            endedAtCleanEOF = true
             if let progressStore, let progressKey {
                 progressStore.removePosition(forKey: progressKey)
             }
@@ -291,11 +307,30 @@ final class PlayerViewModel {
     // MARK: - User intents
 
     func togglePause() {
+        // Parked at a clean EOF with no Up-Next jump pending, the
+        // transport button and Space mean "watch it again", not
+        // "unpause at the end of the file" (mpv would sit there).
+        if endedAtCleanEOF && hasNoPendingAdvance {
+            replayFromStart()
+            return
+        }
         controller.togglePause()
     }
 
-    /// Relative seek, used by the arrow keys.
+    /// Armed by the coordinator when a clean EOF has nowhere to
+    /// auto-advance: the queue-end park. While a countdown is pending or
+    /// the mode replays/wraps, this is never called and the transport
+    /// keeps its plain unpause behavior.
+    func markParkedWithNoPendingAdvance() {
+        hasNoPendingAdvance = true
+    }
+
+    /// Relative seek, used by the arrow keys. Any user seek disarms the
+    /// EOF park: the user took the wheel, so a later play intent is an
+    /// ordinary unpause again.
     func seekBy(seconds: Int) {
+        endedAtCleanEOF = false
+        hasNoPendingAdvance = false
         controller.seek(bySeconds: seconds)
     }
 
@@ -318,6 +353,8 @@ final class PlayerViewModel {
         isScrubbing = false
         // currentTime already holds the drop target, so the slider shows
         // the destination while mpv's post-seek time-pos catches up.
+        endedAtCleanEOF = false
+        hasNoPendingAdvance = false
         controller.seekTo(seconds: currentTime)
         updateIdlePolicy()
         onChange?()
@@ -351,9 +388,12 @@ final class PlayerViewModel {
         controller.setSubtitle(trackID: trackID)
     }
 
-    /// Restarts the current video from the top (repeat-one mode): mpv parks
-    /// paused at EOF under keep-open, so seek back and unpause.
+    /// Restarts the current video from the top (repeat-one mode, and the
+    /// EOF-replay play intent): mpv parks paused at EOF under keep-open,
+    /// so seek back and unpause. The replay itself disarms the EOF park.
     func replayFromStart() {
+        endedAtCleanEOF = false
+        hasNoPendingAdvance = false
         controller.seekTo(seconds: 0)
         if isPaused {
             controller.togglePause()

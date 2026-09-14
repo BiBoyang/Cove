@@ -87,6 +87,53 @@ struct PlayerPlaylistTests {
         }
     }
 
+    // MARK: Queue selection (TASK-player-ux-trio Step 2)
+
+    private func audio(_ name: String) -> ContentItem {
+        ContentItem(name: name, path: "/music/\(name)", isDirectory: false, size: 100, modifiedDate: nil)
+    }
+
+    @Test("folder mode queues same-kind items; singleVideo queues only the opened file")
+    func queueSelectionByMode() {
+        let videos = makeQueue()
+        let audios = [audio("a.mp3"), audio("b.flac")]
+
+        // Folder mode (the browser default) is unchanged: a video queues
+        // the folder's videos, an audio file its audio.
+        #expect(makePlayerQueue(selectedPath: "/movies/b.mkv", fileType: .video, videos: videos, audios: audios, mode: .folder).map(\.path) == ["/movies/a.mp4", "/movies/b.mkv", "/movies/c.mov"])
+        #expect(makePlayerQueue(selectedPath: "/music/b.flac", fileType: .audio, videos: videos, audios: audios, mode: .folder).map(\.path) == ["/music/a.mp3", "/music/b.flac"])
+
+        // Unknown types never queue, in either mode.
+        #expect(makePlayerQueue(selectedPath: "/movies/n.txt", fileType: .text, videos: videos, audios: audios, mode: .folder).isEmpty)
+        #expect(makePlayerQueue(selectedPath: "/movies/n.txt", fileType: nil, videos: videos, audios: audios, mode: .singleVideo).isEmpty)
+
+        // Single-video mode (continue-watching resumes) keeps only the file.
+        #expect(makePlayerQueue(selectedPath: "/movies/b.mkv", fileType: .video, videos: videos, audios: audios, mode: .singleVideo).map(\.path) == ["/movies/b.mkv"])
+        #expect(makePlayerQueue(selectedPath: "/music/a.mp3", fileType: .audio, videos: videos, audios: audios, mode: .singleVideo).map(\.path) == ["/music/a.mp3"])
+
+        // A path absent from the listing yields no queue; the open guard
+        // surfaces its "无法定位媒体文件" error, same as folder mode.
+        #expect(makePlayerQueue(selectedPath: "/movies/gone.mp4", fileType: .video, videos: videos, audios: audios, mode: .singleVideo).isEmpty)
+    }
+
+    @Test("a single-video queue greys out prev/next and never auto-advances")
+    func singleVideoQueueTransport() {
+        let item = video("only.mp4")
+        let queue = makePlayerQueue(
+            selectedPath: "/movies/only.mp4", fileType: .video,
+            videos: [item], audios: [], mode: .singleVideo
+        )
+        #expect(queue.count == 1)
+        let playlist = PlayerPlaylist(items: queue, selectedPath: "/movies/only.mp4")
+        // The setTransportAvailability derivation: with one element the
+        // playlist edges are false, so both buttons grey out — the
+        // continue-watching single-video contract.
+        #expect(playlist.canGoPrevious == false)
+        #expect(playlist.canGoNext == false)
+        #expect(playlist.autoAdvanceIndex(mode: .list) == nil)
+        #expect(playlist.autoAdvanceIndex(mode: .single) == nil)
+    }
+
     @Test("an empty queue has no current and never advances")
     func emptyQueue() {
         let empty = PlayerPlaylist(items: [], selectedPath: "/movies/x.mp4")
