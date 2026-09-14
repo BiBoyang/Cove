@@ -223,6 +223,25 @@ struct VideoThumbnailTests {
         #expect(parseReplyNode(w: 0, h: 2, stride: 8, format: "bgra", data: payload) == nil)
     }
 
+    // MARK: - Abandoned capture replies (TASK-playback-session-guard)
+
+    /// The drain's store rule for screenshot-raw replies: a reply whose
+    /// waiter already timed out must be dropped — exactly once — so its
+    /// BGRA payload (1080p ≈ 8MB / 4K ≈ 33MB) never parks in
+    /// `capturedFrames` forever.
+    @Test("an abandoned capture's reply is dropped exactly once")
+    func abandonedCaptureReplyDroppedOnce() {
+        var abandoned: Set<UInt64> = []
+        // A reply with no timed-out wait stores its frame.
+        #expect(MPVPlayerCore.shouldStoreCaptureReply(replyID: 7, abandonedCaptureIDs: &abandoned))
+        // The abandoned ID is dropped…
+        abandoned.insert(8)
+        #expect(!MPVPlayerCore.shouldStoreCaptureReply(replyID: 8, abandonedCaptureIDs: &abandoned))
+        // …and consumed: the set is empty again, the rule is once-only.
+        #expect(MPVPlayerCore.shouldStoreCaptureReply(replyID: 8, abandonedCaptureIDs: &abandoned))
+        #expect(abandoned.isEmpty)
+    }
+
     // MARK: - Payload shape
 
     private func solidImage(width: Int, height: Int) -> CGImage? {

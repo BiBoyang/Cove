@@ -151,7 +151,7 @@ struct ContinueWatchingDeepLinkTests {
     private func makeCoordinator(
         seedServers: [ServerConfig],
         vaultRoot: URL? = nil
-    ) throws -> (LibraryCoordinator, PlaybackProgressStore, () -> Void) {
+    ) throws -> (LibraryCoordinator, PlaybackProgressStore, SMBSessionService, () -> Void) {
         let suiteName = "ContinueWatchingTests-\(UUID().uuidString)"
         let settingsSuite = "\(suiteName)-settings"
         let progressSuite = "\(suiteName)-progress"
@@ -188,7 +188,7 @@ struct ContinueWatchingDeepLinkTests {
             UserDefaults(suiteName: settingsSuite)?.removePersistentDomain(forName: settingsSuite)
             progressDefaults.removePersistentDomain(forName: progressSuite)
         }
-        return (coordinator, progressStore, cleanup)
+        return (coordinator, progressStore, service, cleanup)
     }
 
     private func smbEntry(host: String = "nas.local") -> RecentWatchEntry {
@@ -212,7 +212,7 @@ struct ContinueWatchingDeepLinkTests {
         // Another server keeps the home page (not the first-run guidance)
         // on screen, so the grid actually renders the doomed entry.
         let other = ServerConfig(id: UUID(), host: "other.local", username: "user")
-        let (coordinator, store, cleanup) = try makeCoordinator(seedServers: [other])
+        let (coordinator, store, _, cleanup) = try makeCoordinator(seedServers: [other])
         defer { cleanup() }
         let key = "smb://ghost.local/media|/movies/a.mp4"
         store.savePosition(60, forKey: key, duration: 300)
@@ -231,7 +231,7 @@ struct ContinueWatchingDeepLinkTests {
     @Test("a failed connect keeps the record and surfaces the retry placeholder", .timeLimit(.minutes(1)))
     func transientFailureKeepsRecord() async throws {
         let server = ServerConfig(id: UUID(), host: "nas.local", username: "user")
-        let (coordinator, store, cleanup) = try makeCoordinator(seedServers: [server])
+        let (coordinator, store, _, cleanup) = try makeCoordinator(seedServers: [server])
         defer { cleanup() }
         store.savePosition(60, forKey: progressKey, duration: 300)
         coordinator.start()
@@ -253,7 +253,7 @@ struct ContinueWatchingDeepLinkTests {
     @Test("navigating away mid-chain cancels the rest of the deep link", .timeLimit(.minutes(1)))
     func navigationCancelsChain() async throws {
         let server = ServerConfig(id: UUID(), host: "nas.local", username: "user")
-        let (coordinator, store, cleanup) = try makeCoordinator(seedServers: [server])
+        let (coordinator, store, _, cleanup) = try makeCoordinator(seedServers: [server])
         defer { cleanup() }
         store.savePosition(60, forKey: progressKey, duration: 300)
         coordinator.start()
@@ -285,7 +285,7 @@ struct ContinueWatchingDeepLinkTests {
         try FileManager.default.createDirectory(at: vaultRoot, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: vaultRoot) }
         let server = ServerConfig(id: UUID(), host: "other.local", username: "user")
-        let (coordinator, store, cleanup) = try makeCoordinator(seedServers: [server], vaultRoot: vaultRoot)
+        let (coordinator, store, _, cleanup) = try makeCoordinator(seedServers: [server], vaultRoot: vaultRoot)
         defer { cleanup() }
         let key = "vault://|/gone/a.mp4"
         store.savePosition(60, forKey: key, duration: 300)
@@ -314,6 +314,29 @@ struct ContinueWatchingDeepLinkTests {
             store.position(forKey: key) == nil
         }
         #expect(alerts == 0)
+    }
+
+    /// TASK-playback-session-guard Minor 1: the reveal nils the thumbnail
+    /// provider unconditionally, so the session-reuse branch must reinstate
+    /// it too — previously only the fresh-connect branch did, leaving a
+    /// reused session's browser thumbnails all dark.
+    @Test("reveal on a reused session reinstalls the thumbnail provider",
+          .timeLimit(.minutes(1)))
+    func revealReuseReinstallsThumbnailProvider() async throws {
+        let server = ServerConfig(id: UUID(), host: "nas.local", username: "user")
+        let (coordinator, _, service, cleanup) = try makeCoordinator(seedServers: [server])
+        defer { cleanup() }
+        coordinator.start()
+        // A live session matching the record's source id: the reveal takes
+        // the reuse branch (no reconnect, no network).
+        try await service.connectLocal(StubShareSource(id: "smb://nas.local/media"))
+        #expect(coordinator.browserViewController.thumbnailProvider == nil)
+
+        coordinator.homeViewController.onRevealInBrowser?(smbEntry())
+
+        try await waitUntil("the thumbnail provider never came back") {
+            coordinator.browserViewController.thumbnailProvider != nil
+        }
     }
 }
 

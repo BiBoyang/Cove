@@ -219,6 +219,12 @@ final class MPVPlayerCore {
     /// Frames parsed out of `MPV_EVENT_COMMAND_REPLY` by the event drain,
     /// keyed by reply userdata and picked up by their capture call.
     private var capturedFrames: [UInt64: BGRAVideoFrame] = [:]
+    /// Capture replies whose waiter already timed out. The drain drops a
+    /// late reply for these instead of parking its BGRA frame in
+    /// `capturedFrames` forever (reply IDs only move forward, so nobody
+    /// would ever read it). Each ID enters at most once and is consumed
+    /// at most once — the set stays bounded.
+    private var abandonedCaptureIDs = Set<UInt64>()
     /// Next free screenshot-raw reply ID.
     private var nextCaptureReplyID: UInt64 = MPVPlayerCore.captureReplyBase
     /// Nested-capture guard: a capture polls the event queue, and a capture
@@ -417,7 +423,11 @@ final class MPVPlayerCore {
             }
             Thread.sleep(forTimeInterval: 0.004)
         }
-        capturedFrames[replyID] = nil
+        // Timed out: the reply can still arrive later, and storing it
+        // would park its BGRA payload (1080p ≈ 8MB / 4K ≈ 33MB) in
+        // `capturedFrames` forever. Record the ID; the drain drops the
+        // late reply when (if) it lands.
+        abandonedCaptureIDs.insert(replyID)
         logger.notice("screenshot-raw timed out; no cover captured")
         return nil
     }
@@ -498,6 +508,17 @@ final class MPVPlayerCore {
               width > 0, height > 0, stride > 0,
               let data, data.count >= stride * height else { return nil }
         return BGRAVideoFrame(data: data, width: width, height: height, stride: stride)
+    }
+
+    /// Whether a `screenshot-raw` reply may store its frame: replies for
+    /// captures whose wait already timed out are consumed here (dropped),
+    /// keeping their BGRA payload out of `capturedFrames`. Static over an
+    /// `inout` set — the exact consume-once rule the drain applies — so
+    /// the rule is unit-testable without an mpv handle.
+    nonisolated static func shouldStoreCaptureReply(
+        replyID: UInt64, abandonedCaptureIDs: inout Set<UInt64>
+    ) -> Bool {
+        abandonedCaptureIDs.remove(replyID) == nil
     }
 
     /// Observes the properties the player UI reads. Replies (including each
@@ -765,6 +786,11 @@ final class MPVPlayerCore {
                 // which copies the byte array out — happens right here.
                 let replyID = event.pointee.reply_userdata
                 guard replyID >= Self.captureReplyBase else { break }
+                // A late reply for a capture whose waiter already timed
+                // out: drop it (see `abandonedCaptureIDs`), never park it.
+                guard Self.shouldStoreCaptureReply(
+                    replyID: replyID, abandonedCaptureIDs: &abandonedCaptureIDs
+                ) else { break }
                 if let data = event.pointee.data,
                    let frame = Self.bgraFrame(
                        fromScreenshotReply: data

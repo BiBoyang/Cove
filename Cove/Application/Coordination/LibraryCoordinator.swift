@@ -51,7 +51,9 @@ final class LibraryCoordinator {
     private var navigationPath = LibraryNavigationPath()
     private var activeAddServerSheet: AddServerSheetController?
     /// Owns the single v1 player window; a new video replaces it.
-    private let playerCoordinator: PlayerCoordinator
+    /// Internal (not private) so the session-guard tests can fire the
+    /// close notification, like `homeViewModel`.
+    let playerCoordinator: PlayerCoordinator
     /// Owns the single PDF reader window; a new PDF replaces it.
     private let pdfReaderCoordinator: PdfReaderCoordinator
     /// The single in-flight update check; a re-click while running is
@@ -60,6 +62,11 @@ final class LibraryCoordinator {
     private let updateService = UpdateService()
     private var navigationGeneration = 0
     private var activeTask: Task<Void, Never>?
+    /// Set by `disconnectNowOrAfterPlayerClose` when a reset ran while a
+    /// video was still playing: the session teardown fires when the player
+    /// window closes (`flushPendingPlayerSessionDisconnect`), unless a
+    /// reconnect or session reuse lands first and forgives the debt.
+    private var pendingPlayerSessionDisconnect = false
     private let logger = TraceLogger(category: "Library")
 
     var hostWindowProvider: (() -> NSWindow?)?
@@ -68,6 +75,13 @@ final class LibraryCoordinator {
     var onError: ((_ error: Error, _ title: String) -> Void)?
     var onMessageError: ((_ message: String, _ title: String) -> Void)?
     var onUnsupportedFile: ((_ name: String) -> Void)?
+    /// Injectable seams over the player's session state and the session
+    /// teardown, internal so the deferred-disconnect choreography is
+    /// unit-testable (like `homeViewModel`): tests substitute them instead
+    /// of driving a real player window or SMB session. Wired to the real
+    /// implementations in `init`.
+    var playerHasActiveSession: @MainActor () -> Bool
+    var requestSessionDisconnect: @MainActor () async -> Void
 
     init(
         sessionService: SMBSessionService,
@@ -119,6 +133,8 @@ final class LibraryCoordinator {
         )
         browserViewController = BrowserViewController(viewModel: browserViewModel)
         settingsPaneViewController = SettingsPaneViewController(viewModel: preferencesViewModel)
+        playerHasActiveSession = { [playerCoordinator] in playerCoordinator.hasActiveSession }
+        requestSessionDisconnect = { [sessionService] in await sessionService.disconnect() }
         wireCallbacks()
         wirePreheat()
     }
@@ -183,6 +199,7 @@ final class LibraryCoordinator {
         readerCoordinator.onMessageError = { [weak self] in self?.onMessageError?($0, $1) }
         playerCoordinator.onError = { [weak self] in self?.onError?($0, $1) }
         playerCoordinator.onMessageError = { [weak self] in self?.onMessageError?($0, $1) }
+        playerCoordinator.onSessionClosed = { [weak self] in self?.flushPendingPlayerSessionDisconnect() }
         pdfReaderCoordinator.onError = { [weak self] in self?.onError?($0, $1) }
         pdfReaderCoordinator.onMessageError = { [weak self] in self?.onMessageError?($0, $1) }
     }
@@ -316,8 +333,10 @@ final class LibraryCoordinator {
     /// Shared reset back to the home page: cancels in-flight navigation,
     /// drops the current server/share/vault context and the back stack,
     /// refreshes and shows the home grid (a step that also activates the
-    /// home destination), and disconnects the live session. Server removal
-    /// and the sidebar's home row run the exact same steps (Amendment
+    /// home destination), and disconnects the live session — deferred to
+    /// the player window's close while a video is still playing on it
+    /// (see `disconnectNowOrAfterPlayerClose`). Server removal and the
+    /// sidebar's home row run the exact same steps (Amendment
     /// 2026-09-13, retargeted to the home pane by Amendment 2).
     private func resetToHomeState() {
         _ = beginNavigation()
@@ -328,7 +347,44 @@ final class LibraryCoordinator {
         onTitleChange?("Cove")
         browserViewController.thumbnailProvider = nil
         showHomePage()
-        activeTask = Task { await sessionService.disconnect() }
+        disconnectNowOrAfterPlayerClose()
+    }
+
+    /// The session-teardown tail shared by `resetToHomeState` and
+    /// `backToShareGrid` (TASK-playback-session-guard). With a video still
+    /// playing over the live session, disconnecting here would kill the
+    /// stream (the player's next read loses its source), so the teardown
+    /// is deferred: the pending flag arms a disconnect for the player
+    /// window's close. Without a player the disconnect runs immediately —
+    /// the pre-deferred behavior, unchanged. Either way the reset itself
+    /// stays a clean state: navigation, title, and thumbnail injection are
+    /// torn down right here.
+    ///
+    /// While the disconnect is pending, the preheat connection keeps
+    /// reading the share the user left — known and intended; it ends when
+    /// the window closes. Any reconnect or session reuse landing clears
+    /// the flag first: the deferred debt belongs to the session the user
+    /// left, and a fresh (or deliberately re-engaged) session must never
+    /// be torn down for it.
+    private func disconnectNowOrAfterPlayerClose() {
+        guard !playerHasActiveSession() else {
+            pendingPlayerSessionDisconnect = true
+            return
+        }
+        activeTask = Task { await requestSessionDisconnect() }
+    }
+
+    /// The player window closed while a deferred disconnect was armed:
+    /// consume the flag and tear the session down — the exact debt the
+    /// reset armed. Runs on the main actor, serialized with any navigation
+    /// that landed in between; if a reconnect/reuse already cleared the
+    /// flag this is a no-op, so a new session is never punished for the
+    /// old one's debt. A failed disconnect needs no retry: disconnect is
+    /// idempotent and the next connect replaces the session anyway.
+    private func flushPendingPlayerSessionDisconnect() {
+        guard pendingPlayerSessionDisconnect else { return }
+        pendingPlayerSessionDisconnect = false
+        activeTask = Task { await requestSessionDisconnect() }
     }
 
     /// Sidebar "首页" destination (Amendment 2026-09-13): one tap back to
@@ -411,6 +467,11 @@ final class LibraryCoordinator {
             do {
                 try await sessionService.connect(to: server, share: share.name)
                 guard generation == navigationGeneration else { return }
+                // The connect replaced the session a pending player-close
+                // disconnect may have been armed for: the debt belongs to
+                // the old session, and the fresh one must never be torn
+                // down for it (see `disconnectNowOrAfterPlayerClose`).
+                pendingPlayerSessionDisconnect = false
                 currentShare = share.name
                 // Record the open the moment the connection is established
                 // (decision record: success only — a failed open writes
@@ -493,7 +554,7 @@ final class LibraryCoordinator {
         // the cards so the "last opened" lines are fresh.
         shareGridViewModel.refreshCards()
         onShowDetail?(shareGridViewController)
-        activeTask = Task { await sessionService.disconnect() }
+        disconnectNowOrAfterPlayerClose()
     }
 
     private func loadDirectory(at path: String, generation: Int) async throws {
@@ -815,13 +876,19 @@ final class LibraryCoordinator {
         }
         let generation = beginNavigation()
         // Already on the exact share: reuse the live session instead of
-        // reconnecting (decision 4).
+        // reconnecting (decision 4). Reuse re-engages with the very share
+        // a pending player-close disconnect may have been armed for, so
+        // the debt is forgiven right here — closing the player later must
+        // not tear this session down; a fresh connect below clears the
+        // flag once it succeeds (see `disconnectNowOrAfterPlayerClose`).
         let reusingSession = sessionService.currentSourceID == entry.sourceID
+        if reusingSession { pendingPlayerSessionDisconnect = false }
         activeTask = Task {
             do {
                 if !reusingSession {
                     try await sessionService.connect(to: server, share: share)
                     guard generation == navigationGeneration else { return }
+                    pendingPlayerSessionDisconnect = false
                 }
                 let listing: [ContentItem]
                 do {
@@ -889,22 +956,31 @@ final class LibraryCoordinator {
         shareGridViewModel.showLoading()
         onTitleChange?(server.displayName)
         // Already on the exact share: reuse the live session instead of
-        // reconnecting (decision 4).
+        // reconnecting (decision 4). Same pending-disconnect forgiveness
+        // as the resume route: reuse clears the armed debt right here; a
+        // fresh connect clears it once it succeeds (see
+        // `disconnectNowOrAfterPlayerClose`).
         let reusingSession = sessionService.currentSourceID == entry.sourceID
+        if reusingSession { pendingPlayerSessionDisconnect = false }
         activeTask = Task {
             do {
                 if !reusingSession {
                     try await sessionService.connect(to: server, share: share)
                     guard generation == navigationGeneration else { return }
+                    pendingPlayerSessionDisconnect = false
                     // Same contract as a manual share open: the open
                     // record lands once the connection is established.
                     shareOpenStore.recordOpen(forServer: server.id, share: share)
-                    if let sourceID = sessionService.currentSourceID {
-                        // Same preheat-lane routing as `openShare`.
-                        browserViewController.thumbnailProvider = ThumbnailService(
-                            readFile: sessionService.makePreheatLaneFileReader(), cache: cache, sourceID: sourceID
-                        )
-                    }
+                }
+                // Installed on both paths: the reset above nilled the
+                // provider unconditionally, so the reused-session path
+                // must reinstate it too or the browser's thumbnails all
+                // go dark (TASK-playback-session-guard Minor 1). Same
+                // preheat-lane routing as `openShare`.
+                if let sourceID = sessionService.currentSourceID {
+                    browserViewController.thumbnailProvider = ThumbnailService(
+                        readFile: sessionService.makePreheatLaneFileReader(), cache: cache, sourceID: sourceID
+                    )
                 }
                 currentShare = share
                 browserViewController.browseMode = .remote

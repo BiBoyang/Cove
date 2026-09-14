@@ -256,6 +256,17 @@ final class StreamContext: Sendable {
         let semaphore = DispatchSemaphore(value: 0)
         let reader = reader
         let path = path
+        // Publish the parked-read semaphore BEFORE dispatching the read
+        // (TASK-playback-session-guard Minor 2): close and
+        // cancelInFlightReads can only wake reads whose semaphore is
+        // already visible, and a dispatch-first ordering leaves a window
+        // where a close misses the read and the mpv thread rides out the
+        // whole 30s timeout — inflating mpv_terminate_destroy's join.
+        // Publishing first is safe: an early close signal makes the wait
+        // below return immediately and the empty box falls to the
+        // existing failure path, harmlessly.
+        state.withLock { $0.parkedRead = semaphore }
+        defer { state.withLock { $0.parkedRead = nil } }
         // The Task retains the reader (and transitively the session
         // router) but not this context's cookie; a close during the
         // flight just means the result is written into a box nobody reads.
@@ -267,10 +278,6 @@ final class StreamContext: Sendable {
             }
             semaphore.signal()
         }
-
-        // Publish the semaphore so close/cancel can wake this wait early.
-        state.withLock { $0.parkedRead = semaphore }
-        defer { state.withLock { $0.parkedRead = nil } }
 
         let started = Date()
         guard semaphore.wait(timeout: .now() + VideoStreamBridge.readTimeout) == .success else {

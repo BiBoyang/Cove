@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import SourceKit
 import Testing
 @testable import Cove
 
@@ -258,4 +259,183 @@ struct OpenHomeResetTests {
         #expect(firstRun.homeViewModel.state.placeholder?.kind == .noServers)
         #expect(hierarchyContains(firstRun.homeViewController.view, text: "继续观看"))
     }
+}
+
+/// A `ContentSource` standing in for a live share session: `connect` is
+/// a no-op, so tests can establish a session whose `sourceID` matches a
+/// watch record and drive the session-reuse branches without a network.
+/// Internal so the continue-watching suite can reuse it.
+struct StubShareSource: ContentSource {
+    let id: String
+    var sourceID: String { id }
+
+    func connect() async throws {}
+    func list(at path: String) async throws -> [ContentItem] {
+        [ContentItem(name: "a.mp4", path: "/movies/a.mp4", isDirectory: false, size: 1, modifiedDate: nil)]
+    }
+    func metadata(at path: String) async throws -> ContentItem {
+        ContentItem(name: "a.mp4", path: path, isDirectory: false, size: 1, modifiedDate: nil)
+    }
+    func read(at path: String, range: Range<Int64>) async throws -> Data { Data() }
+    func disconnect() async {}
+}
+
+/// TASK-playback-session-guard: going home (or back to the share grid)
+/// while a video is playing must not kill the stream — the session
+/// disconnect defers to the player window's close via a pending flag,
+/// and any reconnect/session-reuse landing forgives the debt.
+@Suite("Playback session guard")
+@MainActor
+struct PlaybackSessionGuardTests {
+    /// A coordinator over isolated stores, mirroring the openHome-reset
+    /// suite's seam: seeded servers carry no Keychain password, so nothing
+    /// here ever reaches the network. Returns the session service so tests
+    /// can establish a stub session for the reuse branch.
+    private func makeCoordinator(
+        seedServers: [ServerConfig]
+    ) throws -> (LibraryCoordinator, SMBSessionService, () -> Void) {
+        let suiteName = "PlaybackSessionGuardTests-\(UUID().uuidString)"
+        let settingsSuite = "\(suiteName)-settings"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        try ServerStore(defaults: defaults).save(seedServers)
+        let service = SMBSessionService(store: ServerStore(defaults: defaults))
+        let settings = SettingsService(defaults: UserDefaults(suiteName: settingsSuite)!)
+        let cache = makeTestCache()
+        let preheat = PreheatService(settings: settings, cacheStore: cache)
+        let vault = VaultService(
+            root: FileManager.default.temporaryDirectory
+                .appendingPathComponent("CoveTests-\(UUID().uuidString)", isDirectory: true)
+        )
+        let coordinator = LibraryCoordinator(
+            sessionService: service,
+            cache: cache,
+            readerCoordinator: ReaderCoordinator(cache: cache, preheatService: preheat, settings: settings),
+            preheatService: preheat,
+            vaultService: vault,
+            preferencesViewModel: PreferencesViewModel(
+                settings: settings,
+                cache: PreferencesCacheAdapter(store: cache),
+                vault: vault
+            ),
+            shareOpenStore: ShareOpenStore(defaults: UserDefaults(suiteName: settingsSuite)!)
+        )
+        let cleanup: () -> Void = {
+            defaults.removePersistentDomain(forName: suiteName)
+            UserDefaults(suiteName: settingsSuite)?.removePersistentDomain(forName: settingsSuite)
+        }
+        return (coordinator, service, cleanup)
+    }
+
+    private func smbEntry() -> RecentWatchEntry {
+        RecentWatchEntry(
+            key: "smb://nas.local/media|/movies/a.mp4",
+            source: .smb(host: "nas.local", share: "media"),
+            sourceID: "smb://nas.local/media",
+            path: "/movies/a.mp4",
+            directoryPath: "/movies",
+            fileName: "a.mp4",
+            position: 60,
+            duration: 300,
+            fileSize: nil,
+            modifiedDate: nil,
+            lastWatched: Date(timeIntervalSince1970: 1_000_000)
+        )
+    }
+
+    @Test("a playing session defers the disconnect to the player window's close",
+          .timeLimit(.minutes(1)))
+    func deferredDisconnectCompletesOnClose() async throws {
+        let (coordinator, _, cleanup) = try makeCoordinator(seedServers: [])
+        defer { cleanup() }
+        coordinator.start()
+        var disconnects = 0
+        coordinator.playerHasActiveSession = { true }
+        coordinator.requestSessionDisconnect = { disconnects += 1 }
+
+        coordinator.openHome()
+
+        // The player is still streaming: nothing disconnected yet.
+        #expect(disconnects == 0)
+
+        // The window closes: exactly one deferred disconnect runs.
+        coordinator.playerCoordinator.onSessionClosed?()
+        try await waitUntil("the deferred disconnect never ran") { disconnects == 1 }
+
+        // The debt was consumed: a second close notification is a no-op.
+        coordinator.playerCoordinator.onSessionClosed?()
+        try await Task.sleep(for: .milliseconds(50))
+        #expect(disconnects == 1)
+    }
+
+    @Test("without a playing session the disconnect is immediate (regression)",
+          .timeLimit(.minutes(1)))
+    func immediateDisconnectWithoutPlayer() async throws {
+        let (coordinator, _, cleanup) = try makeCoordinator(seedServers: [])
+        defer { cleanup() }
+        coordinator.start()
+        var disconnects = 0
+        coordinator.requestSessionDisconnect = { disconnects += 1 }
+
+        // Default `playerHasActiveSession`: no player window was ever opened.
+        coordinator.openHome()
+        try await waitUntil("the immediate disconnect never ran") { disconnects == 1 }
+
+        // No pending debt was armed: a close notification disconnects nothing.
+        coordinator.playerCoordinator.onSessionClosed?()
+        try await Task.sleep(for: .milliseconds(50))
+        #expect(disconnects == 1)
+    }
+
+    @Test("a reuse landing forgives the pending disconnect", .timeLimit(.minutes(1)))
+    func reuseLandingForgivesPending() async throws {
+        let server = ServerConfig(id: UUID(), host: "nas.local", username: "user")
+        let (coordinator, service, cleanup) = try makeCoordinator(seedServers: [server])
+        defer { cleanup() }
+        coordinator.start()
+        // A live session matching the record's source id: the reveal takes
+        // the reuse branch — no reconnect, no network.
+        try await service.connectLocal(StubShareSource(id: "smb://nas.local/media"))
+        var disconnects = 0
+        coordinator.playerHasActiveSession = { true }
+        coordinator.requestSessionDisconnect = { disconnects += 1 }
+
+        coordinator.openHome()
+        #expect(disconnects == 0)
+
+        coordinator.homeViewController.onRevealInBrowser?(smbEntry())
+        // The reuse landed (its first act is reinstalling the thumbnail
+        // provider — Minor 1's observable).
+        try await waitUntil("the reuse landing never completed") {
+            coordinator.browserViewController.thumbnailProvider != nil
+        }
+
+        // The player closes afterwards: the debt was forgiven and the
+        // reused session stays connected.
+        coordinator.playerCoordinator.onSessionClosed?()
+        try await Task.sleep(for: .milliseconds(50))
+        #expect(disconnects == 0)
+    }
+}
+
+/// Polls `condition` on the main actor until it holds, yielding between
+/// checks so queued main-actor continuations can run. Throws (and thus
+/// fails the test) on timeout instead of hanging. Same helper as in
+/// ContinueWatchingTests; each file keeps a private copy.
+@MainActor
+private func waitUntil(
+    _ message: @autoclosure () -> String = "condition not met before timeout",
+    _ condition: () -> Bool
+) async throws {
+    let deadline = ContinuousClock.now + .seconds(10)
+    while !condition() {
+        if ContinuousClock.now > deadline {
+            throw WaitTimeout(message: message())
+        }
+        try await Task.sleep(for: .milliseconds(5))
+    }
+}
+
+private struct WaitTimeout: Error, CustomStringConvertible {
+    let message: String
+    var description: String { message }
 }

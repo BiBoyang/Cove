@@ -78,7 +78,9 @@ chrome, dark player) regardless of the system appearance.
   server has vanished shows a notice and prunes the record. The page's
   empty states double as first-run guidance (还没有添加服务器, with an add
   action) and a no-records hint (还没有播放记录), and the sidebar bottom
-  bar's 首页 row returns here from any pane.
+  bar's 首页 row returns here from any pane — and tapping it (or backing
+  out to the share grid) mid-playback no longer kills the stream: the
+  share session stays up until you close the player window.
 - **PDF reading**: double-click a `.pdf` to read it with PDFKit — the file
   is cached whole in the original pool (instant on reopen) and shown as
   continuous pages with breaks (`.cbr`-style one-offs are not special-cased;

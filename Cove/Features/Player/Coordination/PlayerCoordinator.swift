@@ -52,6 +52,17 @@ final class PlayerCoordinator {
 
     var onError: ((_ error: Error, _ title: String) -> Void)?
     var onMessageError: ((_ message: String, _ title: String) -> Void)?
+    /// Fired from the close handler once the window controller is gone:
+    /// the live session no longer has a player on it. LibraryCoordinator
+    /// listens so a reset-armed deferred disconnect can run at this point
+    /// (TASK-playback-session-guard).
+    var onSessionClosed: (() -> Void)?
+
+    /// Whether a player window is up, i.e. a session may be streaming.
+    /// Read by LibraryCoordinator when a reset must decide between
+    /// disconnecting the live session immediately and deferring the
+    /// teardown to this window's close.
+    var hasActiveSession: Bool { windowController != nil }
 
     init(progressStore: PlaybackProgressStoring? = nil, thumbnailWriter: VideoThumbnailWriter? = nil) {
         self.progressStore = progressStore
@@ -98,6 +109,9 @@ final class PlayerCoordinator {
                 self.teardownSubtitleScratch(self.subtitleScratch)
                 self.subtitleScratch = nil
                 self.windowController = nil
+                // The session is playerless now; a reset-armed deferred
+                // disconnect (if any) fires here.
+                self.onSessionClosed?()
             }
             controller.onPreviousTrack = { [weak self] in self?.step(delta: -1) }
             controller.onNextTrack = { [weak self] in self?.step(delta: 1) }
