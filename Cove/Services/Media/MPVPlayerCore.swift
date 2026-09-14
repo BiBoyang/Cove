@@ -345,6 +345,29 @@ final class MPVPlayerCore {
         }
     }
 
+    /// The engine's current subtitle bottom margin (mpv `sub-margin-y`,
+    /// in points above the subtitle position) — the session's rest
+    /// position, read back once by the view model after the file loads.
+    /// Read failures degrade to 0 with a debug log: mpv's default is
+    /// build-dependent, so callers must never assume a value.
+    var subtitleBottomMarginBaseline: Int {
+        guard let handle, !isShutdown else { return 0 }
+        var value = Int64()
+        let status = mpv_get_property(handle, "sub-margin-y", MPV_FORMAT_INT64, &value)
+        guard status >= 0 else {
+            logger.debug("sub-margin-y baseline read failed; falling back to 0")
+            return 0
+        }
+        return Int(value)
+    }
+
+    /// Sets mpv's `sub-margin-y` (in points), lifting or lowering the
+    /// subtitle rendering area at runtime. libass re-flows the lines on
+    /// the next frame, so no track reload is needed.
+    func setSubtitleBottomMargin(_ points: Int) {
+        command(["set", "sub-margin-y", String(points)])
+    }
+
     /// Mounts an already-staged local subtitle file as an external track.
     /// mpv accepts this whether the video has finished loading (track added
     /// and switched to) or is still loading (track added and pre-selected

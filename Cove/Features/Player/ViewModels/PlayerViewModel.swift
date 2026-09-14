@@ -11,6 +11,16 @@ protocol PlayerPlaybackControlling: AnyObject {
     func setSpeed(_ speed: Double)
     /// Selects a subtitle track by mpv track id; nil turns subtitles off.
     func setSubtitle(trackID: Int?)
+    /// The engine's current subtitle bottom margin (mpv `sub-margin-y`,
+    /// in points), i.e. the rest position subtitles return to when the
+    /// controls hide. The view model reads this back once per session
+    /// after the file loads and never hard-codes it (mpv's default is
+    /// build-dependent).
+    var subtitleBottomMarginBaseline: Int { get }
+    /// Lifts or lowers the subtitle rendering area by setting the
+    /// subtitle bottom margin (in points). Driven by the controls'
+    /// visibility: visible = baseline + clearance, hidden = baseline.
+    func setSubtitleBottomMargin(_ points: Int)
     /// Grabs the currently displayed frame as raw BGRA (the video-cover
     /// pipeline's write side, TASK-video-thumbnails).
     func captureCurrentFrame() -> BGRAVideoFrame?
@@ -20,6 +30,14 @@ extension PlayerPlaybackControlling {
     /// Default: no capture. Engines that cannot grab frames (the tests'
     /// fake controller) simply never produce covers.
     func captureCurrentFrame() -> BGRAVideoFrame? { nil }
+
+    /// Default: engines that cannot report a baseline (the tests' fake
+    /// controller) treat 0 as the subtitle rest position.
+    var subtitleBottomMarginBaseline: Int { 0 }
+
+    /// Default: no subtitle-margin control. Engines without subtitle
+    /// lifting simply ignore the command.
+    func setSubtitleBottomMargin(_ points: Int) {}
 }
 
 /// The file-identity facts a captured cover's cache key is computed from,
@@ -98,13 +116,33 @@ final class PlayerViewModel {
     /// Whether the floating controls (capsule + overlay title) are shown.
     /// Auto-hide only ever engages during smooth playback; see
     /// `updateIdlePolicy`.
-    private(set) var controlsVisible = true
+    private(set) var controlsVisible = true {
+        didSet { applySubtitleMargin() }
+    }
+    /// Distance from the window content's bottom edge up to the controls
+    /// capsule's top edge (in points), measured by the window
+    /// controller's layout pass and fed in here. The view model never
+    /// hard-codes capsule geometry; it only consumes this number.
+    var subtitleClearance: Double = 0 {
+        didSet { applySubtitleMargin() }
+    }
     /// Failure detail behind `.error`, rendered by the central failure
     /// placeholder; nil otherwise.
     private(set) var errorDetail: String?
 
     private var isPointerOverControls = false
     private var idleHideTask: Task<Void, Never>?
+    /// mpv's `sub-margin-y` read back once per session after the file
+    /// loads: the rest position subtitles return to when the controls
+    /// hide. Never hard-coded — mpv's default is build-dependent.
+    private var subtitleMarginBaseline = 0
+    /// False until the baseline read-back has happened; no margin is
+    /// written to the engine before that.
+    private var subtitleBaselineReady = false
+    /// The last margin handed to the engine. Layout and render passes
+    /// recompute the margin constantly; an unchanged value is never
+    /// re-sent.
+    private var lastAppliedSubtitleMargin: Int?
 
     /// Called whenever a displayed value may have changed; the view
     /// re-renders from the view model's public state.
@@ -137,6 +175,7 @@ final class PlayerViewModel {
         switch event {
         case .fileLoaded:
             hasLoaded = true
+            readSubtitleMarginBaseline()
         case .timePosChanged(let time):
             if !isScrubbing {
                 currentTime = time
@@ -374,6 +413,36 @@ final class PlayerViewModel {
             self.controlsVisible = false
             self.onChange?()
         }
+    }
+
+    // MARK: - Subtitle clearance
+
+    /// Breathing room between a lifted subtitle line and the capsule's
+    /// top edge, on top of the measured clearance.
+    private static let subtitleCapsuleGap = 8
+
+    /// One-shot baseline read-back (TASK-subtitle-clearance), run on the
+    /// session's first file-loaded event: the rest position is whatever
+    /// mpv reports, never an assumed 0.
+    private func readSubtitleMarginBaseline() {
+        guard !subtitleBaselineReady else { return }
+        subtitleBaselineReady = true
+        subtitleMarginBaseline = controller.subtitleBottomMarginBaseline
+        applySubtitleMargin()
+    }
+
+    /// Single choke point for the subtitle bottom margin. Called from
+    /// every input that can change the outcome (`controlsVisible`'s
+    /// didSet and `subtitleClearance`'s didSet); the same computed value
+    /// is never written twice.
+    private func applySubtitleMargin() {
+        guard subtitleBaselineReady else { return }
+        let margin = controlsVisible
+            ? subtitleMarginBaseline + Int(ceil(subtitleClearance)) + Self.subtitleCapsuleGap
+            : subtitleMarginBaseline
+        guard margin != lastAppliedSubtitleMargin else { return }
+        lastAppliedSubtitleMargin = margin
+        controller.setSubtitleBottomMargin(margin)
     }
 
     // MARK: - Display projections

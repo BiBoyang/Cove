@@ -1,6 +1,14 @@
 # TASK-subtitle-clearance：控制条可见时字幕自动抬升
 
-状态：2026-09-14 派发 Executor。
+状态：2026-09-14 Executor 交付 + Review Approved（356/55 全绿、构建零警告、
+diff 全审吻合）。待 Owner 真机验收（DoD 3）。
+
+## Amendment 1（2026-09-14，Planner 追认）
+
+白名单第 4 条文件名笔误：PlayerViewModelTests 实际位于
+`Tests/CoveTests/PlayerViewModelTests.swift`（`ViewModelTests.swift` 零播放器
+内容，rg 实证），Executor 按括注语义执行正确，予以追认，契约以本条文为准。
+基线实测：本森林 mpv 默认 `sub-margin-y` = 34（非 0，验证「禁写死」必要性）。
 
 ## 背景与定性
 

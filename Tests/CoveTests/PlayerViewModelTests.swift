@@ -22,6 +22,17 @@ struct PlayerViewModelTests {
         /// failed to grab one.
         var frameToCapture: BGRAVideoFrame?
         private(set) var captureCount = 0
+        /// Stub for the `sub-margin-y` baseline read-back; 0 keeps legacy
+        /// tests on the same rest position they have always had.
+        var stubbedMarginBaseline = 0
+        /// Every subtitle bottom margin handed to the engine, in order.
+        private(set) var subtitleMargins: [Int] = []
+
+        var subtitleBottomMarginBaseline: Int { stubbedMarginBaseline }
+
+        func setSubtitleBottomMargin(_ points: Int) {
+            subtitleMargins.append(points)
+        }
 
         func togglePause() { commands.append(.togglePause) }
         func seek(bySeconds seconds: Int) { commands.append(.seekBy(seconds)) }
@@ -319,6 +330,73 @@ struct PlayerViewModelTests {
         #expect(viewModel.controlsVisible)
         #expect(viewModel.volume == 95)
         #expect(controller.commands == [.setVolume(95)])
+    }
+
+    // MARK: Subtitle clearance
+
+    @Test("visible controls lift subtitles by baseline + clearance + gap")
+    func subtitleLiftWhenVisible() {
+        let (viewModel, controller) = makeViewModel()
+        controller.stubbedMarginBaseline = 7
+        // Fed before the file loads: the baseline is not known yet, so
+        // nothing may be written (the rest position is read back, never
+        // assumed).
+        viewModel.subtitleClearance = 40.2
+        #expect(controller.subtitleMargins.isEmpty)
+
+        viewModel.apply(.fileLoaded)
+        // 7 + ceil(40.2) + 8 = 56.
+        #expect(controller.subtitleMargins == [56])
+    }
+
+    @Test("hidden controls return subtitles to the baseline")
+    func subtitleRestWhenHidden() async throws {
+        let (viewModel, controller) = makeViewModel(idleHideInterval: 0.05)
+        controller.stubbedMarginBaseline = 7
+        viewModel.subtitleClearance = 40
+        reachPlaying(viewModel)
+        // Controls start visible: 7 + 40 + 8 = 55.
+        #expect(controller.subtitleMargins == [55])
+
+        try await Task.sleep(for: .milliseconds(200))
+        #expect(viewModel.controlsVisible == false)
+        #expect(controller.subtitleMargins == [55, 7])
+    }
+
+    @Test("clearance changes re-lift while visible; unchanged values dedup")
+    func subtitleClearanceChanges() {
+        let (viewModel, controller) = makeViewModel()
+        controller.stubbedMarginBaseline = 7
+        reachPlaying(viewModel)
+        // Baseline ready, clearance still 0: 7 + 0 + 8 = 15.
+        #expect(controller.subtitleMargins == [15])
+
+        viewModel.subtitleClearance = 40 // 7 + 40 + 8 = 55
+        viewModel.subtitleClearance = 40.4 // ceil(40.4) = 41: 7 + 41 + 8 = 56
+        // Re-assigning 40.4 recomputes the already-applied 56; the dedup
+        // must swallow the write.
+        viewModel.subtitleClearance = 40.4
+        #expect(controller.subtitleMargins == [15, 55, 56])
+    }
+
+    @Test("engines without margin support stay on the protocol defaults")
+    func subtitleMarginProtocolDefaults() {
+        // A minimal engine implementing nothing beyond the original
+        // requirements: the extension's default baseline (0) and no-op
+        // setter must keep it compilable and runnable.
+        final class MinimalController: PlayerPlaybackControlling {
+            func togglePause() {}
+            func seek(bySeconds seconds: Int) {}
+            func seekTo(seconds: Double) {}
+            func setVolume(_ volume: Double) {}
+            func setSpeed(_ speed: Double) {}
+            func setSubtitle(trackID: Int?) {}
+        }
+        let viewModel = PlayerViewModel(controller: MinimalController(), idleHideInterval: 2.5)
+        viewModel.subtitleClearance = 40
+        viewModel.apply(.fileLoaded)
+        viewModel.apply(.pauseChanged(false))
+        #expect(viewModel.state == .playing)
     }
 
     // MARK: Resume position

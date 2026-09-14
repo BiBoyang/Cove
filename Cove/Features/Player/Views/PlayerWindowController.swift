@@ -177,6 +177,9 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
         rootView.onMouseActivity = { [weak self] in
             self?.viewModel.noteMouseActivity()
         }
+        rootView.onLayout = { [weak self] in
+            self?.measureSubtitleClearance()
+        }
 
         let host = VideoLayerHostView(videoLayer: videoLayer)
         videoHost = host
@@ -819,6 +822,24 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
         ]
     }
 
+    /// Measures the gap the subtitles must clear and feeds it to the view
+    /// model as a plain Double: the distance from the window content's
+    /// bottom edge up to the capsule's top edge (AppKit coordinates are
+    /// bottom-up, so that is the capsule's converted maxY). Runs on every
+    /// root-view layout pass, so capsule content changes (codec rows,
+    /// audio shell, window resize) are picked up without a dedicated
+    /// hook. The breathing gap above the capsule is added by the view
+    /// model, not here.
+    private func measureSubtitleClearance() {
+        let capsuleRect = controlsCapsule.convert(controlsCapsule.bounds, to: rootView)
+        // Before the first real layout the capsule's frame is still zero;
+        // feeding that would lift the subtitles by nothing or everything.
+        guard capsuleRect.height > 0 else { return }
+        let clearance = Double(capsuleRect.maxY)
+        guard clearance != viewModel.subtitleClearance else { return }
+        viewModel.subtitleClearance = clearance
+    }
+
     /// Fades the capsule (and the codec chips, which ride the same
     /// lifecycle) in/out and hides the cursor alongside it. Hit-testing on
     /// the capsule is cut while hidden so the invisible controls cannot
@@ -972,7 +993,15 @@ private final class PlayerWindow: NSWindow {
 /// (movement over subviews bubbles up the responder chain).
 private final class PlayerRootView: NSView {
     var onMouseActivity: (() -> Void)?
+    /// Fires on every layout pass so the controller can re-measure the
+    /// capsule's geometry (the subtitle-clearance feeding).
+    var onLayout: (() -> Void)?
     private var trackingAreaRef: NSTrackingArea?
+
+    override func layout() {
+        super.layout()
+        onLayout?()
+    }
 
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
