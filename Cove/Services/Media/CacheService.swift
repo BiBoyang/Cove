@@ -18,13 +18,27 @@ final class CacheService {
         return caches.appendingPathComponent("com.biboyang.cove", isDirectory: true)
     }()
 
+    /// Default cadence of the periodic background sweep.
+    private static let defaultSweepInterval: TimeInterval = 15 * 60
+
     let store: CacheStore
     private let settings: SettingsService
+    /// Handle of the repeating sweep; nothing cancels it (the service lives
+    /// for the process lifetime), it exits on its own once the service
+    /// deallocates. Kept for future teardown.
+    private var periodicSweepTask: Task<Void, Never>?
 
-    init(settings: SettingsService) {
+    /// `sweepInterval` and `rootDirectory` are internal injection seams for
+    /// tests; production callers get 15 minutes and the standard Caches
+    /// location.
+    init(
+        settings: SettingsService,
+        sweepInterval: TimeInterval = CacheService.defaultSweepInterval,
+        rootDirectory: URL = CacheService.rootDirectory
+    ) {
         self.settings = settings
         store = CacheStore(
-            rootDirectory: Self.rootDirectory,
+            rootDirectory: rootDirectory,
             capacityBytes: settings.cacheCapacityBytes,
             ttl: settings.cacheTTL
         )
@@ -33,12 +47,33 @@ final class CacheService {
         }
         // Sweep expired entries and LRU overflow off the critical path.
         sweepInBackground()
+        startPeriodicSweep(interval: sweepInterval)
     }
 
     private func settingsDidChange() {
         store.setPolicy(capacityBytes: settings.cacheCapacityBytes, ttl: settings.cacheTTL)
         // A shrunken budget/TTL only takes effect on disk after eviction.
         sweepInBackground()
+    }
+
+    /// Sweeps on a fixed cadence so the eviction triggers that only fire on
+    /// events (init, settings change, preheat batches) cannot leave the
+    /// cache over budget for a whole session — with preheating off or in
+    /// vault-only sessions none of them may fire again after launch.
+    /// `evictIfNeeded` is idempotent and the store is locked, so running
+    /// concurrently with the event-driven sweeps is harmless.
+    private func startPeriodicSweep(interval: TimeInterval) {
+        periodicSweepTask = Task(priority: .utility) { [weak self] in
+            while !Task.isCancelled {
+                do {
+                    try await Task.sleep(for: .seconds(interval))
+                } catch {
+                    return  // cancelled while sleeping
+                }
+                guard let self else { return }
+                sweepInBackground()
+            }
+        }
     }
 
     private func sweepInBackground() {
