@@ -20,8 +20,9 @@ import SourceKit
 /// and come back on any mouse movement; the centered title stays put.
 /// Keyboard controls: space = pause, arrows = ±10s, up/down = volume,
 /// Esc = exit full screen. While the up-next countdown overlay is shown,
-/// Esc = cancel it and Return = play now, taking priority over the keys
-/// above (press Esc again afterwards to exit full screen).
+/// Esc = cancel it, Return = play now, and space = freeze/resume the
+/// countdown itself; these take priority over the keys above (press Esc
+/// again afterwards to exit full screen).
 ///
 /// The overlay itself only renders and forwards callbacks; the countdown
 /// lifecycle (timer, firing into a track change, every cancel path) lives
@@ -50,6 +51,7 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
     /// Up-next overlay intents, wired by the coordinator.
     var onUpNextPlayNow: (() -> Void)?
     var onUpNextCancel: (() -> Void)?
+    var onUpNextTogglePause: (() -> Void)?
     /// Failure-placeholder retry intent, wired by the coordinator.
     var onRetry: (() -> Void)?
 
@@ -660,6 +662,13 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
         upNextOverlay.update(seconds: seconds)
     }
 
+    /// Flips the countdown readout between the live count and the frozen
+    /// "已暂停 · 空格继续" state. Pure rendering: the coordinator owns the
+    /// pause semantics.
+    func setUpNextPaused(_ paused: Bool) {
+        upNextOverlay.setPaused(paused)
+    }
+
     /// Hides the pill. Instant rather than faded: by the time this runs the
     /// countdown has ended (fired into a track change or cancelled), so a
     /// lingering overlay would only obscure the new frame.
@@ -911,8 +920,9 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
     /// Returns true when the key was consumed.
     private func handleKeyDown(_ event: NSEvent) -> Bool {
         // The up-next overlay takes priority while shown: Esc cancels the
-        // countdown (a second Esc then exits full screen as usual) and
-        // Return plays the next track immediately.
+        // countdown (a second Esc then exits full screen as usual), Return
+        // plays the next track immediately, and space freezes/resumes the
+        // countdown instead of toggling playback.
         if isUpNextShown {
             switch event.keyCode {
             case 53: // esc
@@ -920,6 +930,9 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
                 return true
             case 36: // return
                 onUpNextPlayNow?()
+                return true
+            case 49: // space
+                onUpNextTogglePause?()
                 return true
             default:
                 break
@@ -1078,7 +1091,9 @@ private final class ControlsCapsuleView: NSView {
 /// on its own unclipped layer, the opaque surfaceOverlay board inside
 /// clips itself to the corner radius. Pure rendering: no timer, no
 /// countdown decisions, callbacks are forwarded to the window controller
-/// which relays them to the coordinator.
+/// which relays them to the coordinator. Space-pausing renders a frozen
+/// "已暂停 · 空格继续" readout; the last live count is kept so a resume
+/// picks it right back up.
 private final class UpNextOverlayView: NSView {
     var onPlayNow: (() -> Void)?
     var onCancel: (() -> Void)?
@@ -1087,6 +1102,10 @@ private final class UpNextOverlayView: NSView {
     private let countdownLabel = NSTextField(labelWithString: "")
     private let playNowButton = PillButton(title: "立即播放", style: .primary)
     private let cancelButton = PillButton(title: "取消", style: .secondary)
+    /// Last live remaining-seconds value the readout showed; restored on
+    /// resume. `configure` refreshes it for each new countdown.
+    private var lastSeconds = 0
+    private var isPaused = false
 
     init() {
         super.init(frame: .zero)
@@ -1178,11 +1197,25 @@ private final class UpNextOverlayView: NSView {
                 .foregroundColor: CoveStyle.textOnMedia1,
             ]
         )
+        isPaused = false
         update(seconds: seconds)
     }
 
     func update(seconds: Int) {
-        countdownLabel.stringValue = "\(seconds) 秒后播放"
+        lastSeconds = seconds
+        renderCountdown()
+    }
+
+    /// Freezes the readout at "已暂停 · 空格继续" or restores the live
+    /// "N 秒后播放" count from the last rendered seconds. The pill width
+    /// follows the label (trailing-anchored), so no extra layout work.
+    func setPaused(_ paused: Bool) {
+        isPaused = paused
+        renderCountdown()
+    }
+
+    private func renderCountdown() {
+        countdownLabel.stringValue = isPaused ? "已暂停 · 空格继续" : "\(lastSeconds) 秒后播放"
     }
 
     @objc private func handlePlayNow() { onPlayNow?() }

@@ -54,8 +54,8 @@ chrome, dark player) regardless of the system appearance.
   - **Sibling-video playlist**: the videos alongside the opened one form a
     queue. The capsule's playlist button lists it (tap a row to jump);
     previous/next step through it. When a video ends, an "Up Next" pill
-    counts down 5 seconds on the last frame — play now, cancel (Esc), or
-    let it fire (Return plays immediately) — and the queue's last video
+    counts down 5 seconds on the last frame — play now, cancel (Esc),
+    freeze/resume it (space), or let it fire (Return plays immediately) — and the queue's last video
     simply parks on its last frame.
   - **Play modes**: single (park at end), repeat-one, list, list-loop and
     shuffle, picked from the capsule's mode button; they drive both

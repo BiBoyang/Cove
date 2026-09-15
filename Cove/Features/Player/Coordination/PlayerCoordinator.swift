@@ -41,6 +41,8 @@ final class PlayerCoordinator {
     private var subtitleScratch: SubtitleScratch?
     /// Live countdown, if any; `nil` once fired or cancelled. Being `nil`
     /// is what makes a fire beat and a manual step mutually exclusive.
+    /// Space-pausing keeps it non-nil (phase `paused`, timer torn down),
+    /// so fire/cancel semantics keep working through the freeze.
     private var upNextCountdown: UpNextCountdown?
     private var upNextTimer: Timer?
     private var playMode: PlayMode = .list {
@@ -126,6 +128,7 @@ final class PlayerCoordinator {
             }
             controller.onUpNextPlayNow = { [weak self] in self?.fireUpNextCountdown() }
             controller.onUpNextCancel = { [weak self] in self?.cancelUpNextCountdown() }
+            controller.onUpNextTogglePause = { [weak self] in self?.toggleUpNextPause() }
             windowController = controller
             controller.show()
         }
@@ -214,15 +217,7 @@ final class PlayerCoordinator {
         let title = playlist.items[next].name
         upNextCountdown = UpNextCountdown(totalSeconds: Self.upNextDuration)
         windowController.showUpNext(title: title, seconds: Self.upNextDuration)
-        // Target/selector rather than a block: the block API is @Sendable
-        // and would fight the coordinator's MainActor isolation.
-        upNextTimer = Timer.scheduledTimer(
-            timeInterval: 1,
-            target: self,
-            selector: #selector(upNextTimerFired),
-            userInfo: nil,
-            repeats: true
-        )
+        scheduleUpNextTimer()
     }
 
     // MARK: - Up Next countdown
@@ -278,6 +273,37 @@ final class PlayerCoordinator {
         tearDownUpNextTimer()
         upNextCountdown = nil
         windowController?.hideUpNext()
+    }
+
+    /// Space during the countdown: freeze it (timer torn down, overlay
+    /// flips to the paused readout) or resume it (timer rebuilt over the
+    /// frozen remaining budget, overlay counting again). The model stays
+    /// non-nil the whole time, so Esc, Return/play-now, and a stale fire
+    /// keep their existing semantics while paused.
+    private func toggleUpNextPause() {
+        guard var countdown = upNextCountdown, let windowController else { return }
+        countdown.togglePause()
+        let paused = countdown.isPaused
+        upNextCountdown = countdown
+        if paused {
+            tearDownUpNextTimer()
+        } else {
+            scheduleUpNextTimer()
+        }
+        windowController.setUpNextPaused(paused)
+    }
+
+    /// One-second heartbeat driving the countdown. Target/selector rather
+    /// than a block: the block API is @Sendable and would fight the
+    /// coordinator's MainActor isolation.
+    private func scheduleUpNextTimer() {
+        upNextTimer = Timer.scheduledTimer(
+            timeInterval: 1,
+            target: self,
+            selector: #selector(upNextTimerFired),
+            userInfo: nil,
+            repeats: true
+        )
     }
 
     private func tearDownUpNextTimer() {

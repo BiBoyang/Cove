@@ -74,4 +74,54 @@ struct UpNextCountdownTests {
         #expect(only == 0)
         #expect(countdown.phase == .fired)
     }
+
+    @Test("toggle pauses and resumes bidirectionally")
+    func toggleBothWays() {
+        var countdown = UpNextCountdown(totalSeconds: 5)
+        countdown.tick()
+        countdown.togglePause()
+        #expect(countdown.phase == .paused)
+        #expect(countdown.isPaused)
+
+        // Resuming keeps the frozen remaining budget and counts on from it.
+        countdown.togglePause()
+        #expect(countdown.phase == .counting)
+        #expect(!countdown.isPaused)
+        let resumed = countdown.tick()
+        #expect(resumed == 3)
+    }
+
+    @Test("ticks are absorbed while paused and the budget stays frozen")
+    func tickWhilePaused() {
+        var countdown = UpNextCountdown(totalSeconds: 5)
+        countdown.tick()
+        countdown.togglePause()
+        #expect(countdown.tick() == nil)
+        #expect(countdown.phase == .paused)
+        #expect(countdown.remainingSeconds == 4)
+    }
+
+    @Test("cancel works from the paused state")
+    func cancelWhilePaused() {
+        var countdown = UpNextCountdown(totalSeconds: 5)
+        countdown.togglePause()
+        countdown.cancel()
+        #expect(countdown.phase == .cancelled)
+        #expect(countdown.tick() == nil)
+        #expect(countdown.remainingSeconds == 5)
+    }
+
+    @Test("toggle is a no-op from the absorbing terminal phases")
+    func toggleTerminalStates() {
+        var fired = UpNextCountdown(totalSeconds: 1)
+        fired.tick()
+        fired.togglePause()
+        #expect(fired.phase == .fired)
+        #expect(fired.remainingSeconds == 0)
+
+        var cancelled = UpNextCountdown(totalSeconds: 5)
+        cancelled.cancel()
+        cancelled.togglePause()
+        #expect(cancelled.phase == .cancelled)
+    }
 }
