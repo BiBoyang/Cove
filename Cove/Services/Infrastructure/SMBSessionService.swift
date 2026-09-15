@@ -81,6 +81,16 @@ final class SMBReadRouter: Sendable {
         return try await read(at: path)
     }
 
+    /// Directory listing on this (background/preheat) lane, with the same
+    /// fallback discipline as `read(at:fallback:)` above. Internal (not
+    /// private) so the lane fallback is directly unit-testable.
+    func list(at path: String, fallback: SMBReadRouter) async throws -> [ContentItem] {
+        if state.withLock({ $0 }) == nil {
+            return try await fallback.list(at: path)
+        }
+        return try await list(at: path)
+    }
+
     func read(at path: String, range: Range<Int64>) async throws -> Data {
         guard let source = state.withLock({ $0 }) else {
             throw SourceError.notConnected
@@ -338,6 +348,19 @@ final class SMBSessionService {
     func makePreheatLaneFileReader() -> @Sendable (String) async throws -> Data {
         { [preheatReadRouter, readRouter] path in
             try await preheatReadRouter.read(at: path, fallback: readRouter)
+        }
+    }
+
+    /// A directory-listing closure riding the preheat lane, with the same
+    /// fallback discipline as `makePreheatLaneFileReader()`. Background
+    /// display work that lists directories (legacy cover stat) shares the
+    /// preheat connection, so it can no longer queue behind interactive
+    /// reads on the main lane — and vice versa. While no preheat connection
+    /// is installed (the connect window, or local/vault sessions), listings
+    /// fall back to the main lane: the same accepted read-lane residual.
+    func makePreheatLaneLister() -> @Sendable (String) async throws -> [ContentItem] {
+        { [preheatReadRouter, readRouter] path in
+            try await preheatReadRouter.list(at: path, fallback: readRouter)
         }
     }
 

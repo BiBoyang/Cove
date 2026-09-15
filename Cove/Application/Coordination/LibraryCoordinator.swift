@@ -1115,7 +1115,11 @@ final class LibraryCoordinator {
             return try? await LocalFileSource(root: vaultService.rootURL).metadata(at: entry.path)
         case .smb:
             guard sessionService.currentSourceID == entry.sourceID else { return nil }
-            let list = sessionService.makeLister()
+            // The preheat lane keeps this stat off the main lane so it can't
+            // queue behind interactive (mpv) reads; while the preheat
+            // connection is still being established it falls back to the
+            // main lane — the same accepted residual as the read lane.
+            let list = sessionService.makePreheatLaneLister()
             guard let listing = try? await list(entry.directoryPath) else { return nil }
             return listing.first { $0.path == entry.path }
         }
