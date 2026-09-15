@@ -42,6 +42,7 @@
 
 ## 已归档（近期完成）
 
+- 下一集倒计时空格=暂停/继续（冻结读秒 + 「已暂停 · 空格继续」，Esc/Return 语义不变；2026-09-15 真机通过，见 plans/archive/TASK-upnext-space-pause.md）
 - 审查三连闭环：vault 下载写盘下主线程、首页 legacy 封面 stat 走预热车道、缓存 15 分钟周期清扫（2026-09-15 Review Gate Approved，真机观察项两项，见 plans/archive/TASK-review-followups.md）
 - 回首页/回网格不再切断在播流（延迟断开：pending 标志 + 播放器关窗补断，重连/复用清债）；随卡修 reveal 复用会话丢缩略图、信号量先发布后派发、截帧迟到回复泄漏（2026-09-15 真机 a/b/c 通过，见 plans/archive/TASK-playback-session-guard.md）
 - 播放体验三连：EOF 后点播放=从头重播（非循环）、续播=单视频队列
