@@ -150,17 +150,23 @@ final class VaultService {
 
     /// Maps a remote item to its vault location:
     /// `<root>/<sanitized server label>/<share>/<remote path>`, so same-named
-    /// shares or files on different servers never collide.
-    func localURL(serverLabel: String, share: String, path: String) -> URL {
+    /// shares or files on different servers never collide. The static core
+    /// keeps downloads off the main actor (their only root dependency,
+    /// snapshotted once up front).
+    nonisolated static func localURL(root: URL, serverLabel: String, share: String, path: String) -> URL {
         let trimmed = path.hasPrefix("/") ? String(path.dropFirst()) : path
-        return rootURL
-            .appendingPathComponent(Self.sanitize(serverLabel), isDirectory: true)
+        return root
+            .appendingPathComponent(sanitize(serverLabel), isDirectory: true)
             .appendingPathComponent(share, isDirectory: true)
             .appendingPathComponent(trimmed)
     }
 
+    func localURL(serverLabel: String, share: String, path: String) -> URL {
+        Self.localURL(root: rootURL, serverLabel: serverLabel, share: share, path: path)
+    }
+
     /// HFS/APFS-hostile characters in a path component become "-".
-    static func sanitize(_ component: String) -> String {
+    nonisolated static func sanitize(_ component: String) -> String {
         let cleaned = component
             .replacingOccurrences(of: "/", with: "-")
             .replacingOccurrences(of: ":", with: "-")
@@ -218,6 +224,9 @@ final class VaultService {
         read: @Sendable (String, Range<Int64>) async throws -> Data,
         progress: (@MainActor (DownloadProgress) -> Void)? = nil
     ) async throws -> DownloadResult {
+        // Snapshot the root once: the copy loop below runs off the main
+        // actor, so it must not touch instance state.
+        let root = rootURL
         let files: [ContentItem]
         var truncated = false
         if item.isDirectory {
@@ -236,7 +245,9 @@ final class VaultService {
             try Task.checkCancellation()
             progress?(DownloadProgress(completed: index, total: files.count, currentFile: file.name))
             do {
-                if try await downloadOne(file: file, serverLabel: serverLabel, share: share, read: read) {
+                if try await Self.downloadOne(
+                    root: root, file: file, serverLabel: serverLabel, share: share, read: read
+                ) {
                     result.downloaded += 1
                 } else {
                     result.skipped += 1
@@ -253,13 +264,18 @@ final class VaultService {
 
     /// Returns true when the file was (re)downloaded, false when the local
     /// copy was already current.
-    private func downloadOne(
+    ///
+    /// Nonisolated static, parameterized by the root: the whole chunked
+    /// copy (FileHandle writes, FileManager staging) then runs off the main
+    /// actor instead of stalling the UI for the length of every file.
+    private nonisolated static func downloadOne(
+        root: URL,
         file: ContentItem,
         serverLabel: String,
         share: String,
         read: @Sendable (String, Range<Int64>) async throws -> Data
     ) async throws -> Bool {
-        let destination = localURL(serverLabel: serverLabel, share: share, path: file.path)
+        let destination = localURL(root: root, serverLabel: serverLabel, share: share, path: file.path)
         if isUnchanged(file: file, destination: destination) {
             return false
         }
@@ -307,7 +323,7 @@ final class VaultService {
         return true
     }
 
-    private func isUnchanged(file: ContentItem, destination: URL) -> Bool {
+    private nonisolated static func isUnchanged(file: ContentItem, destination: URL) -> Bool {
         guard let values = try? destination.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey]),
               let localSize = values.fileSize else { return false }
         guard Int64(localSize) == file.size else { return false }

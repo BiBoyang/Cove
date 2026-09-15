@@ -250,6 +250,30 @@ struct VaultServiceTests {
         }
     }
 
+    @Test("downloads run off the main thread (the read closure never sees main)")
+    func downloadRunsOffMainThread() async throws {
+        let (service, _) = makeVault()
+        let remote = FakeRemote()
+        let sawMainThread = Mutex(false)
+        let bytes = Data("off-main".utf8)
+        remote.setFile("/clip.bin", bytes: bytes, modified: remoteMtime)
+        let item = ContentItem(
+            name: "clip.bin", path: "/clip.bin", isDirectory: false,
+            size: Int64(bytes.count), modifiedDate: remoteMtime
+        )
+
+        _ = try await service.download(
+            item: item, serverLabel: "nas", share: "s",
+            list: remote.list,
+            read: { path, range in
+                if Thread.isMainThread { sawMainThread.withLock { $0 = true } }
+                return try await remote.read(at: path, range: range)
+            }
+        )
+
+        #expect(!sawMainThread.withLock { $0 })
+    }
+
     @Test("delete removes only the local copy")
     func deleteLocalOnly() async throws {
         let (service, root) = makeVault()
