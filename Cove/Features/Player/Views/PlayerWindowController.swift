@@ -482,12 +482,28 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
     /// full screen and window position survive the change. Order matters —
     /// persist the outgoing resume point, cut its event feed so a dying mpv
     /// can never talk to the new session, shut the handle down, only then
-    /// bring the new session up.
+    /// bring the new session up. One deliberate exception to the strict
+    /// ordering: when the outgoing capture timed out, the old core is still
+    /// wedged inside the screenshot, so its shutdown is deferred until the
+    /// rescue drive finishes (R3, same invariant as windowWillClose) —
+    /// terminating into the join while the core is wedged would reproduce
+    /// the 2026-09-15 deadlock on a plain track swap. The new session still
+    /// comes up immediately; only the old handle's teardown waits, bounded
+    /// to ~2s by construction. The deferred drive keeps servicing the old
+    /// videoLayer even after the host view is removed: its renderer is not
+    /// invalidated until shutdown, the GL context stays alive that whole
+    /// time, and the drive re-checks `isShutdown` every beat, so it can
+    /// never touch a context that teardown has already started on.
     func install(item: ContentItem, core: MPVPlayerCore, viewModel: PlayerViewModel) {
-        self.viewModel.persistProgressOnClose()
+        let captureTimedOut = self.viewModel.persistProgressOnClose()
         self.viewModel.onChange = nil
         self.core.onEvent = nil
-        self.core.shutdown()
+        let outgoing = self.core
+        if captureTimedOut {
+            Task { await outgoing.waitForCaptureRescue(); outgoing.shutdown() }
+        } else {
+            outgoing.shutdown()
+        }
         // The subtitle popover's rows belong to the outgoing file; drop it
         // with the session (a transient tap-away usually beats a swap here).
         if isSubtitlePopoverActive {
@@ -976,11 +992,27 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
     }
 
     func windowWillClose(_ notification: Notification) {
-        // Persist the resume point before the mpv handle goes away.
-        viewModel.persistProgressOnClose()
-        core.shutdown()
-        onClose?()
-        onClose = nil
+        // Persist the resume point before the mpv handle goes away. A
+        // timed-out close capture means the core is still wedged inside
+        // the screenshot and the rescue drive is unwedging it: defer the
+        // teardown until the rescue finishes (bounded to ~2s), or
+        // mpv_terminate_destroy's thread join would reproduce the
+        // 2026-09-15 close-path hang. onClose fires in both branches, so
+        // the coordinator's drop of this controller is unchanged.
+        let captureTimedOut = viewModel.persistProgressOnClose()
+        if captureTimedOut {
+            Task { [weak self] in
+                guard let self else { return }
+                await core.waitForCaptureRescue()
+                core.shutdown()
+                onClose?()
+                onClose = nil
+            }
+        } else {
+            core.shutdown()
+            onClose?()
+            onClose = nil
+        }
     }
 }
 

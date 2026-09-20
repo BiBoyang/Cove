@@ -24,12 +24,21 @@ protocol PlayerPlaybackControlling: AnyObject {
     /// Grabs the currently displayed frame as raw BGRA (the video-cover
     /// pipeline's write side, TASK-video-thumbnails).
     func captureCurrentFrame() -> BGRAVideoFrame?
+    /// True when the most recent capture attempt timed out: its reply is
+    /// still pending and the engine's bounded rescue drive is unwedging
+    /// the core (TASK-player-deadlock-fix). The close path reads this to
+    /// defer the handle teardown until the rescue finishes.
+    var captureDidTimeOut: Bool { get }
 }
 
 extension PlayerPlaybackControlling {
     /// Default: no capture. Engines that cannot grab frames (the tests'
     /// fake controller) simply never produce covers.
     func captureCurrentFrame() -> BGRAVideoFrame? { nil }
+
+    /// Default: engines without a wedgeable capture path (the tests' fake
+    /// controller) never time out.
+    var captureDidTimeOut: Bool { false }
 
     /// Default: engines that cannot report a baseline (the tests' fake
     /// controller) treat 0 as the subtitle rest position.
@@ -283,18 +292,27 @@ final class PlayerViewModel {
     /// (window close, track-swap install). The capture runs synchronously
     /// here — the caller tears the render context and mpv handle down right
     /// after this returns — which is safe because this call site is never
-    /// inside the event drain.
-    func persistProgressOnClose() {
+    /// inside the event drain. Returns true when that capture timed out and
+    /// the engine is still rescuing its wedged core: the caller must defer
+    /// the teardown until the rescue finishes instead of shutting down into
+    /// a terminate join (TASK-player-deadlock-fix, R3).
+    @discardableResult
+    func persistProgressOnClose() -> Bool {
         persistProgress(currentTime, captureDeferred: false)
-        captureThumbnail()
+        return captureThumbnail()
     }
 
     /// Grabs the current frame and hands it to the cover writer together
     /// with the session's file facts. Every miss is silent: a nil capture
     /// or missing writer/facts just means the card keeps its film icon.
-    private func captureThumbnail() {
-        guard let thumbnailWriter, let thumbnailFacts, hasVideoTrack else { return }
-        guard let frame = controller.captureCurrentFrame() else { return }
+    /// Returns true only when the engine reports the miss was a timeout
+    /// (its core is being rescued) rather than an ordinary failure.
+    @discardableResult
+    private func captureThumbnail() -> Bool {
+        guard let thumbnailWriter, let thumbnailFacts, hasVideoTrack else { return false }
+        guard let frame = controller.captureCurrentFrame() else {
+            return controller.captureDidTimeOut
+        }
         thumbnailWriter.store(
             frame: frame,
             sourceID: thumbnailFacts.sourceID,
@@ -302,6 +320,7 @@ final class PlayerViewModel {
             fileSize: thumbnailFacts.fileSize,
             modified: thumbnailFacts.modified
         )
+        return false
     }
 
     // MARK: - User intents

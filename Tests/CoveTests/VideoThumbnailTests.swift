@@ -480,3 +480,67 @@ struct RecentWatchCardCoverTests {
         return context.makeImage()!
     }
 }
+
+/// TASK-player-deadlock-fix: the capture rescue loop's two stop states —
+/// the drive ends as soon as the late reply lands, and it ends at the
+/// hard beat cap when the reply never does. The loop seam is injected
+/// (no mpv handle, no real time), so both states are checked beat by beat.
+@Suite("Capture rescue drive")
+struct CaptureRescueTests {
+    /// Mutable loop state the injected closures poke. `@unchecked
+    /// Sendable` because the closures must be @Sendable for the
+    /// non-isolated loop seam, while the drive itself is strictly serial.
+    private final class RescueBox: @unchecked Sendable {
+        var beats = 0
+        var abandoned: Set<UInt64> = [0xC0FFEE]
+    }
+
+    @Test("the drive stops as soon as the late reply lands")
+    func stopsWhenReplyLands() async {
+        let box = RescueBox()
+        let exhausted = await MPVPlayerCore.runCaptureRescue(maxBeats: 100, beat: {
+            // Injected beat: no real sleeping.
+        }, step: {
+            box.beats += 1
+            // Simulate the event drain consuming the late reply on the
+            // third beat — the loop must stop driving immediately after.
+            if box.beats == 3 { box.abandoned.remove(0xC0FFEE) }
+            return box.abandoned.contains(0xC0FFEE)
+        })
+        #expect(!exhausted)
+        #expect(box.beats == 3)
+    }
+
+    @Test("the drive stops at the hard beat cap when the reply never lands")
+    func stopsAtHardCap() async {
+        let box = RescueBox()
+        let exhausted = await MPVPlayerCore.runCaptureRescue(maxBeats: 5, beat: {
+            // Injected beat: no real sleeping.
+        }, step: {
+            box.beats += 1
+            return true // Reply still pending, forever.
+        })
+        #expect(exhausted)
+        #expect(box.beats == 5)
+    }
+
+    @Test("a cancelled drive stops at the next beat without exhausting")
+    func stopsWhenCancelled() async {
+        let box = RescueBox()
+        let task = Task {
+            await MPVPlayerCore.runCaptureRescue(maxBeats: 100, beat: {
+                // Injected beat: no real sleeping.
+            }, step: {
+                box.beats += 1
+                return true
+            })
+        }
+        task.cancel()
+        let exhausted = await task.value
+        #expect(!exhausted)
+        // The counter increments after the cancellation check, so a drive
+        // cancelled up front reports 0 beats, one cancelled mid-flight 1 —
+        // either way it stopped long before the cap.
+        #expect(box.beats <= 1)
+    }
+}

@@ -216,6 +216,10 @@ final class MPVPlayerCore {
     /// issued within one main-actor turn (a persist tick racing a close)
     /// can never consume each other's reply.
     private static let captureReplyBase: UInt64 = 0xC0FFEE
+    /// Rescue drive cadence and hard budget: ~100ms per beat, at most ~2s
+    /// total (2026-09-15 hang fix, R2).
+    private static let captureRescueBeatMillis = 100
+    private static let captureRescueMaxBeats = 20
     /// Frames parsed out of `MPV_EVENT_COMMAND_REPLY` by the event drain,
     /// keyed by reply userdata and picked up by their capture call.
     private var capturedFrames: [UInt64: BGRAVideoFrame] = [:]
@@ -227,6 +231,14 @@ final class MPVPlayerCore {
     private var abandonedCaptureIDs = Set<UInt64>()
     /// Next free screenshot-raw reply ID.
     private var nextCaptureReplyID: UInt64 = MPVPlayerCore.captureReplyBase
+    /// The in-flight rescue drive started by a timed-out capture. Awaited
+    /// by `waitForCaptureRescue()` so a teardown never lands while the
+    /// core is still being unwedged.
+    private var rescueTask: Task<Bool, Never>?
+    /// Whether the most recent `captureCurrentFrame` timed out: its reply
+    /// is still pending and the rescue drive is unwedging the core. The
+    /// close path reads this to defer `shutdown()` past the rescue.
+    private(set) var captureDidTimeOut = false
     /// Nested-capture guard: a capture polls the event queue, and a capture
     /// re-entered from inside that poll's drain would call wait_event while
     /// the outer loop still holds its (about-to-die) borrowed event.
@@ -401,11 +413,13 @@ final class MPVPlayerCore {
     /// must finish the capture before the caller tears the render context
     /// and mpv handle down. The bound is what keeps that off the main
     /// thread's throat — a serviced reply lands within the first iteration
-    /// (one render-context update), and the timeout degrades to nil rather
-    /// than ever wedging the run loop or abandoning the flow.
+    /// (one render-context update). On timeout it degrades to nil and
+    /// hands the wedge to the bounded rescue drive (`startCaptureRescue`)
+    /// instead of ever blocking past the bound.
     func captureCurrentFrame() -> BGRAVideoFrame? {
         guard !isShutdown, !isCapturingFrame else { return nil }
         isCapturingFrame = true
+        captureDidTimeOut = false
         defer { isCapturingFrame = false }
 
         let replyID = nextCaptureReplyID
@@ -426,10 +440,81 @@ final class MPVPlayerCore {
         // Timed out: the reply can still arrive later, and storing it
         // would park its BGRA payload (1080p ≈ 8MB / 4K ≈ 33MB) in
         // `capturedFrames` forever. Record the ID; the drain drops the
-        // late reply when (if) it lands.
+        // late reply when (if) it lands. Dropping the reply does not fix
+        // the wedge itself — mpv core is stuck inside the screenshot,
+        // waiting on a VO render request only this thread can service — so
+        // start the bounded rescue drive (2026-09-15 hang: a wedged core
+        // deadlocks every later command on mpv's dispatch lock).
         abandonedCaptureIDs.insert(replyID)
+        captureDidTimeOut = true
         logger.notice("screenshot-raw timed out; no cover captured")
+        startCaptureRescue(replyID: replyID)
         return nil
+    }
+
+    /// One rescue beat: service the VO render request the wedged core is
+    /// waiting on, then pump the event queue so the late reply, once it
+    /// finally lands, is consumed out of `abandonedCaptureIDs`. Returns
+    /// false when the drive is over — reply landed, core shut down — and
+    /// the loop must stop touching the render context.
+    private func rescueStep(replyID: UInt64) -> Bool {
+        guard !isShutdown else { return false }
+        videoLayer.drainRenderDispatch()
+        drainEvents()
+        return abandonedCaptureIDs.contains(replyID)
+    }
+
+    /// Starts the bounded rescue drive for a capture whose 250ms wait
+    /// timed out: one beat every ~100ms for at most ~2s, stopping the
+    /// moment the late reply lands. Checkpoints `isShutdown` every beat,
+    /// so a shutdown mid-rescue stops the drive before it can service a
+    /// render request for a context that is being torn down.
+    private func startCaptureRescue(replyID: UInt64) {
+        rescueTask?.cancel()
+        rescueTask = Task { [weak self] in
+            guard let self else { return false }
+            let exhausted = await Self.runCaptureRescue(maxBeats: Self.captureRescueMaxBeats) {
+                try? await Task.sleep(for: .milliseconds(Self.captureRescueBeatMillis))
+            } step: {
+                // Cross-actor hop: the closure is @Sendable, the loop is
+                // not main-actor-isolated.
+                await self.rescueStep(replyID: replyID)
+            }
+            if exhausted {
+                logger.notice("screenshot-raw rescue exhausted; the mpv core may stay wedged")
+            }
+            return exhausted
+        }
+    }
+
+    /// Suspends until the in-flight rescue drive finishes. Bounded by
+    /// construction (~2s), so the close path can defer `shutdown()` to
+    /// after it instead of joining mpv's threads while the core is still
+    /// wedged inside the screenshot.
+    func waitForCaptureRescue() async {
+        _ = await rescueTask?.value
+    }
+
+    /// The rescue loop reduced to its testable skeleton: each beat pauses,
+    /// then `step` reports whether the late capture reply is still pending.
+    /// Stops as soon as `step` says the reply landed (or the core shut
+    /// down), or after `maxBeats` beats either way. Returns true when the
+    /// beat budget was exhausted with the reply still pending. Both
+    /// closures are injected so the two stop states are unit-testable
+    /// without an mpv handle and without real time passing.
+    nonisolated static func runCaptureRescue(
+        maxBeats: Int,
+        beat: @escaping @Sendable () async -> Void,
+        step: @escaping @Sendable () async -> Bool
+    ) async -> Bool {
+        var beats = 0
+        while beats < maxBeats {
+            await beat()
+            if Task.isCancelled { return false }
+            beats += 1
+            if !(await step()) { return false }
+        }
+        return true
     }
 
     /// Issues `screenshot-raw video bgra` as a node command under `replyID`.
@@ -704,6 +789,10 @@ final class MPVPlayerCore {
     func shutdown() {
         guard !isShutdown else { return }
         isShutdown = true
+        // Stop the rescue drive: its beat is checkpointed on `isShutdown`,
+        // but cancelling here keeps a sleeping beat from touching the
+        // render context after the teardown below has started.
+        rescueTask?.cancel()
         renderer?.invalidate()
         renderer = nil
         bridge.cancelInFlightReads()
@@ -715,15 +804,21 @@ final class MPVPlayerCore {
         bridge.detach()
     }
 
-    /// Non-blocking mpv command; failures are logged, never thrown (a
-    /// failed seek/pause must not take the session down).
+    /// Queues an mpv command for asynchronous execution; failures are
+    /// logged, never thrown (a failed seek/pause must not take the session
+    /// down). mpv runs queued commands in arrival order, so relative
+    /// ordering with the async screenshot-raw is preserved. Never blocks
+    /// the caller: the old mpv_command took mpv's dispatch lock and could
+    /// deadlock the main thread against a wedged core (2026-09-15 hang).
+    /// Execution failures come back as MPV_EVENT_COMMAND_REPLY with
+    /// userdata 0 and are logged in the drain.
     private func command(_ args: [String]) {
         guard let handle, !isShutdown else { return }
         var cArgs: [UnsafePointer<CChar>?] = args.map { UnsafePointer(strdup($0)) } + [nil]
         defer {
             for arg in cArgs { free(UnsafeMutablePointer(mutating: arg)) }
         }
-        let result = mpv_command(handle, &cArgs)
+        let result = mpv_command_async(handle, 0, &cArgs)
         if result < 0 {
             logger.error("mpv command \(args.first ?? "?") failed: \(String(cString: mpv_error_string(result)))")
         }
@@ -781,11 +876,21 @@ final class MPVPlayerCore {
                     )
                 }
             case MPV_EVENT_COMMAND_REPLY:
+                let replyID = event.pointee.reply_userdata
+                // Fire-and-forget async commands (command(_:), userdata 0)
+                // reply here too; they carry no payload, so only failures
+                // are worth a log line — this is the async replacement for
+                // the old mpv_command return-code check.
+                guard replyID >= Self.captureReplyBase else {
+                    if event.pointee.error < 0 {
+                        let detail = String(cString: mpv_error_string(event.pointee.error))
+                        logger.error("mpv async command failed: \(detail)")
+                    }
+                    break
+                }
                 // `screenshot-raw` replies (captureCurrentFrame). The result
                 // node's memory dies at the next wait_event, so the parse —
                 // which copies the byte array out — happens right here.
-                let replyID = event.pointee.reply_userdata
-                guard replyID >= Self.captureReplyBase else { break }
                 // A late reply for a capture whose waiter already timed
                 // out: drop it (see `abandonedCaptureIDs`), never park it.
                 guard Self.shouldStoreCaptureReply(
