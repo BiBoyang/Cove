@@ -521,12 +521,18 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
     /// The centered file name: white text with a shadow so it stays
     /// readable on bright frames.
     private static func makeCenterTitle(_ title: String) -> NSAttributedString {
+        // Attributed strings lay out by their own paragraph style, not the
+        // label's lineBreakMode — without this the title word-wraps in a
+        // narrow window instead of truncating.
+        let paragraphStyle = NSMutableParagraphStyle()
+        paragraphStyle.lineBreakMode = .byTruncatingMiddle
         return NSAttributedString(
             string: title,
             attributes: [
                 .font: NSFont.systemFont(ofSize: 13, weight: .medium),
                 .foregroundColor: CoveStyle.textOnMedia1,
                 .shadow: CoveStyle.shadowTextOnMedia,
+                .paragraphStyle: paragraphStyle,
             ]
         )
     }
@@ -1123,13 +1129,7 @@ private final class UpNextOverlayView: NSView {
         addSubview(board)
 
         titleLabel.lineBreakMode = .byTruncatingTail
-        titleLabel.attributedStringValue = NSAttributedString(
-            string: "",
-            attributes: [
-                .font: NSFont.systemFont(ofSize: 13, weight: .medium),
-                .foregroundColor: CoveStyle.textOnMedia1,
-            ]
-        )
+        titleLabel.attributedStringValue = Self.makeTitle("")
         // The file name yields and truncates; the pill never grows past its
         // width cap because of a long name.
         titleLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
@@ -1190,15 +1190,24 @@ private final class UpNextOverlayView: NSView {
     }
 
     func configure(title: String, seconds: Int) {
-        titleLabel.attributedStringValue = NSAttributedString(
+        titleLabel.attributedStringValue = Self.makeTitle(title)
+        isPaused = false
+        update(seconds: seconds)
+    }
+
+    private static func makeTitle(_ title: String) -> NSAttributedString {
+        // Same AppKit rule as makeCenterTitle: the truncating paragraph
+        // style must ride inside the attributed string to take effect.
+        let paragraphStyle = NSMutableParagraphStyle()
+        paragraphStyle.lineBreakMode = .byTruncatingTail
+        return NSAttributedString(
             string: title,
             attributes: [
                 .font: NSFont.systemFont(ofSize: 13, weight: .medium),
                 .foregroundColor: CoveStyle.textOnMedia1,
+                .paragraphStyle: paragraphStyle,
             ]
         )
-        isPaused = false
-        update(seconds: seconds)
     }
 
     func update(seconds: Int) {

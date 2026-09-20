@@ -1,3 +1,4 @@
+import AppKit
 import CacheKit
 import CoreGraphics
 import Foundation
@@ -100,6 +101,13 @@ struct BrowserViewModelTests {
             BrowserViewController.locationText(path: "/anime/2024/fall", title: "fall").string
                 == "anime / 2024 / fall"
         )
+        // Narrow windows must truncate the parent chain first, never wrap:
+        // AppKit ignores the label's lineBreakMode for attributed strings,
+        // so the truncating paragraph style has to ride inside the text.
+        let breadcrumb = BrowserViewController.locationText(path: "/anime/2024/fall", title: "fall")
+        let style = breadcrumb.attribute(.paragraphStyle, at: 0, effectiveRange: nil)
+            as? NSParagraphStyle
+        #expect(style?.lineBreakMode == .byTruncatingHead)
     }
 
     @Test("exposes images and item lookup from displayed state")

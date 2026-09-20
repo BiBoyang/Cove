@@ -161,7 +161,10 @@ final class BrowserViewController: NSViewController {
         preheatProgressLabel.isHidden = true
         preheatProgressLabel.setContentHuggingPriority(.required, for: .horizontal)
 
-        locationLabel.lineBreakMode = .byTruncatingMiddle
+        // Fallback only: the breadcrumb is an attributed string whose own
+        // paragraph style governs line breaking (see `locationText`) — keep
+        // the two in sync.
+        locationLabel.lineBreakMode = .byTruncatingHead
         locationLabel.setContentHuggingPriority(.defaultLow, for: .horizontal)
         locationLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
@@ -363,13 +366,22 @@ final class BrowserViewController: NSViewController {
     /// Showing the raw path and the title separately duplicated the last
     /// path component.
     static func locationText(path: String, title: String) -> NSAttributedString {
+        // AppKit lays out attributed strings by their own paragraph style and
+        // ignores the label's lineBreakMode: without this, a narrow window
+        // word-wraps the breadcrumb to multiple lines instead of truncating.
+        // Head truncation sheds the parent chain first so the current folder
+        // name stays visible longest (the tooltip still shows the full path).
+        let paragraphStyle = NSMutableParagraphStyle()
+        paragraphStyle.lineBreakMode = .byTruncatingHead
         let titleAttributes: [NSAttributedString.Key: Any] = [
             .font: NSFont.systemFont(ofSize: 13, weight: .semibold),
             .foregroundColor: NSColor.labelColor,
+            .paragraphStyle: paragraphStyle,
         ]
         let parentAttributes: [NSAttributedString.Key: Any] = [
             .font: CoveStyle.formLabelFont,
             .foregroundColor: NSColor.secondaryLabelColor,
+            .paragraphStyle: paragraphStyle,
         ]
         let components = path.split(separator: "/", omittingEmptySubsequences: true)
         // At the share root the title stands alone; deeper, the parents
