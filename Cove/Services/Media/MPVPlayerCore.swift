@@ -248,7 +248,14 @@ final class MPVPlayerCore {
     /// by the player coordinator.
     var onEvent: ((PlayerCoreEvent) -> Void)?
 
-    init(bridge: VideoStreamBridge) throws {
+    /// Session-level mpv option overrides, applied at init before
+    /// `mpv_initialize`. The headless thumbnail capture session passes
+    /// `hwdec: "no"` so `screenshot-raw`'s swscale conversion sees a
+    /// software pixel format — VideoToolbox frames are unsupported
+    /// ("Input image format videotoolbox not supported by libswscale",
+    /// SPIKE-headless-video-thumbnail, 2026-09-21). The player itself
+    /// keeps the default (empty) and stays on `hwdec=auto-safe`.
+    init(bridge: VideoStreamBridge, extraOptions: [String: String] = [:]) throws {
         self.bridge = bridge
         guard let handle = mpv_create() else {
             throw PlayerCoreError.createFailed
@@ -286,6 +293,10 @@ final class MPVPlayerCore {
         // EOF no longer fires MPV_EVENT_END_FILE — the eof signal comes
         // from the observed eof-reached property instead.
         mpv_set_option_string(handle, "keep-open", "yes")
+
+        for (key, value) in extraOptions {
+            mpv_set_option_string(handle, key, value)
+        }
 
         let initResult = mpv_initialize(handle)
         guard initResult >= 0 else {

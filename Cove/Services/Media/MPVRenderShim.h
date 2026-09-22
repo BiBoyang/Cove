@@ -61,6 +61,16 @@ NS_ASSUME_NONNULL_BEGIN
 /// thread only, like the rest of the shim.
 - (void)drainRenderDispatch;
 
+/// Forces the lazy CGL pixel format / context pair into existence WITHOUT
+/// a window. Core Animation only runs the copyCGL* hooks when it actually
+/// draws the layer, i.e. when the layer is hosted in a visible window; a
+/// headless thumbnail capture session has none, so drainRenderDispatch
+/// would early-return on a nil context forever and every screenshot-raw
+/// would time out (SPIKE-headless-video-thumbnail, 2026-09-21). One call
+/// after creation is enough — the context then lives for the layer's
+/// lifetime exactly as if a draw had created it.
+- (void)prepareHeadlessGLContext;
+
 @end
 
 NS_ASSUME_NONNULL_END

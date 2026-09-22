@@ -233,6 +233,21 @@ static void coveWithCurrentGLContext(void (^block)(void)) {
     [self setNeedsDisplay];
 }
 
+- (void)prepareHeadlessGLContext {
+    // Same attribute set as the draw-time hooks, so the context mpv probed
+    // at render-context create matches the one we drain with. Ownership:
+    // the ivars keep these +1 references; dealloc releases them.
+    if (!_pixelFormat) {
+        GLint count = 0;
+        if (CGLChoosePixelFormat(coveGLPixelFormatAttrs, &_pixelFormat, &count) != kCGLNoError) {
+            _pixelFormat = NULL;
+        }
+    }
+    if (!_context && _pixelFormat) {
+        CGLCreateContext(_pixelFormat, NULL, &_context);
+    }
+}
+
 - (void)drainRenderDispatch {
     if (!_context || !self.renderer) {
         return;
