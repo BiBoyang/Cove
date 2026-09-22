@@ -16,6 +16,9 @@
   命令行注入（secrets 齐备、v0.6/0.7 发布实战全绿），bundle id
   com.biboyang.cove 定型保留，零代码改动。1.0 三批全齐，发布待发令
 - [ ] 候选（可放 1.x）：图片网格墙
+- [ ] 候选（1.x）：视频缩略图路线 B 主卡（浏览器未播视频行补截帧封面；
+  spike 闸门已过：软解+预建 GL 上下文、一视频一核、单视频全链路
+  ≈0.5s，设计建议见 plans/archive/SPIKE-headless-video-thumbnail.md）
 
 ## 上架前必须
 
@@ -40,7 +43,20 @@
 - [x] 首页封面 stat 挤主车道（审查登记 2026-09-15，小-中 → 2026-09-15 闭环：stat 走预热车道）
 - [x] 缓存驱逐节奏盲区（审查登记 2026-09-15，小 → 2026-09-15 闭环：15 分钟周期清扫）
 
+## 观察项
+
+- [ ] VaultService.swift:305 `Self.downloadChunkSize` 主 actor 隔离警告
+  （Swift 6 mode 下会升为 error）——HEAD 预存，增量编译不 surfacing，
+  2026-09-22 全量重编（bridging header 变更触发）实测出现；非本次
+  任务引入，待单独小卡处理
+
 ## 已归档（近期完成）
+
+- headless 截帧 spike 闭环（路线 B 立项闸门）：必要配方 = hwdec=no 软解
+  × prepareHeadlessGLContext 预建上下文，一视频一核（同核第二帧起超时，
+  seek 不复位），vo=null/vo=image 实证不通；钩子已转正
+  （extraOptions + prepareHeadlessGLContext，2026-09-22，见
+  plans/archive/SPIKE-headless-video-thumbnail.md）
 
 - 截帧楔死四环死锁修复（mpv 命令全量异步化 + 截帧超时救援驱动 + 关窗/换集不在楔死态 terminate；2026-09-15 真机五条全过，见 plans/archive/TASK-player-deadlock-fix.md）
 - 下一集倒计时空格=暂停/继续（冻结读秒 + 「已暂停 · 空格继续」，Esc/Return 语义不变；2026-09-15 真机通过，见 plans/archive/TASK-upnext-space-pause.md）
