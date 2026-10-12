@@ -249,4 +249,33 @@ final class SMBSourceTests: XCTestCase {
             // Non-SourceError wire failure: also proves a client exists.
         }
     }
+
+    func testDisconnectDuringRetryBackoffAbortsConnect() async throws {
+        let source = SMBSource(host: "192.0.2.1", share: "media", username: "u", password: "p")
+        let attempts = Mutex(0)
+        // The gate is pre-opened: park() signals the attempt without blocking.
+        let attempted = HandshakeGate()
+        attempted.open()
+        await source.setMakeClientOverride { _, _ in
+            attempts.withLock { $0 += 1 }
+            await attempted.park()
+            throw POSIXError(.EIO) // retryable transport failure
+        }
+
+        let connectTask = Task { try await source.connect() }
+        await attempted.waitUntilEntered()
+        // The disconnect lands while the retry is in its backoff sleep.
+        await source.disconnect()
+
+        do {
+            try await connectTask.value
+            XCTFail("a superseded connect must not report success")
+        } catch is CancellationError {
+            // Expected: the stale hook aborted the retry.
+        } catch {
+            XCTFail("expected CancellationError, got \(error)")
+        }
+        // The backoff never burned a second attempt.
+        XCTAssertEqual(attempts.withLock { $0 }, 1)
+    }
 }

@@ -1,5 +1,6 @@
 import AMSMB2
 import Foundation
+import Synchronization
 
 /// Client-level timeouts (seconds) handed to AMSMB2's `SMB2Manager.timeout`.
 enum SMBTimeout {
@@ -30,8 +31,9 @@ public actor SMBSource: ContentSource {
     /// the cooperative pool — a `disconnect()` or a second `connect()` can
     /// run while a first connect is still shaking hands. A connect that
     /// resumes to a changed generation tears its fresh client down instead
-    /// of resurrecting (or double-installing) a session.
-    private var connectionGeneration: UInt64 = 0
+    /// of resurrecting (or double-installing) a session. Mutex-backed (not
+    /// actor-isolated) so the retry loop's Sendable stale hook can read it.
+    private let connectionGeneration = Mutex<UInt64>(0)
 
     /// Test seam: replaces the real SMB handshake so SourceKitTests can
     /// drive connect/disconnect interleavings without a server. Set through
@@ -59,8 +61,10 @@ public actor SMBSource: ContentSource {
     }
 
     public func connect() async throws {
-        connectionGeneration &+= 1
-        let generation = connectionGeneration
+        let generation = connectionGeneration.withLock { value -> UInt64 in
+            value &+= 1
+            return value
+        }
         guard let url = URL(string: "smb://\(host)") else {
             throw SourceError.connectionFailed("invalid host: \(host)")
         }
@@ -72,7 +76,11 @@ public actor SMBSource: ContentSource {
         do {
             // A fresh client per attempt: a failed libsmb2 context is
             // destroyed, so retrying on the same manager is not safe.
-            newClient = try await TransientRetry.run {
+            // `self` capture: an actor's immutable Sendable `let` is
+            // nonisolated-readable, and Mutex itself is noncopyable.
+            newClient = try await TransientRetry.run(stale: {
+                self.connectionGeneration.withLock { $0 } != generation
+            }) {
                 if let makeClient {
                     return try await makeClient(url, credential)
                 }
@@ -86,6 +94,10 @@ public actor SMBSource: ContentSource {
             }
         } catch let error as SourceError {
             throw error
+        } catch is CancellationError {
+            // The retry loop's stale hook: a disconnect or newer connect
+            // landed mid-retry.
+            throw CancellationError()
         } catch {
             throw SMBErrorMapper.connectError(error, host: host, resource: share)
         }
@@ -93,7 +105,7 @@ public actor SMBSource: ContentSource {
         // landed meanwhile. A stale attempt tears down the session it just
         // built — resurrecting it would leak a live share connection that
         // the caller believes is gone.
-        guard generation == connectionGeneration else {
+        guard generation == connectionGeneration.withLock({ $0 }) else {
             try? await newClient.disconnectShare(gracefully: true)
             throw CancellationError()
         }
@@ -110,7 +122,7 @@ public actor SMBSource: ContentSource {
     public func disconnect() async {
         // Bump even with no live client: an in-flight connect must find
         // itself stale when it resumes.
-        connectionGeneration &+= 1
+        connectionGeneration.withLock { $0 &+= 1 }
         guard let client else { return }
         self.client = nil
         // Graceful: AMSMB2 waits for its queued operations to finish before

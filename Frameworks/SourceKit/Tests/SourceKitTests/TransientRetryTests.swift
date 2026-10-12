@@ -92,4 +92,21 @@ final class TransientRetryTests: XCTestCase {
         let attempts = await counter.count
         XCTAssertEqual(attempts, 2)
     }
+
+    func testStaleHookAbortsTheRetryWithCancellation() async {
+        let counter = AttemptCounter()
+        do {
+            _ = try await TransientRetry.run(stale: { true }) { () throws -> Int in
+                _ = await counter.next()
+                throw POSIXError(.EIO)
+            }
+            XCTFail("a superseded attempt must not retry")
+        } catch is CancellationError {
+            // expected
+        } catch {
+            XCTFail("unexpected error: \(error)")
+        }
+        let attempts = await counter.count
+        XCTAssertEqual(attempts, 1)
+    }
 }
