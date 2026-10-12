@@ -2,6 +2,24 @@ import AppKit
 import SnapKit
 import SourceKit
 
+/// The window controller's engine surface: render layer, event feed,
+/// session boot and teardown. Implemented by `MPVPlayerCore`; tests
+/// substitute a recorder so the capture-timeout close path (which defers
+/// teardown past the rescue drive) is drivable deterministically.
+@MainActor
+protocol PlayerWindowCore: PlayerPlaybackControlling {
+    var videoLayer: MPVVideoLayer { get }
+    var onEvent: ((PlayerCoreEvent) -> Void)? { get set }
+    /// Boots playback of the bridge's file on the idle mpv handle.
+    func load()
+    /// Tears the mpv handle down; after this the core is unusable.
+    func shutdown()
+    /// Suspends until the in-flight capture rescue finishes (bounded ~2s).
+    func waitForCaptureRescue() async
+    /// Hands mpv a staged sidecar subtitle file (`sub-add`).
+    func addExternalSubtitle(path: String)
+}
+
 /// The player window: the mpv render layer fills
 /// the whole window under a transparent title bar, with the file name as a
 /// centered overlay title at the top (long names truncate from the middle
@@ -36,11 +54,19 @@ import SourceKit
 /// the mpv handle in the core.
 @MainActor
 final class PlayerWindowController: NSWindowController, NSWindowDelegate {
-    private var core: MPVPlayerCore
+    private var core: any PlayerWindowCore
     private var viewModel: PlayerViewModel
-    /// Fired exactly once when the window closes; the coordinator uses it
-    /// to drop its owning reference.
+    /// Fired exactly once, synchronously inside `windowWillClose` in every
+    /// branch: the window-closed fact is true at that moment, so the
+    /// coordinator drops its owning reference immediately — a re-open
+    /// during a deferred teardown must get a fresh window, never this one.
     var onClose: (() -> Void)?
+    /// Fired exactly once, after the outgoing core's teardown finished:
+    /// synchronously right after `onClose` normally, or up to ~2s later
+    /// when a timed-out close capture defers the mpv shutdown past the
+    /// rescue drive. The coordinator releases per-session resources
+    /// (subtitle scratch) and signals the session's end here.
+    var onTeardownFinished: (() -> Void)?
     /// Playlist transport intents, wired by the coordinator.
     var onPreviousTrack: (() -> Void)?
     var onNextTrack: (() -> Void)?
@@ -127,7 +153,7 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
         (.shuffle, "随机播放", "shuffle"),
     ]
 
-    init(item: ContentItem, core: MPVPlayerCore, viewModel: PlayerViewModel) {
+    init(item: ContentItem, core: any PlayerWindowCore, viewModel: PlayerViewModel) {
         self.core = core
         self.viewModel = viewModel
         self.currentItemName = item.name
@@ -494,7 +520,7 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
     /// invalidated until shutdown, the GL context stays alive that whole
     /// time, and the drive re-checks `isShutdown` every beat, so it can
     /// never touch a context that teardown has already started on.
-    func install(item: ContentItem, core: MPVPlayerCore, viewModel: PlayerViewModel) {
+    func install(item: ContentItem, core: any PlayerWindowCore, viewModel: PlayerViewModel) {
         let captureTimedOut = self.viewModel.persistProgressOnClose()
         self.viewModel.onChange = nil
         self.core.onEvent = nil
@@ -997,21 +1023,28 @@ final class PlayerWindowController: NSWindowController, NSWindowDelegate {
         // the screenshot and the rescue drive is unwedging it: defer the
         // teardown until the rescue finishes (bounded to ~2s), or
         // mpv_terminate_destroy's thread join would reproduce the
-        // 2026-09-15 close-path hang. onClose fires in both branches, so
-        // the coordinator's drop of this controller is unchanged.
+        // 2026-09-15 close-path hang.
         let captureTimedOut = viewModel.persistProgressOnClose()
+        // onClose fires synchronously in BOTH branches (the reference drop
+        // must not ride the deferred teardown), and the deferred task binds
+        // the outgoing core as a local: re-reading the `core` property after
+        // an install would shut a NEW session's handle down, and a weak
+        // self might already be gone, leaking the teardown entirely.
+        let onClose = self.onClose
+        let onTeardownFinished = self.onTeardownFinished
+        self.onClose = nil
+        self.onTeardownFinished = nil
+        onClose?()
+        let outgoing = core
         if captureTimedOut {
-            Task { [weak self] in
-                guard let self else { return }
-                await core.waitForCaptureRescue()
-                core.shutdown()
-                onClose?()
-                onClose = nil
+            Task {
+                await outgoing.waitForCaptureRescue()
+                outgoing.shutdown()
+                onTeardownFinished?()
             }
         } else {
-            core.shutdown()
-            onClose?()
-            onClose = nil
+            outgoing.shutdown()
+            onTeardownFinished?()
         }
     }
 }
@@ -1548,3 +1581,5 @@ private final class VideoLayerHostView: NSView {
         videoLayer.contentsScale = window?.backingScaleFactor ?? 2
     }
 }
+
+extension MPVPlayerCore: PlayerWindowCore {}

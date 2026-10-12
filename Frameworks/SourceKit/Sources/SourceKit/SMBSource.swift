@@ -25,6 +25,25 @@ public actor SMBSource: ContentSource {
     private let password: String
 
     private var client: SMB2Manager?
+    /// Connection-intent generation: `connect()` and `disconnect()` both
+    /// bump it. The AMSMB2 handshake suspends, and an actor hop lands on
+    /// the cooperative pool — a `disconnect()` or a second `connect()` can
+    /// run while a first connect is still shaking hands. A connect that
+    /// resumes to a changed generation tears its fresh client down instead
+    /// of resurrecting (or double-installing) a session.
+    private var connectionGeneration: UInt64 = 0
+
+    /// Test seam: replaces the real SMB handshake so SourceKitTests can
+    /// drive connect/disconnect interleavings without a server. Set through
+    /// the method below — actor-isolated vars reject cross-actor writes.
+    private var makeClientOverride: (@Sendable (URL, URLCredential) async throws -> SMB2Manager)?
+
+    /// Installs the handshake override (SourceKitTests only).
+    func setMakeClientOverride(
+        _ override: (@Sendable (URL, URLCredential) async throws -> SMB2Manager)?
+    ) {
+        makeClientOverride = override
+    }
 
     public init(host: String, share: String, username: String, password: String) {
         self.host = host
@@ -40,14 +59,23 @@ public actor SMBSource: ContentSource {
     }
 
     public func connect() async throws {
+        connectionGeneration &+= 1
+        let generation = connectionGeneration
         guard let url = URL(string: "smb://\(host)") else {
             throw SourceError.connectionFailed("invalid host: \(host)")
         }
         let credential = URLCredential(user: username, password: password, persistence: .none)
+        // Captured before the retry closure: the Sendable closure cannot
+        // reach actor-isolated state.
+        let makeClient = self.makeClientOverride
+        let newClient: SMB2Manager
         do {
             // A fresh client per attempt: a failed libsmb2 context is
             // destroyed, so retrying on the same manager is not safe.
-            self.client = try await TransientRetry.run {
+            newClient = try await TransientRetry.run {
+                if let makeClient {
+                    return try await makeClient(url, credential)
+                }
                 guard let client = SMB2Manager(url: url, credential: credential) else {
                     throw SourceError.connectionFailed("could not create SMB client for \(host)")
                 }
@@ -61,9 +89,28 @@ public actor SMBSource: ContentSource {
         } catch {
             throw SMBErrorMapper.connectError(error, host: host, resource: share)
         }
+        // The handshake suspended: a disconnect or a newer connect may have
+        // landed meanwhile. A stale attempt tears down the session it just
+        // built — resurrecting it would leak a live share connection that
+        // the caller believes is gone.
+        guard generation == connectionGeneration else {
+            try? await newClient.disconnectShare(gracefully: true)
+            throw CancellationError()
+        }
+        // Two connects can both pass the generation check when the newer
+        // one committed while this one was still in flight's early phase;
+        // a replaced client must never leak its session.
+        let replaced = client
+        client = newClient
+        if let replaced {
+            try? await replaced.disconnectShare(gracefully: true)
+        }
     }
 
     public func disconnect() async {
+        // Bump even with no live client: an in-flight connect must find
+        // itself stale when it resumes.
+        connectionGeneration &+= 1
         guard let client else { return }
         self.client = nil
         // Graceful: AMSMB2 waits for its queued operations to finish before

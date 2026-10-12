@@ -145,6 +145,17 @@ final class SMBSessionService {
     /// The in-flight background connect of the preheat connection; a new
     /// session cancels it.
     private var preheatConnectTask: Task<Void, Never>?
+    /// Session-intent generation: every connect or disconnect bumps it.
+    /// A connect whose handshake suspends re-checks the generation before
+    /// committing — if a disconnect (or a newer connect) landed meanwhile,
+    /// the attempt tears down the session it just built instead of
+    /// resurrecting a connection the user already dropped.
+    private var sessionIntent: UInt64 = 0
+
+    /// Test seam: builds the interactive source for `connect(to:share:)`.
+    private let sourceFactory: ((String, String, String, String) -> any ContentSource)?
+    /// Test seam: replaces the Keychain password lookup.
+    private let passwordProvider: ((ServerConfig) throws -> String)?
 
     /// Delivers the preheat connection once it is up, or nil when it goes
     /// away. Assigned by the coordinator; fires on the main actor.
@@ -152,6 +163,21 @@ final class SMBSessionService {
 
     init(store: ServerStore = ServerStore()) {
         self.store = store
+        self.sourceFactory = nil
+        self.passwordProvider = nil
+        servers = store.load()
+    }
+
+    /// Internal so tests can inject a fake source (a gated handshake) and
+    /// skip the Keychain. Production callers use `init(store:)`.
+    init(
+        store: ServerStore,
+        sourceFactory: @escaping (String, String, String, String) -> any ContentSource,
+        passwordProvider: @escaping (ServerConfig) throws -> String
+    ) {
+        self.store = store
+        self.sourceFactory = sourceFactory
+        self.passwordProvider = passwordProvider
         servers = store.load()
     }
 
@@ -272,10 +298,14 @@ final class SMBSessionService {
     /// Connects to one share of a server at its active address, replacing
     /// any active session.
     func connect(to server: ServerConfig, share: String) async throws {
+        sessionIntent &+= 1
+        let intent = sessionIntent
         let password = try passwordFor(server)
         let host = server.activeHost
         logger.info("Connecting to \(host)/\(share)", privacy: .private)
-        let newSource = SMBSource(
+        let newSource: any ContentSource = sourceFactory.map {
+            $0(host, share, server.username, password)
+        } ?? SMBSource(
             host: host,
             share: share,
             username: server.username,
@@ -286,6 +316,15 @@ final class SMBSessionService {
         } catch {
             logger.error("Connect failed for \(host)/\(share): \(error.localizedDescription)", privacy: .private)
             throw error
+        }
+        // The handshake suspended: a disconnect or a newer connect may have
+        // landed meanwhile. A stale attempt tears its fresh session down
+        // and reports cancellation (callers treat CancellationError as a
+        // superseded intent, not a failure) — it must never resurrect the
+        // connection or kick off preheat.
+        guard intent == sessionIntent else {
+            await newSource.disconnect()
+            throw CancellationError()
         }
         // Swap first so the new session is usable immediately; the old one
         // is torn down off the critical path and must not block us.
@@ -309,8 +348,16 @@ final class SMBSessionService {
     /// are cheap. Thumbnail loads copy vault bytes through the cache pools
     /// (BUG-5, 2026-09-07); the reader still bypasses the original pool.
     func connectLocal(_ newSource: any ContentSource) async throws {
+        sessionIntent &+= 1
+        let intent = sessionIntent
         try await newSource.connect()
-        logger.info("Connected local source \(newSource.sourceID)", privacy: .public)
+        // Same stale-intent guard as `connect(to:share:)`: the suspension
+        // above lets a disconnect or a newer connect interleave.
+        guard intent == sessionIntent else {
+            await newSource.disconnect()
+            throw CancellationError()
+        }
+        logger.info("Connected local source \(newSource.sourceID)", privacy: .private)
         // Same swap discipline as `connect(to:share:)`: usable immediately,
         // old session torn down off the critical path.
         let old = source
@@ -390,6 +437,9 @@ final class SMBSessionService {
     }
 
     func disconnect() async {
+        // Bump the intent generation first: any in-flight connect resumes
+        // after this and must find itself stale, whatever happens later.
+        sessionIntent &+= 1
         preheatConnectTask?.cancel()
         preheatConnectTask = nil
         tearDownPreheatConnection()
@@ -425,7 +475,13 @@ final class SMBSessionService {
                 return
             }
             // A newer session may have superseded this attempt while the
-            // connect was in flight; never install a stale connection.
+            // connect was in flight; never install a stale connection. The
+            // cancel flag is set synchronously by a new session or
+            // disconnect, and this check plus the install below run in one
+            // uninterrupted main-actor turn, so no interleaving can slip
+            // between them. (The interactive lane's stale connects never
+            // reach this point at all — `connect(to:share:)` guards on the
+            // session-intent generation before calling here.)
             guard !Task.isCancelled, let self else {
                 await preheat.disconnect()
                 return
@@ -452,6 +508,9 @@ final class SMBSessionService {
     }
 
     private func passwordFor(_ server: ServerConfig) throws -> String {
+        if let passwordProvider {
+            return try passwordProvider(server)
+        }
         do {
             guard let password = try KeychainKit.readPassword(
                 service: Self.keychainService,

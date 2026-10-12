@@ -53,6 +53,13 @@ struct ReaderImageLoader: ReaderPageLoading {
         guard let displaySize = ImagePipeline.displayDimensions(of: original) else {
             throw ReaderLoadError.undecodable
         }
+        // Reject oversized sources up front with a distinct error: decode
+        // would refuse them too (nil), but the caller should not have to
+        // guess whether the page was corrupt or simply too large.
+        let pixels = displaySize.width * displaySize.height
+        guard pixels <= Double(ImagePipeline.maxSourcePixels) else {
+            throw ReaderLoadError.imageTooLarge
+        }
         let budget = ImagePipeline.maxPixelSize(forDisplaySize: displaySize, targetWidth: targetWidth)
         guard let image = ImagePipeline.decode(original, maxPixelSize: budget) else {
             throw ReaderLoadError.undecodable

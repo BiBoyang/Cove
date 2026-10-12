@@ -21,7 +21,9 @@ final class PlayerCoordinator {
     /// Video-cover write side (TASK-video-thumbnails): sessions built by
     /// this coordinator hand captured frames here. Nil = covers disabled.
     private let thumbnailWriter: VideoThumbnailWriter?
-    private var windowController: PlayerWindowController?
+    /// Internal-read for tests (a timed-out close must nil this
+    /// synchronously; a re-open during the rescue gap must replace it).
+    private(set) var windowController: PlayerWindowController?
     /// The live session's view model, kept so a clean-EOF park can arm
     /// the replay-from-start flag on it (TASK-player-ux-trio Step 1).
     private weak var liveViewModel: PlayerViewModel?
@@ -66,9 +68,25 @@ final class PlayerCoordinator {
     /// teardown to this window's close.
     var hasActiveSession: Bool { windowController != nil }
 
+    /// Test seam: replaces bridge/mpv session construction so close paths
+    /// and build failures are drivable without libmpv. Returning nil
+    /// simulates a build failure.
+    private let sessionFactory: ((ContentItem) -> Session?)?
+
     init(progressStore: PlaybackProgressStoring? = nil, thumbnailWriter: VideoThumbnailWriter? = nil) {
         self.progressStore = progressStore
         self.thumbnailWriter = thumbnailWriter
+        self.sessionFactory = nil
+    }
+
+    init(
+        progressStore: PlaybackProgressStoring? = nil,
+        thumbnailWriter: VideoThumbnailWriter? = nil,
+        sessionFactory: @escaping (ContentItem) -> Session?
+    ) {
+        self.progressStore = progressStore
+        self.thumbnailWriter = thumbnailWriter
+        self.sessionFactory = sessionFactory
     }
 
     /// One session's external-subtitle staging: the temp directory handed
@@ -76,6 +94,14 @@ final class PlayerCoordinator {
     private struct SubtitleScratch {
         let directory: URL
         let stagingTask: Task<Void, Never>?
+    }
+
+    /// Hands the closing session's subtitle scratch from the synchronous
+    /// close hook to the deferred teardown hook — the two fire at different
+    /// times when a capture rescue delays shutdown, and a re-opened window
+    /// gets its own box, so scratches of different sessions never mix.
+    private final class CloseScratchBox {
+        var scratch: SubtitleScratch?
     }
 
     /// Opens `selectedPath` within its sibling-video queue. Reuses the
@@ -91,26 +117,44 @@ final class PlayerCoordinator {
         // is alive (e.g. the user picked another file the instant a track
         // ended) kills the pending advance.
         cancelUpNextCountdown()
-        playlist = PlayerPlaylist(items: items, selectedPath: selectedPath)
+        // Build before committing: a failed session build must leave the
+        // queue, the sibling listing, and the reader untouched — the
+        // previous video keeps playing under its own playlist, and the
+        // panel/transport keep matching it.
+        let newPlaylist = PlayerPlaylist(items: items, selectedPath: selectedPath)
+        guard let item = newPlaylist.current else { return }
+        let outgoingScratch = subtitleScratch
+        // A failed first session leaves any previous one untouched.
+        guard let session = buildSession(item: item, sourceID: sourceID, reader: reader) else { return }
+        // Commit point: the session built, so the externally visible state
+        // swaps over in one go.
+        playlist = newPlaylist
         siblings = directoryListing
         self.sourceID = sourceID
         self.reader = reader
-        guard let item = playlist.current else { return }
-        let outgoingScratch = subtitleScratch
-        // A failed first session leaves any previous one untouched.
-        guard let session = buildSession(item: item) else { return }
+        attachExternalSubtitles(to: session.core, item: item, reader: reader)
         if let windowController {
             windowController.install(item: item, core: session.core, viewModel: session.viewModel)
         } else {
             let controller = PlayerWindowController(item: item, core: session.core, viewModel: session.viewModel)
+            // The window-closed fact drops our reference synchronously —
+            // even when the mpv teardown defers past a capture rescue, a
+            // re-open during that gap must build a fresh window. The
+            // scratch hands over to the deferred hook so its sidecar
+            // directory is only deleted once the handle is really gone.
+            let closeScratch = CloseScratchBox()
             controller.onClose = { [weak self] in
                 guard let self else { return }
                 self.cancelUpNextCountdown()
-                // windowWillClose shut the mpv handle down before firing
-                // this; the session's staged sidecars go with it.
-                self.teardownSubtitleScratch(self.subtitleScratch)
+                closeScratch.scratch = self.subtitleScratch
                 self.subtitleScratch = nil
                 self.windowController = nil
+            }
+            controller.onTeardownFinished = { [weak self] in
+                guard let self else { return }
+                // windowWillClose shut the mpv handle down before firing
+                // this; the closed session's staged sidecars go with it.
+                self.teardownSubtitleScratch(closeScratch.scratch)
                 // The session is playerless now; a reset-armed deferred
                 // disconnect (if any) fires here.
                 self.onSessionClosed?()
@@ -173,12 +217,12 @@ final class PlayerCoordinator {
     /// Swaps the live session to `index`, rolling the index back if the
     /// session fails to build.
     private func moveTo(index: Int) {
-        guard playlist.items.indices.contains(index), let windowController else { return }
+        guard playlist.items.indices.contains(index), let windowController, let reader else { return }
         let outgoing = playlist.currentIndex
         playlist.setCurrentIndex(index)
         guard let item = playlist.current else { return }
         let outgoingScratch = subtitleScratch
-        guard let session = buildSession(item: item) else {
+        guard let session = buildSession(item: item, sourceID: sourceID, reader: reader) else {
             // The outgoing session is still alive; roll the index back so
             // the queue stays consistent with what is actually playing.
             // Its scratch is untouched — buildSession failed before
@@ -186,6 +230,7 @@ final class PlayerCoordinator {
             playlist.setCurrentIndex(outgoing)
             return
         }
+        attachExternalSubtitles(to: session.core, item: item, reader: reader)
         windowController.install(item: item, core: session.core, viewModel: session.viewModel)
         // The outgoing session's mpv handle died inside install; drop its
         // staged sidecars.
@@ -311,13 +356,24 @@ final class PlayerCoordinator {
         upNextTimer = nil
     }
 
-    private typealias Session = (core: MPVPlayerCore, viewModel: PlayerViewModel)
+    /// Internal (not private): the test seam's session factory returns one.
+    typealias Session = (core: any PlayerWindowCore, viewModel: PlayerViewModel)
 
-    private func buildSession(item: ContentItem) -> Session? {
-        guard let reader else { return nil }
+    /// Builds a session over the GIVEN context rather than the coordinator's
+    /// fields: `open` must be able to build first and commit its state swap
+    /// only on success, so nothing here may read `self.playlist`-family
+    /// state (sourceID / reader / siblings ride the parameters).
+    private func buildSession(
+        item: ContentItem,
+        sourceID: String?,
+        reader: @escaping VideoStreamBridge.RangedReader
+    ) -> Session? {
+        if let sessionFactory {
+            return sessionFactory(item)
+        }
         let bridge = VideoStreamBridge(path: item.path, size: item.size, reader: reader)
         do {
-            let core = try MPVPlayerCore(bridge: bridge)
+            let core: any PlayerWindowCore = try MPVPlayerCore(bridge: bridge)
             // Resume positions are remembered per source, so same-named
             // files on different servers never collide.
             let progressKey = sourceID.map { "\($0)|\(item.path)" }
@@ -358,7 +414,6 @@ final class PlayerCoordinator {
                 self?.onMessageError?("播放中断：\(detail)", "播放失败")
             }
             viewModel.onEnded = { [weak self] in self?.advanceAfterEnded() }
-            attachExternalSubtitles(to: core, item: item)
             return (core, viewModel)
         } catch {
             bridge.detach()
@@ -379,8 +434,11 @@ final class PlayerCoordinator {
     /// accepts them mid-load (track pre-selects) as well as after it.
     /// Best-effort by design: no matches or a staging failure just means a
     /// session without external subtitles (failures logged in the loader).
-    private func attachExternalSubtitles(to core: MPVPlayerCore, item: ContentItem) {
-        guard let reader else { return }
+    private func attachExternalSubtitles(
+        to core: any PlayerWindowCore,
+        item: ContentItem,
+        reader: @escaping VideoStreamBridge.RangedReader
+    ) {
         let matches = SubtitleDiscovery.matches(videoName: item.name, siblings: siblings)
         guard !matches.isEmpty else { return }
         guard let directory = ExternalSubtitleLoader.makeSessionDirectory() else { return }

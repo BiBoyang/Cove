@@ -12,6 +12,11 @@ public enum ComicArchiveError: Error, Sendable, Equatable {
     case noImageEntries
     /// A previously listed entry is gone (should not happen for a fixed archive).
     case entryNotFound(String)
+    /// An entry's uncompressed size exceeds the safety cap — either its ZIP
+    /// header declares more than the cap, or the actual decompressed bytes
+    /// ran past it mid-extraction (a declared-small zip bomb). Untrusted
+    /// network input must never be able to trap or exhaust memory here.
+    case entryTooLarge(String)
 }
 
 extension ComicArchiveError: LocalizedError {
@@ -23,6 +28,8 @@ extension ComicArchiveError: LocalizedError {
             return "The archive contains no readable images."
         case .entryNotFound(let path):
             return "Entry not found in the archive: \(path)"
+        case .entryTooLarge(let path):
+            return "Entry exceeds the maximum supported size: \(path)"
         }
     }
 }
@@ -43,6 +50,27 @@ public final class ComicArchive: Sendable {
     private struct State {
         let archive: Archive
         let entriesByPath: [String: Entry]
+    }
+
+    /// Hard cap on one entry's uncompressed bytes (512 MiB). CBZ files
+    /// arrive over SMB and are untrusted: a high-resolution page stays under
+    /// ~50 MB, and even extreme scans fit in a tenth of this — the cap only
+    /// exists to stop malformed headers and zip bombs from trapping or
+    /// exhausting memory. Absurd pixel dimensions are rejected downstream by
+    /// ImagePipeline's source-pixel gate before decode.
+    public static let maxEntryUncompressedBytes: UInt64 = 512 * 1024 * 1024
+
+    /// Test hook: when set, replaces `maxEntryUncompressedBytes` so the
+    /// extraction-time (running total) guard is exercisable without
+    /// decompressing real hundreds of megabytes. Mutex-guarded because a
+    /// bare mutable static is rejected by Swift 6 concurrency checks.
+    private static let entrySizeCapOverride = Mutex<UInt64?>(nil)
+    static func setEntrySizeCapOverrideForTesting(_ value: UInt64?) {
+        entrySizeCapOverride.withLock { $0 = value }
+    }
+    /// The cap extraction actually enforces.
+    static var effectiveMaxEntryUncompressedBytes: UInt64 {
+        entrySizeCapOverride.withLock { $0 } ?? maxEntryUncompressedBytes
     }
 
     private let state: Mutex<State>
@@ -66,6 +94,9 @@ public final class ComicArchive: Sendable {
         for entry in archive where entry.type == .file {
             let path = entry.path
             guard Self.isImageEntry(path) else { continue }
+            // Malformed archives can carry the same name twice; first wins
+            // so the page never shows up twice in display order.
+            guard entriesByPath[path] == nil else { continue }
             images.append(path)
             entriesByPath[path] = entry
         }
@@ -78,14 +109,28 @@ public final class ComicArchive: Sendable {
     /// Extracts the uncompressed bytes of the image entry at `path` (one of
     /// `imageEntries`). Serialized against other extractions; call from a
     /// background thread.
+    ///
+    /// The declared size is untrusted ZIP input: it is compared in the
+    /// UInt64 domain before any `Int` conversion (a header claiming more
+    /// than `Int.max` would otherwise trap), and the running total is
+    /// checked chunk by chunk so a small declared size cannot hide a bomb.
     public func extractImage(named path: String) throws -> Data {
         try state.withLock { state in
             guard let entry = state.entriesByPath[path] else {
                 throw ComicArchiveError.entryNotFound(path)
             }
+            let cap = Self.effectiveMaxEntryUncompressedBytes
+            guard entry.uncompressedSize <= cap else {
+                throw ComicArchiveError.entryTooLarge(path)
+            }
             var data = Data()
             data.reserveCapacity(Int(entry.uncompressedSize))
+            var total: UInt64 = 0
             _ = try state.archive.extract(entry) { chunk in
+                total += UInt64(chunk.count)
+                guard total <= cap else {
+                    throw ComicArchiveError.entryTooLarge(path)
+                }
                 data.append(chunk)
             }
             return data

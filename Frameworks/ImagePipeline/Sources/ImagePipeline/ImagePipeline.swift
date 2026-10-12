@@ -12,11 +12,23 @@ public enum ImagePipeline {
     /// `maxPixelSize(forDisplaySize:targetWidth:)`.
     public static let maxDecodedPixelSize = 12288
 
+    /// Hard cap on the source image's total pixels (256 Mpx, ~1 GB RGBA8).
+    /// `kCGImageSourceThumbnailMaxPixelSize` bounds only the output: for
+    /// PNG-class formats ImageIO must decode the full source bitmap before
+    /// scaling, so an oversized source can spike gigabytes even when the
+    /// caller asked for a small thumbnail. The gate is total pixels, not
+    /// largest side, because legitimate webtoon strips are extremely tall
+    /// yet modest in area (800×30000 is 24 Mpx), while a 30000×30000 bomb
+    /// (900 Mpx) is rejected.
+    public static let maxSourcePixels = 256 * 1024 * 1024
+
     /// Largest-side decode budget that lands the decoded image
     /// `targetWidth` pixels wide for any aspect ratio. Shared by the reader
     /// and the preheat scheduler, so preheated payloads have exactly the
     /// dimensions the reader would have produced itself.
     public static func maxPixelSize(forDisplaySize size: CGSize, targetWidth: Int) -> Int {
+        // A non-positive target would silently fail every decode downstream.
+        let targetWidth = max(1, targetWidth)
         guard size.width > 0, size.height > 0 else { return targetWidth }
         let budget = (Double(targetWidth) * Double(size.height) / Double(size.width)).rounded(.up)
         return min(max(Int(budget), targetWidth), maxDecodedPixelSize)
@@ -32,8 +44,9 @@ public enum ImagePipeline {
     /// orientation (`kCGImageSourceCreateThumbnailWithTransform`). Never
     /// upscales: images smaller than `maxPixelSize` come back at native size.
     ///
-    /// - Returns: `nil` when `data` is not a decodable image or
-    ///   `maxPixelSize` is not positive.
+    /// - Returns: `nil` when `data` is not a decodable image, when
+    ///   `maxPixelSize` is not positive, or when the source exceeds
+    ///   `maxSourcePixels` (see the constant's note).
     public static func decode(_ data: Data, maxPixelSize: Int) -> CGImage? {
         guard maxPixelSize > 0 else { return nil }
         let sourceOptions: [CFString: Any] = [
@@ -42,6 +55,15 @@ public enum ImagePipeline {
             kCGImageSourceShouldCache: false,
         ]
         guard let source = CGImageSourceCreateWithData(data as CFData, sourceOptions as CFDictionary) else {
+            return nil
+        }
+        // Reject oversized sources before any decode: PNG-class formats are
+        // fully decoded into memory before scaling, so the output cap alone
+        // cannot stop a multi-gigapixel bomb.
+        if let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+           let width = properties[kCGImagePropertyPixelWidth] as? Int,
+           let height = properties[kCGImagePropertyPixelHeight] as? Int,
+           width > 0, height > 0, width > maxSourcePixels / height {
             return nil
         }
         let thumbnailOptions: [CFString: Any] = [

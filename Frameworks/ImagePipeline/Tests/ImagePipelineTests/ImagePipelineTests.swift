@@ -5,6 +5,15 @@ import UniformTypeIdentifiers
 import XCTest
 @testable import ImagePipeline
 
+private extension Int {
+    /// Little-endian 4-byte field, as BMP headers store them.
+    var littleEndianBytes: [UInt8] {
+        let value = UInt32(bitPattern: Int32(self))
+        return [UInt8(value & 0xFF), UInt8((value >> 8) & 0xFF),
+                UInt8((value >> 16) & 0xFF), UInt8((value >> 24) & 0xFF)]
+    }
+}
+
 final class ImagePipelineTests: XCTestCase {
     // MARK: - Test image factory
 
@@ -113,6 +122,56 @@ final class ImagePipelineTests: XCTestCase {
     func testDisplayDimensionsRejectsUndecodableData() {
         XCTAssertNil(ImagePipeline.displayDimensions(of: Data("junk".utf8)))
         XCTAssertNil(ImagePipeline.displayDimensions(of: Data()))
+    }
+
+    // MARK: - Source-pixel gate
+
+    /// Builds a minimal BMP whose header declares `width` x `height` with
+    /// almost no pixel data behind it. ImageIO's BMP plugin answers
+    /// property queries from the header alone (unlike PNG, which inflates
+    /// IDAT first) — which is exactly the path the source-pixel gate reads,
+    /// so a bomb-sized fixture costs a few dozen bytes.
+    private func makeHeaderOnlyBMP(width: Int, height: Int) -> Data {
+        var bmp = Data([0x42, 0x4D]) // "BM"
+        bmp.append(contentsOf: (54 + 16).littleEndianBytes) // file size
+        bmp.append(contentsOf: [0, 0, 0, 0]) // reserved
+        bmp.append(contentsOf: 54.littleEndianBytes) // pixel data offset
+        bmp.append(contentsOf: 40.littleEndianBytes) // BITMAPINFOHEADER size
+        bmp.append(contentsOf: width.littleEndianBytes)
+        bmp.append(contentsOf: height.littleEndianBytes)
+        bmp.append(contentsOf: [1, 0]) // planes
+        bmp.append(contentsOf: [24, 0]) // bits per pixel
+        bmp.append(contentsOf: [UInt8](repeating: 0, count: 24)) // rest of header
+        bmp.append(contentsOf: [UInt8](repeating: 0, count: 16)) // token pixels
+        return bmp
+    }
+
+    func testHeaderOnlyBMPFixtureExposesDeclaredDimensions() {
+        // Pins the fixture: the dimensions must be readable without a
+        // decodable payload, or the rejection tests below prove nothing.
+        let bmp = makeHeaderOnlyBMP(width: 40000, height: 30000)
+        XCTAssertEqual(ImagePipeline.displayDimensions(of: bmp), CGSize(width: 40000, height: 30000))
+    }
+
+    func testDecodeRejectsSourceAbovePixelCap() {
+        // 40000 x 30000 = 1.2 Gpx, far above the 256 Mpx cap.
+        let bmp = makeHeaderOnlyBMP(width: 40000, height: 30000)
+        XCTAssertNil(ImagePipeline.decode(bmp, maxPixelSize: 1000))
+    }
+
+    func testDecodeRejectsBombJustAbovePixelCap() {
+        // 30000 x 30000 = 900 Mpx > 256 Mpx: the task-card example.
+        let bmp = makeHeaderOnlyBMP(width: 30000, height: 30000)
+        XCTAssertNil(ImagePipeline.decode(bmp, maxPixelSize: 1000))
+    }
+
+    // MARK: - maxPixelSize guards
+
+    func testMaxPixelSizeClampsNonPositiveTargetWidth() {
+        let size = CGSize(width: 200, height: 100)
+        XCTAssertGreaterThanOrEqual(ImagePipeline.maxPixelSize(forDisplaySize: size, targetWidth: 0), 1)
+        XCTAssertGreaterThanOrEqual(ImagePipeline.maxPixelSize(forDisplaySize: size, targetWidth: -1), 1)
+        XCTAssertGreaterThanOrEqual(ImagePipeline.maxPixelSize(forDisplaySize: .zero, targetWidth: 0), 1)
     }
 
     // MARK: - cropCenterSquare

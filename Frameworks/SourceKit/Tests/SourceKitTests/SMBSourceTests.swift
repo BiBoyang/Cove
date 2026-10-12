@@ -1,5 +1,62 @@
+import AMSMB2
+import Synchronization
 import XCTest
 @testable import SourceKit
+
+/// Two-phase rendezvous for driving connect/disconnect interleavings: the
+/// fake handshake announces it started, then parks until `open()`.
+private final class HandshakeGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var entered: CheckedContinuation<Void, Never>?
+    private var release: CheckedContinuation<Void, Never>?
+    private var didEnter = false
+    private var isOpen = false
+
+    /// Resolves once the fake handshake has begun (and is now parked).
+    func waitUntilEntered() async {
+        let ready: Bool = lock.withLock { didEnter }
+        if ready { return }
+        await withCheckedContinuation { continuation in
+            let resumeNow: Bool = lock.withLock {
+                if didEnter {
+                    return true
+                }
+                entered = continuation
+                return false
+            }
+            if resumeNow { continuation.resume() }
+        }
+    }
+
+    /// Called by the fake handshake: signals entry, parks until `open()`.
+    func park() async {
+        lock.withLock {
+            didEnter = true
+            entered?.resume()
+            entered = nil
+        }
+        let ready: Bool = lock.withLock { isOpen }
+        if ready { return }
+        await withCheckedContinuation { continuation in
+            let resumeNow: Bool = lock.withLock {
+                if isOpen {
+                    return true
+                }
+                release = continuation
+                return false
+            }
+            if resumeNow { continuation.resume() }
+        }
+    }
+
+    func open() {
+        lock.withLock {
+            isOpen = true
+            release?.resume()
+            release = nil
+        }
+    }
+}
 
 final class SMBSourceTests: XCTestCase {
     // MARK: - metadata field mapping
@@ -108,6 +165,88 @@ final class SMBSourceTests: XCTestCase {
             XCTAssertEqual(error, .notConnected)
         } catch {
             XCTFail("unexpected error: \(error)")
+        }
+    }
+
+    // MARK: - connect/disconnect reentrancy (actor-level generation guard)
+
+    private static func makeOfflineClient(url: URL, credential: URLCredential) throws -> SMB2Manager {
+        // Construction alone never touches the network — the handshake does.
+        try XCTUnwrap(SMB2Manager(url: url, credential: credential))
+    }
+
+    func testConnectResumingAfterDisconnectDiscardsSession() async throws {
+        let source = SMBSource(host: "192.0.2.1", share: "media", username: "u", password: "p")
+        let gate = HandshakeGate()
+        await source.setMakeClientOverride { url, credential in
+            await gate.park()
+            return try Self.makeOfflineClient(url: url, credential: credential)
+        }
+
+        let connectTask = Task { try await source.connect() }
+        await gate.waitUntilEntered()
+        // The disconnect lands while the handshake is parked.
+        await source.disconnect()
+        gate.open()
+
+        do {
+            try await connectTask.value
+            XCTFail("a stale connect must not report success")
+        } catch is CancellationError {
+            // Expected: the attempt found its intent superseded.
+        } catch {
+            XCTFail("expected CancellationError, got \(error)")
+        }
+
+        // No session was resurrected: reads still report not-connected.
+        do {
+            _ = try await source.list(at: "/")
+            XCTFail("list must fail without a session")
+        } catch let error as SourceError {
+            XCTAssertEqual(error, .notConnected)
+        }
+    }
+
+    func testConcurrentConnectsLetTheNewerWin() async throws {
+        let source = SMBSource(host: "192.0.2.1", share: "media", username: "u", password: "p")
+        let gate = HandshakeGate()
+        let callCount = Mutex(0)
+        await source.setMakeClientOverride { url, credential in
+            let first = callCount.withLock { count -> Bool in
+                count += 1
+                return count == 1
+            }
+            if first {
+                await gate.park()
+            }
+            return try Self.makeOfflineClient(url: url, credential: credential)
+        }
+
+        let firstConnect = Task { try await source.connect() }
+        await gate.waitUntilEntered()
+        // The second connect supersedes the parked first one.
+        try await source.connect()
+        gate.open()
+
+        do {
+            try await firstConnect.value
+            XCTFail("the superseded connect must not report success")
+        } catch is CancellationError {
+            // Expected.
+        } catch {
+            XCTFail("expected CancellationError, got \(error)")
+        }
+
+        // A session exists (the newer connect's): the wire-level failure
+        // proves the read reached a live client instead of bouncing off
+        // `requireClient` with notConnected.
+        do {
+            _ = try await source.list(at: "/")
+            XCTFail("list without a server must fail")
+        } catch let error as SourceError {
+            XCTAssertNotEqual(error, .notConnected)
+        } catch {
+            // Non-SourceError wire failure: also proves a client exists.
         }
     }
 }
