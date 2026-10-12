@@ -474,5 +474,3 @@ final class PlayerCoordinator {
         )
     }
 }
-
-extension MPVPlayerCore: PlayerPlaybackControlling {}
