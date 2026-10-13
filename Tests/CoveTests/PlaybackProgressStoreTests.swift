@@ -290,7 +290,7 @@ struct RecentWatchEntryParsingTests {
             record("ftp://nas/media|/a.mp4"),
             record("|/a.mp4"),
         ]
-        #expect(malformed.compactMap(RecentWatchEntry.parse).isEmpty)
+        #expect(malformed.compactMap { RecentWatchEntry.parse($0) }.isEmpty)
     }
 
     @Test("the list sorts by recency and caps at ten")

@@ -30,10 +30,14 @@ final class BrowserViewController: NSViewController {
 
     /// Which set of right-click actions the listing offers. Remote
     /// browsing offers "下载到本地仓库"; vault browsing offers pin/unpin
-    /// on folders and "从本地仓库删除" on files. Set by the coordinator.
+    /// on folders and "从本地仓库删除" on files; local-folder browsing is
+    /// read-only and offers nothing. Set by the coordinator.
     enum BrowseMode: Sendable {
         case remote
         case vault
+        /// A user-added local folder: read-only, no context actions
+        /// (TASK-local-folder-browse).
+        case local
     }
 
     var browseMode: BrowseMode = .remote
@@ -59,6 +63,9 @@ final class BrowserViewController: NSViewController {
         let item = items[clickedRow]
         switch mode {
         case .remote: return [.downloadToVault(item)]
+        // Read-only: downloads target the vault (meaningless from a local
+        // folder), and deletes/pins are vault-only semantics.
+        case .local: return []
         case .vault:
             if item.isDirectory {
                 // Vault folders keep the shipped delete action alongside

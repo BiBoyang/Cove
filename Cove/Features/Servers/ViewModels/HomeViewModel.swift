@@ -3,10 +3,14 @@ import SourceKit
 
 /// Where a recent watch lives, parsed out of the record's sourceID
 /// (decision 2). Only SMB entries carry the host/share pair the deep
-/// link needs to reconnect; the vault is a local source.
+/// link needs to reconnect; the vault is a local source. A local-folder
+/// entry carries the folder id (the deep link re-resolves it through
+/// `LocalFolderStore`) and the display name snapshotted at parse time
+/// for the card subtitle.
 enum RecentWatchSource: Equatable, Sendable {
     case smb(host: String, share: String)
     case vault
+    case localFolder(folderID: String, name: String)
 }
 
 /// One card of the home page's continue-watching grid: a parsed
@@ -82,6 +86,7 @@ struct RecentWatchEntry: Equatable, Sendable {
         switch source {
         case .vault: return "本地仓库\(directoryPath)"
         case .smb: return directoryPath
+        case .localFolder(_, let name): return "\(name)\(directoryPath)"
         }
     }
 
@@ -97,10 +102,21 @@ struct RecentWatchEntry: Equatable, Sendable {
         return String(text.prefix(head)) + "…" + String(text.suffix(tail))
     }
 
+    /// The card's folder label when a local record's id is no longer in
+    /// `LocalFolderStore` (the folder was removed between sessions): the
+    /// record stays listed under a generic label instead of vanishing.
+    static let fallbackLocalFolderName = "本地文件夹"
+
     /// Parses one stored record; nil for malformed keys (decision 2
     /// skips them): no "|" separator, empty path or file name, unknown
-    /// source scheme, or an SMB sourceID without a share segment.
-    static func parse(_ record: PlaybackProgressEntry) -> RecentWatchEntry? {
+    /// source scheme, an SMB sourceID without a share segment, or a
+    /// local sourceID without a folder id. `localFolderNames` maps
+    /// folder id to display name (a fresh `LocalFolderStore` snapshot);
+    /// a missing id falls back to `fallbackLocalFolderName`.
+    static func parse(
+        _ record: PlaybackProgressEntry,
+        localFolderNames: [String: String] = [:]
+    ) -> RecentWatchEntry? {
         // The sourceID can never contain "|" (SMB hosts/shares and the
         // vault scheme are pipe-free), so the first one splits cleanly.
         guard let separator = record.key.firstIndex(of: "|") else { return nil }
@@ -113,7 +129,14 @@ struct RecentWatchEntry: Equatable, Sendable {
         if directoryPath.isEmpty { directoryPath = "/" }
 
         let source: RecentWatchSource
-        if sourceID.hasPrefix("vault://") {
+        if sourceID.hasPrefix("local://") {
+            let folderID = String(sourceID.dropFirst("local://".count))
+            guard !folderID.isEmpty else { return nil }
+            source = .localFolder(
+                folderID: folderID,
+                name: localFolderNames[folderID] ?? Self.fallbackLocalFolderName
+            )
+        } else if sourceID.hasPrefix("vault://") {
             source = .vault
         } else if sourceID.hasPrefix("smb://") {
             let rest = sourceID.dropFirst("smb://".count)
@@ -144,8 +167,12 @@ struct RecentWatchEntry: Equatable, Sendable {
     /// The recent-watches list: parsed records with malformed keys
     /// skipped, most recently watched first, capped (decision 2; the
     /// home page passes the wider Amendment-2 cap).
-    static func recentList(from records: [PlaybackProgressEntry], cap: Int = 10) -> [RecentWatchEntry] {
-        let parsed = records.compactMap(parse)
+    static func recentList(
+        from records: [PlaybackProgressEntry],
+        cap: Int = 10,
+        localFolderNames: [String: String] = [:]
+    ) -> [RecentWatchEntry] {
+        let parsed = records.compactMap { parse($0, localFolderNames: localFolderNames) }
         return Array(parsed.sorted { $0.lastWatched > $1.lastWatched }.prefix(cap))
     }
 }
@@ -202,13 +229,19 @@ final class HomeViewModel {
     /// on every refresh so an add or remove re-levels the empty state on
     /// the next arrival.
     private let serverCount: @MainActor () -> Int
+    /// Local-folder display names keyed by folder id; read fresh on every
+    /// refresh so a rename re-labels the cards on the next arrival and a
+    /// removal degrades to the generic label.
+    private let localFolderNames: @MainActor () -> [String: String]
 
     init(
         recentWatchRecords: @escaping @MainActor () -> [PlaybackProgressEntry] = { [] },
-        serverCount: @escaping @MainActor () -> Int = { 0 }
+        serverCount: @escaping @MainActor () -> Int = { 0 },
+        localFolderNames: @escaping @MainActor () -> [String: String] = { [:] }
     ) {
         self.recentWatchRecords = recentWatchRecords
         self.serverCount = serverCount
+        self.localFolderNames = localFolderNames
     }
 
     /// Re-parses the records and re-judges the two-level empty state.
@@ -217,7 +250,9 @@ final class HomeViewModel {
     /// freshly written records appear and pruned ones drop off
     /// immediately.
     func refresh() {
-        let entries = RecentWatchEntry.recentList(from: recentWatchRecords(), cap: Self.recentCap)
+        let entries = RecentWatchEntry.recentList(
+            from: recentWatchRecords(), cap: Self.recentCap, localFolderNames: localFolderNames()
+        )
         state = State(entries: entries, placeholder: emptyState(for: entries))
         onStateChange?(state)
     }

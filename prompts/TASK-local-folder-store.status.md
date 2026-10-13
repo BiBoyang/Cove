@@ -1,0 +1,3 @@
+2026-10-13 22:08 | step 1 | done | wrote Cove/Services/Settings/LocalFolderStore.swift (LocalFolders value layer + LocalFolderStatus + LocalFolderStore shell) | step 2: write tests
+2026-10-13 22:10 | step 2 | done | wrote Tests/CoveTests/LocalFolderStoreTests.swift (value/status/shell suites, Swift Testing) | step 3: make generate && make test
+2026-10-13 23:01 | step 3 | done | make generate ok; make test exit=0 (8 framework pkgs + CoveTests all passed, new suites 'Local folders value'/'Local folder status'/'Local folder store shell' green; smb-spike build complete). Note: needed proxy bypass + GIT_CONFIG insteadOf to /tmp/libsmb2-mirror for the AMSMB2 submodule clone (local proxy flaky) — env-only, no repo changes | done, reporting

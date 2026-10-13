@@ -3,6 +3,16 @@ import CacheKit
 import SourceKit
 import TraceKit
 
+/// What the browser pane is browsing (TASK-local-folder-browse): an SMB
+/// share, the vault, or a user-added local folder. Replaces the old
+/// `browsingVault: Bool` so vault-only semantics (pins, delete, the
+/// download refusal) can never leak into the read-only local context.
+enum BrowseContext: Equatable, Sendable {
+    case remote
+    case vault
+    case local(folderID: String)
+}
+
 /// Coordinates the Servers and Browser features over one SMB session.
 /// A single generation covers all navigation branches so stale async results
 /// can never overwrite the user's newest destination.
@@ -15,6 +25,10 @@ final class LibraryCoordinator {
     private let vaultService: VaultService
     private let shareOpenStore: ShareOpenStore
     private let pinStore: VaultPinStore
+    /// Persistence + bookmark resolution for user-added local folders
+    /// (TASK-local-folder-store); injectable so tests run on isolated
+    /// defaults, like `pinStore`.
+    private let localFolderStore: LocalFolderStore
     /// Resume-position persistence: feeds the home page's
     /// continue-watching grid and prunes records after certain failures
     /// (decision 4). Concrete type because `allEntries` deliberately
@@ -32,7 +46,10 @@ final class LibraryCoordinator {
     /// two-level empty state) is unit-testable, like `shareGridViewModel`.
     /// Built in `init` because its records lookup reads the progress store.
     let homeViewModel: HomeViewModel
-    private let browserViewModel = BrowserViewModel()
+    /// Internal (not private) so the browse-context state (preheat
+    /// availability, download idleness, titles) is unit-testable, like
+    /// `serverListViewModel`.
+    let browserViewModel = BrowserViewModel()
 
     let serverListViewController: ServerListViewController
     let shareGridViewController: ShareGridViewController
@@ -42,9 +59,12 @@ final class LibraryCoordinator {
 
     private var currentServer: ServerConfig?
     private var currentShare: String?
-    /// True while the browser pane shows the vault (LocalFileSource)
-    /// instead of an SMB share.
-    private var browsingVault = false
+    /// The browsing context the browser pane currently shows.
+    private var browseContext: BrowseContext = .remote
+    /// Display name of the local folder open in the browser; only read
+    /// while `browseContext` is `.local`. Captured at open time so
+    /// directory titles survive a mid-browse store mutation.
+    private var currentLocalFolderName: String?
     /// The single in-flight vault download; a second request is refused
     /// until it finishes or is cancelled.
     private var downloadTask: Task<Void, Never>?
@@ -92,7 +112,8 @@ final class LibraryCoordinator {
         preferencesViewModel: PreferencesViewModel,
         shareOpenStore: ShareOpenStore,
         pinStore: VaultPinStore = VaultPinStore(),
-        progressStore: PlaybackProgressStore? = nil
+        progressStore: PlaybackProgressStore? = nil,
+        localFolderStore: LocalFolderStore = LocalFolderStore()
     ) {
         self.sessionService = sessionService
         self.cache = cache
@@ -101,6 +122,7 @@ final class LibraryCoordinator {
         self.vaultService = vaultService
         self.shareOpenStore = shareOpenStore
         self.pinStore = pinStore
+        self.localFolderStore = localFolderStore
         self.progressStore = progressStore
         playerCoordinator = PlayerCoordinator(
             progressStore: progressStore,
@@ -118,6 +140,11 @@ final class LibraryCoordinator {
             },
             serverCount: { [sessionService] in
                 sessionService.servers.count
+            },
+            localFolderNames: { [localFolderStore] in
+                Dictionary(
+                    uniqueKeysWithValues: localFolderStore.load().entries.map { ($0.id, $0.name) }
+                )
             }
         )
         serverListViewController = ServerListViewController(viewModel: serverListViewModel)
@@ -125,9 +152,10 @@ final class LibraryCoordinator {
         homeViewController = HomeViewController(viewModel: homeViewModel)
         homeViewController.thumbnailProvider = RecentWatchThumbnailReader(
             cache: cache,
-            stat: { [sessionService, vaultService] entry in
+            stat: { [sessionService, vaultService, localFolderStore] entry in
                 await Self.statFileFacts(
-                    of: entry, sessionService: sessionService, vaultService: vaultService
+                    of: entry, sessionService: sessionService, vaultService: vaultService,
+                    localFolderStore: localFolderStore
                 )
             }
         )
@@ -143,6 +171,7 @@ final class LibraryCoordinator {
         serverListViewModel.update(servers: sessionService.servers)
         showHomePage()
         refreshPins()
+        refreshLocalFolders()
     }
 
     /// The home page's arrival path (Amendment 2 decision 3): the home
@@ -187,6 +216,14 @@ final class LibraryCoordinator {
         serverListViewController.onOpenPin = { [weak self] in self?.openVaultFolder(relativePath: $0) }
         serverListViewController.onSetAlias = { [weak self] in self?.presentPinAliasEditor(forPath: $0) }
         serverListViewController.onRemovePin = { [weak self] in self?.removePin(atPath: $0) }
+        serverListViewController.onOpenLocalFolder = { [weak self] in self?.openLocalFolder(folderID: $0) }
+        serverListViewController.onAddLocalFolder = { [weak self] name, bookmark in
+            self?.addLocalFolder(name: name, bookmark: bookmark)
+        }
+        serverListViewController.onRemoveLocalFolder = { [weak self] in self?.confirmRemoveLocalFolder(id: $0) }
+        serverListViewController.onRepickLocalFolder = { [weak self] id, bookmark in
+            self?.repickLocalFolder(id: id, bookmark: bookmark)
+        }
         // Vault-root changes re-stat every pin target (decision 4). The
         // hook fires on any settings write; the re-check is ≤8 sync stats.
         vaultService.onVaultRootChanged = { [weak self] in self?.refreshPins() }
@@ -342,7 +379,8 @@ final class LibraryCoordinator {
         _ = beginNavigation()
         currentServer = nil
         currentShare = nil
-        browsingVault = false
+        browseContext = .remote
+        currentLocalFolderName = nil
         navigationPath.reset()
         onTitleChange?("Cove")
         browserViewController.thumbnailProvider = nil
@@ -428,7 +466,7 @@ final class LibraryCoordinator {
     func enumerateShares(of server: ServerConfig) {
         let generation = beginNavigation()
         currentServer = server
-        browsingVault = false
+        browseContext = .remote
         serverListViewModel.setActiveDestination(.none)
         // Drop the previous share's thumbnail service so it is not kept
         // alive (or used) while the browser pane is off screen.
@@ -478,7 +516,7 @@ final class LibraryCoordinator {
                 // nothing; a later directory-load failure still counts as
                 // an opened share).
                 shareOpenStore.recordOpen(forServer: server.id, share: share.name)
-                browsingVault = false
+                browseContext = .remote
                 browserViewController.browseMode = .remote
                 navigationPath.reset()
                 onTitleChange?("\(server.displayName) / \(share.name)")
@@ -543,7 +581,7 @@ final class LibraryCoordinator {
     private func backToShareGrid() {
         _ = beginNavigation()
         currentShare = nil
-        browsingVault = false
+        browseContext = .remote
         // Backing out of the vault lands on a server pane: sync the bar,
         // the same contract as enumerateShares/openVault/showSettings.
         serverListViewModel.setActiveDestination(.none)
@@ -561,19 +599,26 @@ final class LibraryCoordinator {
         // Switch to the loading placeholder first: the listing clears (no
         // stale leftovers) and the scroll position resets via the path
         // change, so the arriving directory is anchored at the top.
-        let title = LibraryNavigationPath.browserTitle(
-            forPath: path, shareName: browsingVault ? "本地仓库" : currentShare
-        )
+        let shareName: String?
+        switch browseContext {
+        case .remote: shareName = currentShare
+        case .vault: shareName = "本地仓库"
+        case .local: shareName = currentLocalFolderName
+        }
+        let title = LibraryNavigationPath.browserTitle(forPath: path, shareName: shareName)
         browserViewModel.beginLoading(path: path, title: title)
         let items = try await sessionService.list(at: path)
         guard generation == navigationGeneration else { throw CancellationError() }
         browserViewModel.display(items: items, path: path, title: title)
-        if browsingVault {
-            // `display` resets the preheat button to ready; the vault has
-            // no preheat pipeline, so keep it unavailable on every
-            // navigation, not just on entry.
+        if browseContext != .remote {
+            // `display` resets the preheat button to ready; neither the
+            // vault nor a local folder has a preheat pipeline, so keep it
+            // unavailable on every navigation, not just on entry.
             browserViewModel.setPreheatAvailable(false)
-            // The "current pin" capsule follows the browsed subtree.
+        }
+        if browseContext == .vault {
+            // The "current pin" capsule follows the browsed subtree;
+            // vault-only, never on a local folder (read-only context).
             serverListViewModel.setActivePinPath(
                 ServerListViewModel.activePin(
                     forPath: path, pinnedPaths: pinStore.load().entries.map(\.path)
@@ -601,7 +646,7 @@ final class LibraryCoordinator {
     /// alert instead of the generic one below.
     private func openVault(initialPath: String? = nil, completion: ((Bool) -> Void)? = nil) {
         let generation = beginNavigation()
-        browsingVault = true
+        browseContext = .vault
         currentServer = nil
         serverListViewModel.setActiveDestination(.vault)
         currentShare = nil
@@ -677,6 +722,220 @@ final class LibraryCoordinator {
         }
     }
 
+    // MARK: - Local folders
+
+    /// Opens a user-added local folder as a virtual share: the same
+    /// browser pipeline as the vault (LocalFileSource, no network), but
+    /// read-only — no downloads into the vault, no deletes, no pins
+    /// (task decision; the `.local` browse mode's empty context menu is
+    /// the UI-level pin, the context guards below the belt). The source
+    /// id, "local://<folderID>", doubles as the progress-record key
+    /// prefix, so resume positions land in the same store as vault/SMB
+    /// watches. Orchestration mirrors `openVault`: generation guard, the
+    /// old thumbnail provider dropped before the connect. Internal (not
+    /// private) so the choreography is unit-testable, like `openHome`.
+    ///
+    /// `initialPath`/`completion` carry the same deep-link semantics as
+    /// `openVault` (TASK-local-folder-home): with an initial path the
+    /// open drills into it level by level after the root loads, and the
+    /// completion reports whether the drill landed — a vanished folder
+    /// falls back to the root and reports `false` instead of alerting
+    /// when a completion handler owns the failure presentation. Without
+    /// a completion (plain sidebar opens) a failed drill keeps the
+    /// generic "打开目录失败" alert, verbatim from `openVault`.
+    func openLocalFolder(
+        folderID: String,
+        initialPath: String? = nil,
+        completion: ((Bool) -> Void)? = nil
+    ) {
+        let entry = localFolderStore.load().entries.first { $0.id == folderID }
+        let resolution = localFolderStore.resolve(id: folderID)
+        guard let url = resolution.url else {
+            let name = entry?.name ?? "该文件夹"
+            onMessageError?(
+                "「\(name)」的书签已失效或文件夹不可访问，请重新选择该文件夹。",
+                "打开本地文件夹失败"
+            )
+            return
+        }
+        let displayName = entry?.name ?? url.lastPathComponent
+        let generation = beginNavigation()
+        browseContext = .local(folderID: folderID)
+        currentLocalFolderName = displayName
+        currentServer = nil
+        currentShare = nil
+        navigationPath.reset()
+        onTitleChange?(displayName)
+        serverListViewModel.setActiveDestination(.localFolder(id: folderID))
+        // Same ordering as `openVault`: drop the previous share's provider
+        // up front so it cannot serve stale rows during the connect; the
+        // folder's own provider is installed only after `connectLocal`
+        // succeeds.
+        browserViewController.thumbnailProvider = nil
+        browserViewController.browseMode = .local
+        onShowDetail?(browserViewController)
+        activeTask = Task {
+            do {
+                try await sessionService.connectLocal(
+                    LocalFileSource(root: url, sourceID: "local://\(folderID)")
+                )
+                guard generation == navigationGeneration else { return }
+                if let sourceID = sessionService.currentSourceID {
+                    // Thumbnails ride the preheat lane; local-folder
+                    // sessions have none and transparently fall back,
+                    // exactly like vault sessions.
+                    browserViewController.thumbnailProvider = ThumbnailService(
+                        readFile: sessionService.makePreheatLaneFileReader(), cache: cache, sourceID: sourceID
+                    )
+                }
+                try await loadDirectory(at: "/", generation: generation)
+                var drilled = true
+                if let initialPath {
+                    do {
+                        // The drill walk is source-agnostic (navigate +
+                        // load per level), shared with the vault.
+                        try await drillIntoVaultPath(initialPath, generation: generation)
+                    } catch {
+                        if Task.isCancelled || error is CancellationError { return }
+                        guard generation == navigationGeneration else { return }
+                        // The target folder vanished mid-open: fall back
+                        // to the root; the completion reports the miss.
+                        drilled = false
+                        navigationPath.reset()
+                        try await loadDirectory(at: "/", generation: generation)
+                        if completion == nil {
+                            onError?(error, "打开目录失败")
+                        }
+                    }
+                }
+                completion?(drilled)
+            } catch {
+                if Task.isCancelled || error is CancellationError { return }
+                guard generation == navigationGeneration else { return }
+                onError?(error, "打开本地文件夹失败")
+            }
+        }
+    }
+
+    // MARK: - Local folder sidebar
+
+    /// Pushes the persisted local folders to the sidebar, re-resolving
+    /// every bookmark so an invalidated row greys out — the same refresh
+    /// discipline as `refreshPins` (≤16 synchronous resolves, cheap).
+    /// Internal (not private) so the wiring tests can drive it directly.
+    func refreshLocalFolders() {
+        let rows = localFolderStore.load().entries.map { entry in
+            LocalFolderRow(
+                id: entry.id,
+                name: entry.name,
+                isAvailable: localFolderStore.resolve(id: entry.id).status == .ready
+            )
+        }
+        serverListViewModel.update(localFolders: rows)
+    }
+
+    /// Sidebar "添加" intent (TASK-local-folder-sidebar): the View layer
+    /// ran the NSOpenPanel and created the security-scoped bookmark, so
+    /// this side only sees pure values. The dedup closes the batch-1
+    /// review finding: the fresh bookmark is resolved and its
+    /// standardized path compared against every stored entry's resolved
+    /// path — the same folder under a different bookmark is refused. A
+    /// successful add opens the folder right away (DoD 1). Internal for
+    /// the wiring tests, like `openLocalFolder`.
+    func addLocalFolder(name: String, bookmark: Data) {
+        guard let newPath = Self.standardizedPath(forBookmark: bookmark) else {
+            onMessageError?("无法解析该文件夹的访问书签。", "添加本地文件夹失败")
+            return
+        }
+        if isDuplicateLocalFolderPath(newPath, excludingID: nil) {
+            onMessageError?("该文件夹已添加。", "添加本地文件夹")
+            return
+        }
+        guard let id = localFolderStore.add(name: name, bookmark: bookmark) else {
+            onMessageError?(
+                "无法添加该文件夹，可能已达上限（\(LocalFolders.maxCount) 个）。",
+                "添加本地文件夹失败"
+            )
+            return
+        }
+        refreshLocalFolders()
+        openLocalFolder(folderID: id)
+    }
+
+    /// Sidebar row menu: removing a local folder touches only the stored
+    /// entry, never the folder on disk (the same red line as pin
+    /// removal).
+    private func confirmRemoveLocalFolder(id: String) {
+        guard let window = hostWindowProvider?() else { return }
+        let name = localFolderStore.load().entries.first(where: { $0.id == id })?.name ?? "该文件夹"
+        let alert = NSAlert()
+        alert.messageText = "移除本地文件夹“\(name)”？"
+        alert.informativeText = "仅从侧栏移除该条目，不会删除磁盘上的任何文件。"
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "移除")
+        alert.addButton(withTitle: "取消")
+        alert.beginSheetModal(for: window) { [weak self] response in
+            guard let self, response == .alertFirstButtonReturn else { return }
+            removeLocalFolder(id: id)
+        }
+    }
+
+    /// The mutation half of the removal, split out for the wiring tests
+    /// (the confirmation alert needs a host window the tests don't
+    /// have). Removing the folder being browsed keeps the current
+    /// browse — the row disappears, the pane stays (task decision).
+    func removeLocalFolder(id: String) {
+        localFolderStore.remove(id: id)
+        refreshLocalFolders()
+    }
+
+    /// Invalid-row "重新选择…" intent: the View re-picked the folder and
+    /// created a fresh bookmark; swap it in (dedup against the other
+    /// entries, the same rule as add) and re-open when the folder is the
+    /// one on screen, so a mid-browse invalidation recovers in place.
+    /// Internal for the wiring tests, like `addLocalFolder`.
+    func repickLocalFolder(id: String, bookmark: Data) {
+        guard let newPath = Self.standardizedPath(forBookmark: bookmark) else {
+            onMessageError?("无法解析该文件夹的访问书签。", "重新选择本地文件夹失败")
+            return
+        }
+        if isDuplicateLocalFolderPath(newPath, excludingID: id) {
+            onMessageError?("该文件夹已添加。", "重新选择本地文件夹")
+            return
+        }
+        guard localFolderStore.replace(id: id, bookmark: bookmark) else {
+            onMessageError?("无法更新该文件夹的书签。", "重新选择本地文件夹失败")
+            return
+        }
+        refreshLocalFolders()
+        if serverListViewModel.activeDestination == .localFolder(id: id) {
+            openLocalFolder(folderID: id)
+        }
+    }
+
+    /// Resolves a raw bookmark for path comparison only — no
+    /// security-scope access is started (unlike `LocalFolderStore.resolve`,
+    /// which keeps the grant for reading).
+    private static func standardizedPath(forBookmark bookmark: Data) -> String? {
+        var isStale = false
+        let url = try? URL(
+            resolvingBookmarkData: bookmark,
+            options: .withSecurityScope,
+            bookmarkDataIsStale: &isStale
+        )
+        return url?.standardizedFileURL.path
+    }
+
+    /// True when another stored entry resolves to the same standardized
+    /// path. Entries whose bookmark no longer resolves cannot be compared
+    /// and are skipped — they keep their re-pick path instead.
+    private func isDuplicateLocalFolderPath(_ path: String, excludingID: String?) -> Bool {
+        localFolderStore.load().entries.contains { entry in
+            entry.id != excludingID
+                && localFolderStore.resolve(id: entry.id).url?.standardizedFileURL.path == path
+        }
+    }
+
     // MARK: - Vault pins
 
     /// Pushes the persisted pins to the sidebar (rows) and the browser
@@ -698,7 +957,7 @@ final class LibraryCoordinator {
         // Pin mutations can move the capsule (pin added for the current
         // subtree, or the active pin removed).
         serverListViewModel.setActivePinPath(
-            browsingVault
+            browseContext == .vault
                 ? ServerListViewModel.activePin(
                     forPath: navigationPath.currentPath,
                     pinnedPaths: pins.entries.map(\.path)
@@ -717,7 +976,7 @@ final class LibraryCoordinator {
     /// Browser context menu: pins a vault folder to the sidebar. The cap
     /// is announced with an alert (decision 6); nothing on disk is touched.
     private func pinToSidebar(_ item: ContentItem) {
-        guard item.isDirectory else { return }
+        guard browseContext == .vault, item.isDirectory else { return }
         guard pinStore.load().entries.count < VaultPins.maxCount else {
             presentPinCapAlert()
             return
@@ -727,6 +986,7 @@ final class LibraryCoordinator {
     }
 
     private func unpinFromSidebar(_ item: ContentItem) {
+        guard browseContext == .vault else { return }
         pinStore.remove(path: item.path)
         refreshPins()
     }
@@ -776,7 +1036,7 @@ final class LibraryCoordinator {
     /// Progress goes straight into the browser toolbar via the view model;
     /// the task is cancellable from the same label.
     private func downloadToVault(_ item: ContentItem) {
-        guard !browsingVault, let server = currentServer, let share = currentShare else { return }
+        guard browseContext == .remote, let server = currentServer, let share = currentShare else { return }
         guard downloadTask == nil else {
             onMessageError?("已有下载任务在进行中，请等待完成或先取消。", "下载到本地仓库")
             return
@@ -847,6 +1107,47 @@ final class LibraryCoordinator {
             resumeVaultPlayback(entry)
         case .smb(let host, let share):
             resumeSMBPlayback(entry, host: host, share: share)
+        case .localFolder(let folderID, _):
+            resumeLocalFolderPlayback(entry, folderID: folderID)
+        }
+    }
+
+    /// Local-folder route (TASK-local-folder-home): rides the
+    /// `openLocalFolder` deep link — the browser opens the folder and
+    /// drills into the record's directory, then the player opens on the
+    /// record's file with the drilled listing as its queue. Failure
+    /// semantics mirror `resumeVaultPlayback`: an unresolvable bookmark
+    /// (certain failure #1) or a vanished folder/file (#2) prunes the
+    /// record with an alert; a failed local connect surfaces the folder
+    /// open's generic alert and keeps the record. A navigation
+    /// mid-chain cancels the rest silently (the completion never fires).
+    private func resumeLocalFolderPlayback(_ entry: RecentWatchEntry, folderID: String) {
+        // Certain failure #1: the bookmark no longer resolves — the
+        // folder stays gone until the user re-picks it.
+        guard localFolderStore.resolve(id: folderID).url != nil else {
+            removeRecentWatch(entry)
+            presentResumeFailureAlert(
+                message: "无法打开“\(entry.fileName)”",
+                informative: "该视频所在的本地文件夹已不可访问，已从最近播放中移除。"
+            )
+            return
+        }
+        openLocalFolder(folderID: folderID, initialPath: entry.directoryPath) { [weak self] drilled in
+            guard let self else { return }
+            guard drilled,
+                  let item = browserViewModel.item(atPath: entry.path),
+                  let fileType = item.fileType,
+                  fileType == .video || fileType == .audio else {
+                // Certain failure #2: the file or its folder is gone.
+                removeRecentWatch(entry)
+                presentResumeFailureAlert(
+                    message: "无法打开“\(entry.fileName)”",
+                    informative: "文件可能已移动或删除，已从最近播放中移除。"
+                )
+                return
+            }
+            let listing = browserViewModel.state.items
+            openPlayer(at: entry.path, items: listing, siblings: listing)
         }
     }
 
@@ -949,7 +1250,7 @@ final class LibraryCoordinator {
         }
         let generation = beginNavigation()
         currentServer = server
-        browsingVault = false
+        browseContext = .remote
         serverListViewModel.setActiveDestination(.none)
         browserViewController.thumbnailProvider = nil
         onShowDetail?(shareGridViewController)
@@ -1095,24 +1396,65 @@ final class LibraryCoordinator {
             revealVaultWatchLocation(entry)
         case .smb(let host, let share):
             revealSMBWatchLocation(entry, host: host, share: share)
+        case .localFolder(let folderID, _):
+            revealLocalFolderWatchLocation(entry, folderID: folderID)
+        }
+    }
+
+    /// Local-folder reveal (TASK-local-folder-home): the same
+    /// `openLocalFolder` drill as the local resume link, but the
+    /// completion reveals the record's file in the browser. Existence
+    /// (not playability) decides reachability — the action navigates —
+    /// while an unresolvable bookmark or a vanished file/folder takes
+    /// the certain-failure cleanup, verbatim from the vault reveal.
+    private func revealLocalFolderWatchLocation(_ entry: RecentWatchEntry, folderID: String) {
+        guard localFolderStore.resolve(id: folderID).url != nil else {
+            removeRecentWatch(entry)
+            presentResumeFailureAlert(
+                message: "无法打开“\(entry.fileName)”所在文件夹",
+                informative: "该视频所在的本地文件夹已不可访问，已从最近播放中移除。"
+            )
+            return
+        }
+        openLocalFolder(folderID: folderID, initialPath: entry.directoryPath) { [weak self] drilled in
+            guard let self else { return }
+            if drilled, browserViewModel.item(atPath: entry.path) != nil {
+                browserViewController.revealItem(atPath: entry.path)
+            } else {
+                removeRecentWatch(entry)
+                presentResumeFailureAlert(
+                    message: "无法打开“\(entry.fileName)”所在文件夹",
+                    informative: "文件可能已移动或删除，已从最近播放中移除。"
+                )
+            }
         }
     }
 
     /// Supplies file facts for legacy watch records — written before the
     /// store kept them — so the home cards can compute a cover key.
     /// Read-only, bounded by the grid, and it never opens a connection:
-    /// vault entries stat the local disk; SMB entries reuse the live
-    /// session only when it already points at the record's share (the
-    /// directory listing is the reachable stat seam). Anything else keeps
-    /// the film icon.
-    private static func statFileFacts(
+    /// vault and local-folder entries stat the local disk (the latter
+    /// through the folder's resolved bookmark); SMB entries reuse the
+    /// live session only when it already points at the record's share
+    /// (the directory listing is the reachable stat seam). Anything else
+    /// keeps the film icon. Internal (not private) so the stat branches
+    /// are unit-testable, like `openLocalFolder`.
+    static func statFileFacts(
         of entry: RecentWatchEntry,
         sessionService: SMBSessionService,
-        vaultService: VaultService
+        vaultService: VaultService,
+        localFolderStore: LocalFolderStore
     ) async -> ContentItem? {
         switch entry.source {
         case .vault:
             return try? await LocalFileSource(root: vaultService.rootURL).metadata(at: entry.path)
+        case .localFolder(let folderID, _):
+            // Same local-disk stat as the vault branch, rooted at the
+            // folder's freshly resolved bookmark; an unresolvable
+            // bookmark keeps the film icon (the record stays).
+            guard let url = localFolderStore.resolve(id: folderID).url else { return nil }
+            return try? await LocalFileSource(root: url, sourceID: entry.sourceID)
+                .metadata(at: entry.path)
         case .smb:
             guard sessionService.currentSourceID == entry.sourceID else { return nil }
             // The preheat lane keeps this stat off the main lane so it can't
@@ -1164,7 +1506,7 @@ final class LibraryCoordinator {
     /// the settings page cannot relight a pin capsule.
     private func showSettings() {
         _ = beginNavigation()
-        browsingVault = false
+        browseContext = .remote
         serverListViewModel.setActiveDestination(.settings)
         onShowDetail?(settingsPaneViewController)
         onTitleChange?("设置")
@@ -1241,7 +1583,7 @@ final class LibraryCoordinator {
     /// Deletes a vault item after confirmation. The wording must stay
     /// explicit that the NAS is never touched (task red line).
     private func confirmDeleteFromVault(_ item: ContentItem) {
-        guard browsingVault, let window = hostWindowProvider?() else { return }
+        guard browseContext == .vault, let window = hostWindowProvider?() else { return }
         let alert = NSAlert()
         alert.messageText = "从本地仓库删除“\(item.name)”？"
         alert.informativeText = "仅删除本地仓库中的副本，不会影响 NAS 上的文件。此操作不可撤销。"
@@ -1282,8 +1624,9 @@ final class LibraryCoordinator {
             selectedPath: path,
             sourceID: sourceID,
             fileReader: makeFileReader(),
-            // Vault red line: local bytes never enter the original pool.
-            bypassOriginalPool: browsingVault
+            // Local-bytes red line: vault and local-folder bytes never
+            // enter the original pool.
+            bypassOriginalPool: browseContext != .remote
         )
     }
 
@@ -1298,7 +1641,7 @@ final class LibraryCoordinator {
             sourceID: sourceID,
             fileReader: makeFileReader(),
             isSourceCurrent: { [weak self] in self?.sessionService.currentSourceID == sourceID },
-            bypassOriginalPool: browsingVault
+            bypassOriginalPool: browseContext != .remote
         )
     }
 
@@ -1314,7 +1657,7 @@ final class LibraryCoordinator {
             item: item,
             sourceID: sourceID,
             fileReader: makeFileReader(),
-            bypassOriginalPool: browsingVault
+            bypassOriginalPool: browseContext != .remote
         )
     }
 

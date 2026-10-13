@@ -97,6 +97,15 @@ chrome, dark player) regardless of the system appearance.
   (right-click → 固定到侧栏, up to 8, optional aliases, full path in the
   tooltip): a pin row lights up while you browse its subtree, greys out
   when the folder goes missing, and only ever leaves by hand.
+- **Local folders**: the sidebar's "本地文件夹" section adds any local
+  directory as a first-class source — pick it once via the open panel and
+  a security-scoped bookmark keeps it browsable across launches (up to
+  16, re-adding the same path is refused). Local folders browse exactly
+  like a share (thumbnails, image/comic/PDF reading, video playback
+  included) but stay read-only: no deletes, no vault downloads, no pins.
+  A folder whose bookmark stops resolving greys out and offers
+  "重新选择…"; removing an entry never touches the files on disk. Videos
+  watched from a local folder appear in 继续观看 like any other source.
 - Dot-prefixed entries (`.DS_Store`, AppleDouble `._*`, tool metadata files)
   and `__MACOSX` folders are hidden.
 - Files are classified by type (video / image / pdf / comic / text / other)

@@ -446,31 +446,39 @@ struct ServerViewModelTests {
         #expect(viewModel.server(atTableRow: 2) == nil)
     }
 
-    @Test("the table holds only the section header and server rows")
+    @Test("the table holds the two section headers and the server rows")
     func serversOnlyRows() {
         let server = ServerConfig(id: UUID(), host: "nas", username: "user")
         let viewModel = ServerListViewModel()
 
-        // Empty list: just the "服务器" header; the vault and settings
+        // Empty list: both section headers ("服务器" at row 0,
+        // "本地文件夹" right below it); the vault and settings
         // destinations live in the pinned bottom bar, not the table.
-        #expect(viewModel.rowCount == 1)
+        #expect(viewModel.rowCount == 2)
         #expect(viewModel.isGroupRow(0))
+        #expect(viewModel.isGroupRow(1))
+        #expect(viewModel.isLocalFolderHeaderRow(1))
         #expect(viewModel.server(atTableRow: 0) == nil)
         #expect(viewModel.server(atTableRow: 1) == nil)
 
         viewModel.update(servers: [server])
-        #expect(viewModel.rowCount == 2)
+        #expect(viewModel.rowCount == 3)
         #expect(viewModel.isGroupRow(0))
         #expect(!viewModel.isGroupRow(1))
+        #expect(viewModel.isGroupRow(2))
         #expect(viewModel.server(atTableRow: 1) == server)
         #expect(viewModel.server(atTableRow: 2) == nil)
+        #expect(viewModel.server(atTableRow: 3) == nil)
 
-        // Server count never shifts the header.
+        // The server count shifts the local-folder header, never the
+        // server section's own header.
         viewModel.update(servers: [server, server, server])
-        #expect(viewModel.rowCount == 4)
+        #expect(viewModel.rowCount == 5)
         #expect(viewModel.isGroupRow(0))
+        #expect(viewModel.isLocalFolderHeaderRow(4))
         #expect(viewModel.server(atTableRow: 3) == server)
         #expect(viewModel.server(atTableRow: 4) == nil)
+        #expect(viewModel.server(atTableRow: 5) == nil)
     }
 
     @Test("active destination starts at none, reports changes, and returns")

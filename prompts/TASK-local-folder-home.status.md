@@ -1,0 +1,4 @@
+2026-10-14 04:01 | step 1 | done | HomeViewModel.swift: RecentWatchSource + localFolder(folderID:name:), parse/recentList 支持 local://（localFolderNames 注入），locationText 用 displayName，fallback=本地文件夹 | step 2
+2026-10-14 04:01 | step 2 | done | LibraryCoordinator.swift: openLocalFolder 补 initialPath/completion 深链语义（仿 openVault，PROMPT 与实际接口差异微调）；resume/reveal/statFileFacts 三路加 local 分支；statFileFacts 改 internal 供测试 | step 3
+2026-10-14 04:09 | step 3 | done | Tests/CoveTests/LocalFolderHomeTests.swift 新增（parse 合法/非法/兜底名、resume/reveal 书签失效 prune、stat 分支命中/降级）；PlaybackProgressStoreTests.swift 一处 compactMap 闭包化适配新签名 | step 4
+2026-10-14 04:09 | step 4 | done | make generate OK；make test 两次全绿（App target 425 tests / 68 suites 含新套件 'Local folder home integration'，smb-spike 编译 OK）。注：首次 PreheatKit 步因 github 代理 503 拉 libsmb2 submodule 失败，手动 git submodule update 后恢复，与改动无关 | 完成，待 Owner 验收
